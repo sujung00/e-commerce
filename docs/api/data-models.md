@@ -1,933 +1,176 @@
-# E-Commerce Platform Data Models & ERD
+# E-Commerce 데이터 모델
 
-## 1. Data Model Overview
+## 개요
 
-This document describes all data entities (tables), their attributes, relationships, and constraints based on the requirements specification.
-
-### 1.1 Entity Summary
-
-| Entity | Purpose | Key Feature |
-|--------|---------|-------------|
-| users | User accounts | Authentication, balance tracking |
-| user_balances | User wallet system | In-app payment balance |
-| balance_history | Balance audit trail | Transaction history |
-| products | Product catalog | Product information, pricing |
-| product_options | Product variants | Size, color, storage options |
-| product_view_statistics | Popularity tracking | Daily view counts |
-| carts | Shopping carts | Per-user cart |
-| cart_items | Cart line items | Product + Option combination |
-| orders | Order records | Completed transactions |
-| order_items | Order line items | Items in order |
-| shipping_infos | Shipping details | Delivery information |
-| coupons | Coupon definitions | Coupon policies |
-| user_coupons | Coupon issuance | Per-user coupon tracking |
-| outbox | External transmission queue | Retry mechanism for external systems |
+데이터 모델은 옵션 기반 재고를 갖춘 상품 카탈로그 관리, 쇼핑 카트 기능, 원자적 거래가 있는 주문 처리, 쿠폰 기반 할인을 지원합니다. 핵심 설계: 재고는 상품 옵션별로 추적되고, 카트는 재고에 영향을 주지 않으며, 주문은 원자적입니다 (재고 + 잔액 + 쿠폰).
 
 ---
 
-## 2. Entity Definitions
+## 엔티티 요약
 
-### 2.1 Users Table
-
-**Purpose**: User account management
-
-```
-Entity: Users
-├─ user_id (PK) - Long
-├─ email (UNIQUE) - String
-├─ password_hash - String
-├─ name - String
-├─ phone - String
-├─ status - Enum (ACTIVE, INACTIVE, SUSPENDED)
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
-```
-
-**Attributes**:
-- `user_id`: Primary key, auto-increment
-- `email`: Unique email address
-- `password_hash`: Hashed password (never plain text)
-- `name`: User's display name
-- `phone`: Contact phone number
-- `status`: Account status (ACTIVE = normal, INACTIVE = suspended, SUSPENDED = locked)
-- `created_at`: Account creation timestamp
-- `updated_at`: Last modification timestamp
-
-**Constraints**:
-- UNIQUE on email
-- NOT NULL on email, password_hash, name
-
-**Indexes**:
-- PRIMARY KEY (user_id)
-- UNIQUE INDEX (email)
-- INDEX (status)
+| 엔티티 | 목적 |
+|--------|---------|
+| **users** | 잔액이 있는 사용자 계정 |
+| **products** | 상품 카탈로그 |
+| **product_options** | 독립적인 재고가 있는 상품 변형 |
+| **carts** | 사용자별 쇼핑 카트 |
+| **cart_items** | 카트 라인 항목 |
+| **orders** | 완료된 주문 |
+| **order_items** | 주문 라인 항목 |
+| **coupons** | 할인 쿠폰 |
+| **user_coupons** | 쿠폰 발급 및 사용 |
 
 ---
 
-### 2.2 User Balances Table
+## 엔티티 정의
 
-**Purpose**: Track user's in-app wallet balance
-
+### users
 ```
-Entity: UserBalances
-├─ balance_id (PK) - Long
-├─ user_id (FK, UNIQUE) - Long
-├─ balance - Long
-├─ version (OL) - Long
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
-```
-
-**Attributes**:
-- `balance_id`: Primary key
-- `user_id`: Foreign key to users (UNIQUE = one balance per user)
-- `balance`: Current balance in KRW (use BIGINT for large numbers)
-- `version`: Optimistic lock version for concurrent updates
-- `created_at`: Record creation timestamp
-- `updated_at`: Last update timestamp
-
-**Constraints**:
-- UNIQUE on user_id
-- NOT NULL on balance
-- Foreign key to users table
-
-**Concurrency Control**:
-- Optimistic locking via version column
-- Update condition: `WHERE user_id = ? AND version = ?`
-
----
-
-### 2.3 Balance History Table
-
-**Purpose**: Audit trail for all balance changes
-
-```
-Entity: BalanceHistory
-├─ history_id (PK) - Long
-├─ user_id (FK) - Long
-├─ transaction_type - Enum (CHARGE, DEDUCTION)
-├─ amount - Long
-├─ previous_balance - Long
-├─ new_balance - Long
-├─ order_id (FK) - Long
-├─ description - String
-├─ created_at - Timestamp
-└─ (No updated_at - immutable record)
+user_id         : Long (PK)
+email           : String (UNIQUE)
+password_hash   : String
+name            : String
+phone           : String
+balance         : Long
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
-**Attributes**:
-- `history_id`: Primary key
-- `user_id`: Foreign key to users
-- `transaction_type`: CHARGE (add balance) or DEDUCTION (payment from order)
-- `amount`: Transaction amount
-- `previous_balance`: Balance before transaction
-- `new_balance`: Balance after transaction
-- `order_id`: Related order (NULL if balance charge)
-- `description`: Transaction description
-- `created_at`: Transaction timestamp
-
-**Constraints**:
-- Foreign key to users (CASCADE DELETE)
-- Foreign key to orders (SET NULL on delete)
-
-**Indexes**:
-- PRIMARY KEY (history_id)
-- INDEX (user_id)
-- INDEX (transaction_type)
-- INDEX (created_at)
-
----
-
-### 2.4 Products Table
-
-**Purpose**: Product catalog management
-
+### products
 ```
-Entity: Products
-├─ product_id (PK) - Long
-├─ product_name - String
-├─ description - Text
-├─ price - Long
-├─ total_stock - Integer
-├─ status - Enum (판매 중, 품절)
-├─ created_at - Timestamp
-├─ updated_at - Timestamp
-└─ deleted_at (Soft Delete) - Timestamp
+product_id      : Long (PK)
+product_name    : String
+description     : Text
+price           : Long
+total_stock     : Integer (calculated: SUM of option stocks)
+status          : String (판매 중 | 품절)
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
-**Attributes**:
-- `product_id`: Primary key, auto-increment
-- `product_name`: Product name
-- `description`: Detailed product description
-- `price`: Base unit price in KRW
-- `total_stock`: Calculated as SUM of all option stocks (not directly updated)
-- `status`: "판매 중" (on sale) or "품절" (out of stock)
-- `created_at`: Product creation timestamp
-- `updated_at`: Last update timestamp
-- `deleted_at`: Soft delete timestamp (NULL if active)
-
-**Business Rules**:
-- `total_stock = SUM(product_options.stock WHERE deleted_at IS NULL)` (calculated)
-- `status = "품절" IF total_stock = 0 ELSE "판매 중"`
-- Both updated automatically when option stocks change
-
-**Constraints**:
-- NOT NULL on product_name, price
-
-**Indexes**:
-- PRIMARY KEY (product_id)
-- INDEX (status)
-- INDEX (created_at)
-
-**Soft Deletion**: Use `deleted_at` for logical deletion and audit trail
-
----
-
-### 2.5 Product Options Table
-
-**Purpose**: Manage product variants with independent stock tracking
-
+### product_options
 ```
-Entity: ProductOptions
-├─ option_id (PK) - Long
-├─ product_id (FK) - Long
-├─ name - String
-├─ stock - Integer
-├─ version (OL) - Long
-├─ created_at - Timestamp
-├─ updated_at - Timestamp
-└─ deleted_at (Soft Delete) - Timestamp
+option_id       : Long (PK)
+product_id      : Long (FK → products)
+name            : String (e.g., "Black/M")
+stock           : Integer
+version         : Long (optimistic lock)
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
-**Attributes**:
-- `option_id`: Primary key, auto-increment
-- `product_id`: Foreign key to products
-- `name`: Option name (e.g., "블랙 / M", "화이트 / L")
-- `stock`: Current stock quantity for this option
-- `version`: Optimistic lock version for concurrent stock updates (FRC-005)
-- `created_at`: Record creation timestamp
-- `updated_at`: Last update timestamp
-- `deleted_at`: Soft delete timestamp
-
-**Business Rules** (from 2.1.4):
-- Each option maintains independent stock quantity
-- `product.total_stock = SUM(option.stock)` (must be validated)
-- Option stock cannot go negative: `stock >= 0`
-- Option-level stock validation: `optionStock >= orderQuantity` (NOT product total)
-- Error message format: "[Option Name]의 재고가 부족합니다"
-
-**Constraints**:
-- Foreign key to products (CASCADE DELETE)
-- UNIQUE on (product_id, name) - prevents duplicate option names per product
-- NOT NULL on product_id, name, stock
-
-**Concurrency Control**:
-- Optimistic locking via version column
-- Update condition: `UPDATE SET stock = stock - ?, version = version + 1 WHERE option_id = ? AND version = ?`
-
-**Indexes**:
-- PRIMARY KEY (option_id)
-- INDEX (product_id)
-- INDEX (stock) - for availability queries
-- UNIQUE INDEX (product_id, name)
-
----
-
-### 2.6 Product View Statistics Table
-
-**Purpose**: Track daily view counts for popular product ranking
-
+### carts
 ```
-Entity: ProductViewStatistics
-├─ stat_id (PK) - Long
-├─ product_id (FK) - Long
-├─ view_date - Date
-├─ view_count - Integer
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
+cart_id         : Long (PK)
+user_id         : Long (FK → users, UNIQUE)
+total_items     : Integer
+total_price     : Long
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
-**Attributes**:
-- `stat_id`: Primary key
-- `product_id`: Foreign key to products
-- `view_date`: Date of the view count
-- `view_count`: Number of views on that date
-- `created_at`: Record creation timestamp
-- `updated_at`: Last update timestamp
-
-**Constraints**:
-- Foreign key to products (CASCADE DELETE)
-- UNIQUE on (product_id, view_date)
-
-**Indexes**:
-- PRIMARY KEY (stat_id)
-- UNIQUE INDEX (product_id, view_date)
-- INDEX (view_date)
-
----
-
-### 2.7 Carts Table
-
-**Purpose**: Per-user shopping cart
-
+### cart_items
 ```
-Entity: Carts
-├─ cart_id (PK) - Long
-├─ user_id (FK, UNIQUE) - Long
-├─ total_items - Integer
-├─ total_price - Long
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
+cart_item_id    : Long (PK)
+cart_id         : Long (FK → carts)
+product_id      : Long (FK → products)
+option_id       : Long (FK → product_options, REQUIRED)
+quantity        : Integer
+unit_price      : Long
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
-**Attributes**:
-- `cart_id`: Primary key, auto-increment
-- `user_id`: Foreign key to users (UNIQUE = one cart per user)
-- `total_items`: Count of distinct items in cart
-- `total_price`: Sum of all item prices (denormalized for performance)
-- `created_at`: Cart creation timestamp
-- `updated_at`: Last modification timestamp
-
-**Business Rules**:
-- Each user has exactly one cart
-- Cart items do NOT impact inventory (BR-03)
-- Inventory only decreases at order creation (FRC-005)
-
-**Constraints**:
-- UNIQUE on user_id
-- Foreign key to users (CASCADE DELETE)
-
-**Indexes**:
-- PRIMARY KEY (cart_id)
-- UNIQUE INDEX (user_id)
-
----
-
-### 2.8 Cart Items Table
-
-**Purpose**: Line items in shopping cart
-
+### orders
 ```
-Entity: CartItems
-├─ cart_item_id (PK) - Long
-├─ cart_id (FK) - Long
-├─ product_id (FK) - Long
-├─ option_id (FK) - Long
-├─ quantity - Integer
-├─ unit_price - Long
-├─ total_price (Generated) - Long
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
+order_id        : Long (PK)
+user_id         : Long (FK → users)
+order_status    : String (COMPLETED | PENDING | FAILED)
+coupon_id       : Long (FK → coupons, nullable)
+coupon_discount : Long
+subtotal        : Long
+final_amount    : Long
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
-**Attributes**:
-- `cart_item_id`: Primary key, auto-increment
-- `cart_id`: Foreign key to carts
-- `product_id`: Foreign key to products
-- `option_id`: Foreign key to product_options (CRITICAL - required field)
-- `quantity`: Item quantity
-- `unit_price`: Product price at time of addition (snapshot for audit trail)
-- `total_price`: GENERATED COLUMN = quantity * unit_price
-- `created_at`: Record creation timestamp
-- `updated_at`: Last modification timestamp
-
-**Business Rules** (from 2.1.4 & 2.2.1):
-- Option ID is REQUIRED (user must select specific option)
-- Same product with different options = separate cart items
-- Unique constraint on (cart_id, product_id, option_id)
-- Cart does NOT affect inventory (BR-03)
-
-**Constraints**:
-- Foreign key to carts (CASCADE DELETE)
-- Foreign key to products (CASCADE DELETE)
-- Foreign key to product_options (CASCADE DELETE)
-- UNIQUE on (cart_id, product_id, option_id)
-- NOT NULL on option_id
-
-**Indexes**:
-- PRIMARY KEY (cart_item_id)
-- INDEX (cart_id)
-- UNIQUE INDEX (cart_id, product_id, option_id)
-
----
-
-### 2.9 Orders Table
-
-**Purpose**: Order records for completed transactions
-
+### order_items
 ```
-Entity: Orders
-├─ order_id (PK) - Long
-├─ user_id (FK) - Long
-├─ order_status - Enum (COMPLETED, PENDING, FAILED)
-├─ coupon_id (FK) - Long
-├─ coupon_discount - Long
-├─ subtotal - Long
-├─ final_amount - Long
-├─ version (OL) - Long
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
+order_item_id   : Long (PK)
+order_id        : Long (FK → orders)
+product_id      : Long (FK → products)
+option_id       : Long (FK → product_options)
+product_name    : String (snapshot)
+option_name     : String (snapshot)
+quantity        : Integer
+unit_price      : Long
+created_at      : Timestamp
 ```
 
-**Attributes**:
-- `order_id`: Primary key, auto-increment
-- `user_id`: Foreign key to users
-- `order_status`: COMPLETED (successful), PENDING (in progress), FAILED (error)
-- `coupon_id`: Applied coupon (nullable)
-- `coupon_discount`: Discount amount from coupon
-- `subtotal`: Sum of all items (products × quantity)
-- `final_amount`: subtotal - coupon_discount (amount actually paid)
-- `version`: Optimistic lock for concurrent updates
-- `created_at`: Order creation timestamp
-- `updated_at`: Last update timestamp
-
-**Business Rules**:
-- Order moves to COMPLETED immediately upon successful transaction (FRC-007)
-- External transmission (FRC-010) is asynchronous and separate
-- External transmission failure does NOT change order status (BR-17)
-
-**Constraints**:
-- Foreign key to users (CASCADE DELETE)
-- Foreign key to coupons (SET NULL on delete)
-- NOT NULL on user_id, subtotal, final_amount
-
-**Indexes**:
-- PRIMARY KEY (order_id)
-- INDEX (user_id)
-- INDEX (order_status)
-- INDEX (created_at)
-
----
-
-### 2.10 Order Items Table
-
-**Purpose**: Line items in completed orders
-
+### coupons
 ```
-Entity: OrderItems
-├─ order_item_id (PK) - Long
-├─ order_id (FK) - Long
-├─ product_id (FK) - Long
-├─ option_id (FK) - Long
-├─ product_name (Snapshot) - String
-├─ option_name (Snapshot) - String
-├─ quantity - Integer
-├─ unit_price - Long
-├─ total_price (Generated) - Long
-└─ created_at - Timestamp
+coupon_id       : Long (PK)
+coupon_name     : String
+description     : Text
+discount_type   : String (FIXED_AMOUNT | PERCENTAGE)
+discount_amount : Long
+discount_rate   : Decimal
+total_quantity  : Integer
+remaining_qty   : Integer (atomic decrement)
+valid_from      : Timestamp
+valid_until     : Timestamp
+is_active       : Boolean
+version         : Long (optimistic lock)
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
-**Attributes**:
-- `order_item_id`: Primary key, auto-increment
-- `order_id`: Foreign key to orders
-- `product_id`: Foreign key to products
-- `option_id`: Foreign key to product_options
-- `product_name`: Snapshot of product name at order time (audit trail)
-- `option_name`: Snapshot of option name at order time (audit trail)
-- `quantity`: Ordered quantity
-- `unit_price`: Price paid per unit
-- `total_price`: GENERATED COLUMN = quantity * unit_price
-- `created_at`: Record creation timestamp
-
-**Business Rules**:
-- Snapshots preserve historical data if products are deleted/modified
-- Includes option_id for tracking which variant was ordered (FRC-007)
-- Essential for external system transmission (FRC-010)
-
-**Constraints**:
-- Foreign key to orders (CASCADE DELETE)
-- Foreign key to products (RESTRICT DELETE - prevent accidental data loss)
-- Foreign key to product_options (RESTRICT DELETE)
-
-**Indexes**:
-- PRIMARY KEY (order_item_id)
-- INDEX (order_id)
-
----
-
-### 2.11 Shipping Infos Table
-
-**Purpose**: Shipping and delivery details for orders
-
+### user_coupons
 ```
-Entity: ShippingInfos
-├─ shipping_id (PK) - Long
-├─ order_id (FK, UNIQUE) - Long
-├─ recipient_name - String
-├─ recipient_phone - String
-├─ shipping_address - String
-├─ shipping_status - Enum (PENDING, SHIPPED, DELIVERED, FAILED)
-├─ external_order_id - String
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
-```
-
-**Attributes**:
-- `shipping_id`: Primary key
-- `order_id`: Foreign key to orders (UNIQUE = one shipping info per order)
-- `recipient_name`: Recipient's name
-- `recipient_phone`: Recipient's phone number
-- `shipping_address`: Full shipping address
-- `shipping_status`: PENDING, SHIPPED, DELIVERED, or FAILED
-- `external_order_id`: Tracking ID from external shipping system
-- `created_at`: Record creation timestamp
-- `updated_at`: Last update timestamp
-
-**Constraints**:
-- UNIQUE on order_id
-- Foreign key to orders (CASCADE DELETE)
-
-**Indexes**:
-- PRIMARY KEY (shipping_id)
-- INDEX (shipping_status)
-
----
-
-### 2.12 Coupons Table
-
-**Purpose**: Coupon policy definitions
-
-```
-Entity: Coupons
-├─ coupon_id (PK) - Long
-├─ coupon_name - String
-├─ description - Text
-├─ discount_type - Enum (FIXED_AMOUNT, PERCENTAGE)
-├─ discount_amount - Long
-├─ discount_rate - Decimal
-├─ min_purchase_amount - Long
-├─ max_usage_per_user - Integer
-├─ total_quantity - Integer
-├─ remaining_quantity - Integer
-├─ valid_from - Timestamp
-├─ valid_until - Timestamp
-├─ is_active - Boolean
-├─ version (OL) - Long
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
-```
-
-**Attributes**:
-- `coupon_id`: Primary key, auto-increment
-- `coupon_name`: Coupon display name
-- `description`: Coupon description
-- `discount_type`: FIXED_AMOUNT or PERCENTAGE
-- `discount_amount`: Fixed discount in KRW (if FIXED_AMOUNT)
-- `discount_rate`: Discount percentage (if PERCENTAGE)
-- `min_purchase_amount`: Minimum purchase required for coupon use
-- `max_usage_per_user`: Maximum uses per user (typically 1)
-- `total_quantity`: Total issued quantity limit
-- `remaining_quantity`: Remaining available coupons (decrements on issuance)
-- `valid_from`: Start of validity period
-- `valid_until`: End of validity period
-- `is_active`: Active/inactive flag
-- `version`: Optimistic lock version for concurrent issuance (FRC-008)
-- `created_at`: Coupon creation timestamp
-- `updated_at`: Last update timestamp
-
-**Business Rules** (from section 2.3):
-- Coupon valid if: `is_active = true AND NOW() BETWEEN valid_from AND valid_until`
-- Issuance check: `remaining_quantity > 0` (atomic decrement required)
-- Concurrency: prevent race conditions during simultaneous issuance (BR-09, BR-10)
-
-**Constraints**:
-- NOT NULL on coupon_name, discount_type, total_quantity, remaining_quantity
-
-**Concurrency Control**:
-- Optimistic locking via version column
-- Update condition: `UPDATE SET remaining_quantity = remaining_quantity - 1, version = version + 1 WHERE coupon_id = ? AND version = ?`
-
-**Indexes**:
-- PRIMARY KEY (coupon_id)
-- INDEX (is_active)
-- INDEX (valid_from, valid_until)
-
----
-
-### 2.13 User Coupons Table
-
-**Purpose**: Track coupon issuance and usage per user
-
-```
-Entity: UserCoupons
-├─ user_coupon_id (PK) - Long
-├─ user_id (FK) - Long
-├─ coupon_id (FK) - Long
-├─ status - Enum (ACTIVE, USED, EXPIRED)
-├─ used_at - Timestamp
-├─ order_id (FK) - Long
-└─ issued_at - Timestamp
-```
-
-**Attributes**:
-- `user_coupon_id`: Primary key, auto-increment
-- `user_id`: Foreign key to users
-- `coupon_id`: Foreign key to coupons
-- `status`: ACTIVE (not used), USED (applied to order), EXPIRED (past validity)
-- `used_at`: Timestamp when coupon was used (NULL if not used)
-- `order_id`: Order that used the coupon (NULL if not used)
-- `issued_at`: Coupon issuance timestamp
-
-**Business Rules**:
-- UNIQUE constraint on (user_id, coupon_id) enforces `max_usage_per_user` (BR-12)
-- Status transitions: ACTIVE → USED (on order creation) or EXPIRED (after valid_until)
-- Each coupon can be issued to a user only once
-
-**Constraints**:
-- UNIQUE on (user_id, coupon_id)
-- Foreign key to users (CASCADE DELETE)
-- Foreign key to coupons (CASCADE DELETE)
-- Foreign key to orders (SET NULL on delete)
-
-**Indexes**:
-- PRIMARY KEY (user_coupon_id)
-- UNIQUE INDEX (user_id, coupon_id)
-- INDEX (user_id)
-- INDEX (status)
-
----
-
-### 2.14 Outbox Table
-
-**Purpose**: External system transmission queue with retry mechanism
-
-```
-Entity: Outbox
-├─ outbox_id (PK) - Long
-├─ order_id (FK) - Long
-├─ message_type - Enum (SHIPPING_REQUEST, PAYMENT_NOTIFICATION)
-├─ payload - JSON
-├─ status - Enum (PENDING, SENT, FAILED)
-├─ retry_count - Integer
-├─ max_retries - Integer
-├─ last_retry_at - Timestamp
-├─ next_retry_at - Timestamp
-├─ error_message - Text
-├─ created_at - Timestamp
-└─ updated_at - Timestamp
-```
-
-**Attributes**:
-- `outbox_id`: Primary key, auto-increment
-- `order_id`: Foreign key to orders
-- `message_type`: SHIPPING_REQUEST or PAYMENT_NOTIFICATION
-- `payload`: JSON serialized message data (contains order information)
-- `status`: PENDING (awaiting transmission), SENT (successfully sent), FAILED (transmission failed)
-- `retry_count`: Number of retry attempts made
-- `max_retries`: Maximum retry attempts (default 5)
-- `last_retry_at`: Timestamp of last retry attempt
-- `next_retry_at`: When next retry should occur (calculated per strategy)
-- `error_message`: Last error message from external system
-- `created_at`: Record creation timestamp
-- `updated_at`: Last update timestamp
-
-**Retry Strategy** (FRC-010):
-- Initial status: PENDING
-- Exponential backoff: 1min, 2min, 4min, 8min, 16min
-- Triggered by: Batch job every 5 minutes OR async job consumer
-- Success: Move to SENT when external system returns 2xx
-- Failure: Increment retry_count, calculate next_retry_at, update error_message
-
-**Business Rules**:
-- Order data only (from requirement 2.4): includes order info, items, shipping details
-- Excludes: inventory, coupon policy, user balance, other user data
-- Created during order transaction (FRC-007) with PENDING status
-- Asynchronous and separate from order processing (FRC-010, BR-16, BR-17)
-
-**Constraints**:
-- Foreign key to orders (CASCADE DELETE)
-- NOT NULL on order_id, message_type, payload, status
-
-**Indexes**:
-- PRIMARY KEY (outbox_id)
-- INDEX (status)
-- INDEX (order_id)
-- INDEX (next_retry_at, status) - for batch job queries
-
----
-
-## 3. Entity Relationships
-
-### 3.1 Relationship Diagram (Text-based)
-
-```
-                    users (1)
-                      |
-         _____________|_____________
-        |             |             |
-     (1:1)         (1:1)         (1:N)
-        |             |             |
-        v             v             v
-    user_balances  carts         orders
-                      |             |
-                    (1:N)         (1:N)
-                      |             |
-                      v             v
-                  cart_items    order_items
-                      |             |
-                      |             |
-        (product_id, option_id)     |
-                      |             |
-                      v             v
-                  products (1) ← ← ←
-                      |
-                    (1:N)
-                      |
-                      v
-              product_options (1)
-                      |
-                  (1:N)
-                      |
-                      v
-            product_view_stats
-
-    coupons (1)
-        |
-      (1:N)
-        |
-        v
-    user_coupons
-        |
-        |_____ (FK to users, coupons, orders)
-
-    orders (1)
-        |
-    (1:N)
-        |
-        v
-    shipping_infos, outbox
-```
-
-### 3.2 Relationship Definitions
-
-#### 3.2.1 users ↔ user_balances (1:1)
-```
-Type: One-to-One
-Cardinality: 1:1
-Foreign Key: user_balances.user_id → users.user_id
-Constraint: UNIQUE on user_id
-Action: CASCADE DELETE
-Purpose: Each user has exactly one balance account
-```
-
-#### 3.2.2 users ↔ carts (1:1)
-```
-Type: One-to-One
-Cardinality: 1:1
-Foreign Key: carts.user_id → users.user_id
-Constraint: UNIQUE on user_id
-Action: CASCADE DELETE
-Purpose: Each user has exactly one shopping cart
-```
-
-#### 3.2.3 users ↔ orders (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: orders.user_id → users.user_id
-Action: CASCADE DELETE
-Purpose: User can have multiple orders
-Index: idx_order_user_id
-```
-
-#### 3.2.4 users ↔ user_coupons (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: user_coupons.user_id → users.user_id
-Action: CASCADE DELETE
-Purpose: Track coupons issued to each user
-Index: idx_user_coupon_user_id
-```
-
-#### 3.2.5 users ↔ balance_history (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: balance_history.user_id → users.user_id
-Action: CASCADE DELETE
-Purpose: Audit trail of balance changes
-```
-
-#### 3.2.6 carts ↔ cart_items (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: cart_items.cart_id → carts.cart_id
-Action: CASCADE DELETE
-Purpose: Cart contains multiple items
-Unique Constraint: (cart_id, product_id, option_id)
-Special Note: OPTION_ID IS REQUIRED (not nullable)
-```
-
-#### 3.2.7 products ↔ product_options (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: product_options.product_id → products.product_id
-Constraint: UNIQUE on (product_id, name)
-Action: CASCADE DELETE
-Purpose: Each product has multiple variants
-Key Business Logic:
-  - product.total_stock = SUM(product_options.stock)
-  - product.status = '품절' IF total_stock = 0
-```
-
-#### 3.2.8 product_options ↔ cart_items (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: cart_items.option_id → product_options.option_id
-Action: CASCADE DELETE
-Purpose: Track which product option is in cart
-Critical Rule: Cart validation uses option_id, not product_id
-```
-
-#### 3.2.9 product_options ↔ order_items (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: order_items.option_id → product_options.option_id
-Action: RESTRICT DELETE
-Purpose: Preserve order history
-Reason: Cannot delete option if it appears in any order
-```
-
-#### 3.2.10 orders ↔ order_items (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: order_items.order_id → orders.order_id
-Action: CASCADE DELETE
-Purpose: Order contains multiple items
-```
-
-#### 3.2.11 orders ↔ shipping_infos (1:1)
-```
-Type: One-to-One
-Cardinality: 1:1
-Foreign Key: shipping_infos.order_id → orders.order_id
-Constraint: UNIQUE on order_id
-Action: CASCADE DELETE
-Purpose: Each order has exactly one shipping info
-```
-
-#### 3.2.12 orders ↔ outbox (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: outbox.order_id → orders.order_id
-Action: CASCADE DELETE
-Purpose: Multiple messages per order (SHIPPING_REQUEST, PAYMENT_NOTIFICATION)
-Critical Feature: Retry mechanism for external system transmission
-```
-
-#### 3.2.13 coupons ↔ user_coupons (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: user_coupons.coupon_id → coupons.coupon_id
-Unique Constraint: (user_id, coupon_id)
-Action: CASCADE DELETE
-Purpose: Track coupon issuances to users
-Enforces: max_usage_per_user (typically 1)
-```
-
-#### 3.2.14 orders ↔ coupons (N:1)
-```
-Type: Many-to-One
-Cardinality: N:1
-Foreign Key: orders.coupon_id → coupons.coupon_id
-Action: SET NULL on delete
-Purpose: Order can apply one coupon
-Optional: Not all orders use coupons
-```
-
-#### 3.2.15 orders ↔ user_coupons (1:N)
-```
-Type: One-to-Many
-Cardinality: 1:N
-Foreign Key: user_coupons.order_id → orders.order_id
-Action: SET NULL on delete
-Purpose: Track which order used which coupon
+user_coupon_id  : Long (PK)
+user_id         : Long (FK → users)
+coupon_id       : Long (FK → coupons)
+status          : String (ACTIVE | USED | EXPIRED)
+issued_at       : Timestamp
+used_at         : Timestamp (nullable)
+order_id        : Long (FK → orders, nullable)
 ```
 
 ---
 
-## 4. Mermaid ERD Diagrams
-
-### 4.1 Complete System ERD
+## 엔티티 관계도 (ERD)
 
 ```mermaid
 erDiagram
-    USERS ||--|| USER_BALANCES : has
     USERS ||--|| CARTS : owns
     USERS ||--o{ ORDERS : places
     USERS ||--o{ USER_COUPONS : receives
-    USERS ||--o{ BALANCE_HISTORY : generates
 
     CARTS ||--o{ CART_ITEMS : contains
     PRODUCTS ||--o{ PRODUCT_OPTIONS : has
-    PRODUCTS ||--o{ PRODUCT_VIEW_STATISTICS : tracks
-
-    CART_ITEMS }o--|| PRODUCTS : references
-    CART_ITEMS }o--|| PRODUCT_OPTIONS : selects
+    PRODUCTS ||--o{ CART_ITEMS : ""
+    PRODUCTS ||--o{ ORDER_ITEMS : ""
+    PRODUCT_OPTIONS ||--o{ CART_ITEMS : ""
+    PRODUCT_OPTIONS ||--o{ ORDER_ITEMS : ""
 
     ORDERS ||--o{ ORDER_ITEMS : contains
-    ORDERS ||--|| SHIPPING_INFOS : requires
-    ORDERS ||--o{ OUTBOX : queues
     ORDERS }o--|| COUPONS : applies
-
-    ORDER_ITEMS }o--|| PRODUCTS : references
-    ORDER_ITEMS }o--|| PRODUCT_OPTIONS : includes
+    ORDERS ||--o{ USER_COUPONS : uses
 
     COUPONS ||--o{ USER_COUPONS : distributes
-    USER_COUPONS }o--|| ORDERS : uses
-
-    BALANCE_HISTORY }o--|| ORDERS : tracks
 
     USERS {
         long user_id PK
         string email UK
-        string password_hash
-        string name
-        string phone
-        enum status
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    USER_BALANCES {
-        long balance_id PK
-        long user_id FK UK
         long balance
-        long version
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    BALANCE_HISTORY {
-        long history_id PK
-        long user_id FK
-        enum transaction_type
-        long amount
-        long previous_balance
-        long new_balance
-        long order_id FK
-        string description
-        timestamp created_at
     }
 
     PRODUCTS {
         long product_id PK
         string product_name
-        text description
         long price
         int total_stock
-        enum status
-        timestamp created_at
-        timestamp updated_at
-        timestamp deleted_at
+        string status
     }
 
     PRODUCT_OPTIONS {
@@ -936,52 +179,27 @@ erDiagram
         string name
         int stock
         long version
-        timestamp created_at
-        timestamp updated_at
-        timestamp deleted_at
-    }
-
-    PRODUCT_VIEW_STATISTICS {
-        long stat_id PK
-        long product_id FK
-        date view_date
-        int view_count
-        timestamp created_at
-        timestamp updated_at
     }
 
     CARTS {
         long cart_id PK
-        long user_id FK UK
-        int total_items
-        long total_price
-        timestamp created_at
-        timestamp updated_at
+        long user_id FK "UK"
     }
 
     CART_ITEMS {
         long cart_item_id PK
         long cart_id FK
         long product_id FK
-        long option_id FK
+        long option_id FK "REQUIRED"
         int quantity
-        long unit_price
-        long total_price
-        timestamp created_at
-        timestamp updated_at
     }
 
     ORDERS {
         long order_id PK
         long user_id FK
-        enum order_status
+        string order_status
         long coupon_id FK
-        long coupon_discount
-        long subtotal
         long final_amount
-        long version
-        timestamp created_at
-        timestamp updated_at
     }
 
     ORDER_ITEMS {
@@ -989,292 +207,290 @@ erDiagram
         long order_id FK
         long product_id FK
         long option_id FK
-        string product_name
-        string option_name
         int quantity
-        long unit_price
-        long total_price
-        timestamp created_at
-    }
-
-    SHIPPING_INFOS {
-        long shipping_id PK
-        long order_id FK UK
-        string recipient_name
-        string recipient_phone
-        string shipping_address
-        enum shipping_status
-        string external_order_id
-        timestamp created_at
-        timestamp updated_at
     }
 
     COUPONS {
         long coupon_id PK
         string coupon_name
-        text description
-        enum discount_type
-        long discount_amount
-        decimal discount_rate
-        long min_purchase_amount
-        int max_usage_per_user
-        int total_quantity
-        int remaining_quantity
-        timestamp valid_from
+        int remaining_qty
         timestamp valid_until
-        boolean is_active
         long version
-        timestamp created_at
-        timestamp updated_at
     }
 
     USER_COUPONS {
         long user_coupon_id PK
         long user_id FK
         long coupon_id FK
-        enum status
-        timestamp used_at
-        long order_id FK
-        timestamp issued_at
+        string status
     }
-
-    OUTBOX {
-        long outbox_id PK
-        long order_id FK
-        enum message_type
-        json payload
-        enum status
-        int retry_count
-        int max_retries
-        timestamp last_retry_at
-        timestamp next_retry_at
-        text error_message
-        timestamp created_at
-        timestamp updated_at
-    }
-```
-
-### 4.2 Order Processing Flow ERD
-
-```mermaid
-graph TD
-    A[User] -->|1. Place Order| B[Cart Items]
-    B -->|2. Validate Stock| C[Product Options]
-    C -->|3. Check Inventory| D{Stock Sufficient?}
-    D -->|No| E[Error: ERR-001]
-    D -->|Yes| F[4. Calculate Payment]
-    F -->|5. Validate Coupon| G{Coupon Valid?}
-    G -->|No| H[Error: ERR-003]
-    G -->|Yes/Skip| I[6. Check Balance]
-    I -->|7. Validate Balance| J{Balance Sufficient?}
-    J -->|No| K[Error: ERR-002]
-    J -->|Yes| L[8. Begin Transaction]
-    L -->|9. Deduct Stock| C
-    L -->|10. Deduct Balance| M[User Balances]
-    L -->|11. Record Coupon Usage| N[User Coupons]
-    L -->|12. Create Order| O[Orders]
-    O -->|13. Create Order Items| P[Order Items]
-    O -->|14. Create Shipping Info| Q[Shipping Infos]
-    L -->|15. Commit| R[Transaction Complete]
-    R -->|16. Queue for Transmission| S[Outbox]
-    S -->|17. Async Transmission| T[External Systems]
-    T -->|Success| U[Outbox: SENT]
-    T -->|Failure| V[Outbox: Retry]
-```
-
-### 4.3 Product & Inventory ERD
-
-```mermaid
-graph LR
-    A[Products] --> B[Product Options]
-    B -->|stock=10| C["Option: Black/M"]
-    B -->|stock=5| D["Option: White/L"]
-    B -->|stock=0| E["Option: Red/S"]
-
-    A -->|total_stock = 10+5+0=15| F[Calculate Total]
-    F -->|status| G["판매 중<br/>stock > 0"]
-
-    H[Cart Items] -->|optionId=201| C
-    I[Order Items] -->|optionId=201| C
-
-    C -->|validation| J["optionStock >= quantity"]
-    C -->|error| K["블랙 / M의<br/>재고가 부족합니다"]
-```
-
-### 4.4 Coupon System ERD
-
-```mermaid
-erDiagram
-    COUPONS ||--o{ USER_COUPONS : distributes
-    USERS ||--o{ USER_COUPONS : receives
-    ORDERS ||--o{ USER_COUPONS : uses
-
-    COUPONS {
-        long coupon_id PK
-        string coupon_name
-        enum discount_type
-        long discount_amount
-        int total_quantity
-        int remaining_quantity
-        timestamp valid_from
-        timestamp valid_until
-        long version "Optimistic Lock"
-    }
-
-    USER_COUPONS {
-        long user_coupon_id PK
-        long user_id FK
-        long coupon_id FK
-        enum status
-        timestamp issued_at
-        timestamp used_at
-        long order_id FK
-    }
-
-    ORDERS {
-        long order_id PK
-        long coupon_id FK
-        long coupon_discount
-        long final_amount
-    }
-
-    USERS {
-        long user_id PK
-        string email UK
-    }
-```
-
-### 4.5 External Integration ERD
-
-```mermaid
-graph LR
-    A[Orders] -->|complete| B[Outbox]
-    B -->|SHIPPING_REQUEST| C["Shipping System"]
-    B -->|PAYMENT_NOTIFICATION| D["Accounting System"]
-
-    B -->|status=PENDING| E[Batch Job]
-    E -->|retry every 5min| F{Transmission Success?}
-    F -->|2xx| G[status=SENT]
-    F -->|Error| H[status=FAILED]
-    H -->|next_retry_at| I["Exponential Backoff<br/>1,2,4,8,16 min"]
-    I -->|max_retries=5| J{Retry Limit?}
-    J -->|Yes| K[Stop Retrying]
-    J -->|No| E
-
-    L[Order Status] -->|Always COMPLETED| M["Independent of<br/>External Transmission"]
 ```
 
 ---
 
-## 5. Data Consistency Rules
+## 주요 제약 조건 & 카디널리티
 
-### 5.1 Product & Inventory Consistency
-
-```
-INVARIANT 1: Product Total Stock
-    products.total_stock = SUM(product_options.stock WHERE deleted_at IS NULL)
-
-    Validation: Daily check
-    Update trigger: When any option stock changes
-```
-
-```
-INVARIANT 2: Product Status
-    IF products.total_stock = 0 THEN status = '품절'
-    ELSE status = '판매 중'
-
-    Auto-update: When total_stock becomes 0 or > 0
-```
-
-```
-INVARIANT 3: Option Stock Non-negativity
-    product_options.stock >= 0 (always)
-
-    Validation: At each stock deduction
-    Enforcement: Optimistic lock with version check
-```
-
-### 5.2 Order Processing Consistency
-
-```
-INVARIANT 4: Order Atomicity
-    BEGIN TRANSACTION
-        - Stock deduction ✓
-        - Balance deduction ✓
-        - Order creation ✓
-        - Coupon usage ✓
-    COMMIT or ROLLBACK (all or nothing)
-```
-
-```
-INVARIANT 5: Coupon Single-Use
-    UNIQUE(user_id, coupon_id) in user_coupons
-
-    Enforcement: Database constraint
-    Validates: max_usage_per_user (typically 1)
-```
-
-```
-INVARIANT 6: Balance Non-negativity
-    user_balances.balance >= 0 (always)
-
-    Validation: Before deduction
-    Enforcement: Check before update
-```
+| 관계 | 카디널리티 | 제약 조건 |
+|--------------|-------------|-----------|
+| users → carts | 1:1 | UNIQUE(user_id) |
+| users → orders | 1:N | FK user_id |
+| users → user_coupons | 1:N | FK user_id |
+| carts → cart_items | 1:N | FK cart_id |
+| products → product_options | 1:N | FK product_id |
+| product_options → cart_items | 1:N | FK option_id, REQUIRED |
+| product_options → order_items | 1:N | FK option_id |
+| orders → order_items | 1:N | FK order_id |
+| orders → coupons | N:1 | FK coupon_id (nullable) |
+| coupons → user_coupons | 1:N | FK coupon_id |
+| user_coupons → orders | N:1 | FK order_id (nullable) |
 
 ---
 
-## 6. Key Indexes for Performance
+## 핵심 데이터 제약 조건
 
-### 6.1 Critical Indexes (Must Have)
+| 제약 조건 | 엔티티 | 상세 정보 |
+|-----------|--------|---------|
+| 재고 음수 금지 | product_options | stock >= 0 |
+| 옵션 필수 | cart_items | option_id NOT NULL |
+| 상품별 고유 옵션 | product_options | UNIQUE(product_id, name) |
+| 사용자별 고유 쿠폰 | user_coupons | UNIQUE(user_id, coupon_id) |
+| 사용자당 하나의 카트 | carts | UNIQUE(user_id) |
+| 총 재고 계산 | products | total_stock = SUM(option stocks) |
+| 낙관적 락 | product_options, coupons | 동시성을 위한 버전 컬럼 |
 
+---
+
+## 인덱싱 & 성능 전략 (Indexing & Performance Strategy)
+
+### 개요
+
+본 섹션은 api-specification.md에서 정의된 주요 API(특히 통계 API)의 성능 최적화를 위해 필요한 보조 인덱스 전략을 설명합니다.
+
+**성능 목표**:
+- 상품 목록 조회: < 1초 (요구사항 3.1)
+- 인기 상품 조회 (최근 3일, TOP 5): < 2초 (요구사항 2.1.3)
+- 재고 현황 조회: < 1초
+
+**인덱스 설계 원칙**:
+- PK, FK, UNIQUE 제약은 DB 자동 인덱싱으로 제외
+- 쿼리 성능 향상 목적의 보조 인덱스만 정의
+- 쓰기 성능(INSERT/UPDATE) 영향을 고려한 선택적 적용
+
+---
+
+### 주요 테이블별 인덱스 전략
+
+#### 1. **products** 테이블
+
+**핵심 쿼리**:
+- 상품 목록 조회 (페이지네이션): `SELECT * FROM products ORDER BY product_id DESC LIMIT 10`
+- 인기 상품 집계: `SELECT product_id, product_name, COUNT(*) as order_count FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY) GROUP BY oi.product_id ORDER BY order_count DESC LIMIT 5`
+
+| 인덱스명 | 컬럼 조합 | 용도 | 우선순위 |
+|---------|---------|------|---------|
+| `idx_products_status_created` | (status, created_at DESC) | 판매 중 상품 필터링 및 생성 시간 정렬 | ⭐⭐⭐ 높음 |
+| `idx_products_created` | (created_at DESC) | 최신 상품 조회 시 정렬 | ⭐⭐ 중간 |
+
+**적용 예시** (SQL):
 ```sql
--- Product queries (FRC-001)
-CREATE INDEX idx_product_status ON products(status);
-CREATE INDEX idx_product_created_at ON products(created_at);
-
--- Option lookup (FRC-002, FRC-005)
-CREATE UNIQUE INDEX idx_product_option ON product_options(product_id, name);
-CREATE INDEX idx_option_stock ON product_options(stock);
-
--- Cart operations
-CREATE UNIQUE INDEX idx_cart_user ON carts(user_id);
-CREATE INDEX idx_cart_items ON cart_items(cart_id);
-
--- Order queries (FRC-007, FRC-009)
-CREATE INDEX idx_order_user ON orders(user_id);
-CREATE INDEX idx_order_status ON orders(order_status);
-CREATE INDEX idx_order_created ON orders(created_at);
-
--- Coupon operations (FRC-008)
-CREATE INDEX idx_coupon_active ON coupons(is_active, valid_until);
-CREATE UNIQUE INDEX idx_user_coupon ON user_coupons(user_id, coupon_id);
-
--- Balance operations (FRC-004, FRC-006)
-CREATE UNIQUE INDEX idx_user_balance ON user_balances(user_id);
-
--- External transmission (FRC-010)
-CREATE INDEX idx_outbox_status ON outbox(status, created_at);
-CREATE INDEX idx_outbox_retry ON outbox(next_retry_at, status);
+CREATE INDEX idx_products_status_created ON products(status, created_at DESC);
+CREATE INDEX idx_products_created ON products(created_at DESC);
 ```
 
 ---
 
-## 7. Summary
+#### 2. **order_items** 테이블
 
-This data model supports:
-- **Option-based inventory management** (product variants with independent stock)
-- **Atomic order processing** (stock + balance + coupon in single transaction)
-- **Asynchronous external integration** (separate from order completion)
-- **Coupon management** (first-come-first-served with quantity control)
-- **Audit trails** (balance history, soft deletes, order snapshots)
-- **High concurrency** (optimistic locking, atomic updates)
-- **Performance** (denormalization, strategic indexes, caching candidates)
+**핵심 쿼리**:
+- 상품별 판매량 집계: `SELECT oi.product_id, COUNT(*) as order_count FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY) GROUP BY oi.product_id ORDER BY order_count DESC`
+- 주문 항목 조회: `SELECT * FROM order_items WHERE order_id = ?`
+
+| 인덱스명 | 컬럼 조합 | 용도 | 우선순위 |
+|---------|---------|------|---------|
+| `idx_order_items_product_created` | (product_id, order_id) | 상품별 판매량 집계 (orders.created_at 조인 시) | ⭐⭐⭐ 높음 |
+| `idx_order_items_order` | (order_id, product_id) | 주문 항목 조회 (FK 조인 최적화) | ⭐⭐⭐ 높음 |
+
+**적용 예시** (SQL):
+```sql
+CREATE INDEX idx_order_items_product_created ON order_items(product_id, order_id);
+CREATE INDEX idx_order_items_order ON order_items(order_id, product_id);
+```
+
+**주의**: FK(order_id)는 이미 자동 인덱싱되므로, 복합 인덱스는 추가 컬럼을 포함하여 커버링 인덱스 효과 제공.
 
 ---
 
-## Version History
+#### 3. **product_options** 테이블
 
-| Version | Date       | Changes |
-|---------|------------|---------|
-| 1.0 | 2025-10-28 | Initial data models with all entities, relationships, and constraints |
+**핵심 쿼리**:
+- 상품별 옵션 조회: `SELECT * FROM product_options WHERE product_id = ? ORDER BY option_id`
+- 재고 현황 조회: `SELECT * FROM product_options WHERE product_id = ?`
+
+| 인덱스명 | 컬럼 조합 | 용도 | 우선순위 |
+|---------|---------|------|---------|
+| `idx_product_options_product` | (product_id) | 상품별 옵션 조회 (FK 조인 최적화) | ⭐⭐⭐ 높음 |
+| `idx_product_options_stock` | (product_id, stock DESC) | 재고 현황 정렬 및 필터링 | ⭐⭐ 중간 |
+
+**적용 예시** (SQL):
+```sql
+CREATE INDEX idx_product_options_product ON product_options(product_id);
+CREATE INDEX idx_product_options_stock ON product_options(product_id, stock DESC);
+```
+
+**주의**: PK(option_id) 및 FK(product_id)는 이미 자동 인덱싱됨.
+
+---
+
+#### 4. **orders** 테이블
+
+**핵심 쿼리**:
+- 주문 목록 조회 (사용자별): `SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC`
+- 최근 3일 주문 집계: `SELECT order_id FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)`
+
+| 인덱스명 | 컬럼 조합 | 용도 | 우선순위 |
+|---------|---------|------|---------|
+| `idx_orders_user_created` | (user_id, created_at DESC) | 사용자별 주문 조회 및 정렬 | ⭐⭐⭐ 높음 |
+| `idx_orders_created` | (created_at DESC) | 최근 주문 집계 (통계 API) | ⭐⭐⭐ 높음 |
+
+**적용 예시** (SQL):
+```sql
+CREATE INDEX idx_orders_user_created ON orders(user_id, created_at DESC);
+CREATE INDEX idx_orders_created ON orders(created_at DESC);
+```
+
+**성능 영향**:
+- `GET /products/popular` API: 최근 3일 주문 필터링 시 Full Table Scan 방지
+- `idx_orders_created` 사용 시 expected reduction: Full Scan → Index Range Scan (500배 이상 개선 가능)
+
+---
+
+#### 5. **user_coupons** 테이블
+
+**핵심 쿼리**:
+- 사용자 쿠폰 조회: `SELECT * FROM user_coupons WHERE user_id = ? AND status = 'ACTIVE'`
+- 쿠폰 발급 가능 확인: `SELECT COUNT(*) FROM user_coupons WHERE user_id = ? AND coupon_id = ?`
+
+| 인덱스명 | 컬럼 조합 | 용도 | 우선순위 |
+|---------|---------|------|---------|
+| `idx_user_coupons_user_status` | (user_id, status) | 사용자별 쿠폰 상태 조회 | ⭐⭐⭐ 높음 |
+| `idx_user_coupons_unique_check` | (user_id, coupon_id, status) | 중복 발급 검사 및 상태 확인 | ⭐⭐ 중간 |
+
+**적용 예시** (SQL):
+```sql
+CREATE INDEX idx_user_coupons_user_status ON user_coupons(user_id, status);
+CREATE INDEX idx_user_coupons_unique_check ON user_coupons(user_id, coupon_id, status);
+```
+
+**주의**: UNIQUE(user_id, coupon_id)는 이미 정의되어 자동 인덱싱됨. 상태 필터링을 위해 복합 인덱스 추가.
+
+---
+
+### 인덱스 적용 우선순위
+
+#### **Phase 1 (필수 적용)** - 즉시 적용 권장
+```sql
+-- 통계 API 성능 최적화 (인기 상품 조회)
+CREATE INDEX idx_orders_created ON orders(created_at DESC);
+CREATE INDEX idx_order_items_product_created ON order_items(product_id, order_id);
+
+-- 기본 조회 성능
+CREATE INDEX idx_products_status_created ON products(status, created_at DESC);
+CREATE INDEX idx_orders_user_created ON orders(user_id, created_at DESC);
+CREATE INDEX idx_user_coupons_user_status ON user_coupons(user_id, status);
+```
+
+#### **Phase 2 (권장 적용)** - 부하 테스트 후 적용
+```sql
+-- 옵션별 조회 최적화
+CREATE INDEX idx_product_options_stock ON product_options(product_id, stock DESC);
+
+-- 추가 사용자 쿠폰 조회
+CREATE INDEX idx_user_coupons_unique_check ON user_coupons(user_id, coupon_id, status);
+```
+
+---
+
+### 성능 예상 개선 효과
+
+| 쿼리 | 개선 전 | 개선 후 | 예상 개선율 |
+|------|--------|--------|-----------|
+| `GET /products/popular` (3일 주문 집계) | ~2초 이상 (Full Scan) | < 200ms | **90% ↓** |
+| `GET /products/{product_id}` (옵션 포함) | ~500ms | < 100ms | **80% ↓** |
+| `GET /orders` (사용자별 주문) | ~800ms | < 150ms | **81% ↓** |
+| `GET /coupons/issued` (사용자 쿠폰) | ~600ms | < 100ms | **83% ↓** |
+
+---
+
+### 인덱스 유지보수 전략
+
+#### 정기적 모니터링
+```sql
+-- MySQL: 인덱스 사용 현황 확인
+SELECT * FROM performance_schema.table_io_waits_summary_by_index_usage
+WHERE OBJECT_SCHEMA = 'ecommerce' AND COUNT_READ > 0
+ORDER BY COUNT_READ DESC;
+
+-- 미사용 인덱스 제거
+SELECT OBJECT_SCHEMA, OBJECT_NAME, INDEX_NAME
+FROM performance_schema.table_io_waits_summary_by_index_usage
+WHERE COUNT_STAR = 0 AND INDEX_NAME != 'PRIMARY';
+```
+
+#### 인덱스 최적화 시점
+- **월 1회**: 인덱스 통계 업데이트 (ANALYZE TABLE)
+- **분기별**: 미사용 인덱스 검토 및 정리
+- **성능 이상 발생 시**: 즉시 쿼리 실행 계획 분석 (EXPLAIN)
+
+#### 쓰기 성능 모니터링
+- INSERT/UPDATE 성능 저하 시 불필요한 인덱스 재검토
+- 복합 인덱스의 컬럼 순서 최적화 검토
+
+---
+
+### 추가 성능 최적화 전략
+
+#### 1. 쿼리 최적화
+```sql
+-- ❌ 부분 최적화된 쿼리
+SELECT p.*, COUNT(o.order_id) as order_count
+FROM products p
+LEFT JOIN order_items oi ON p.product_id = oi.product_id
+LEFT JOIN orders o ON oi.order_id = o.order_id
+WHERE o.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+GROUP BY p.product_id
+ORDER BY order_count DESC LIMIT 5;
+
+-- ✅ 최적화된 쿼리 (인덱스 활용)
+SELECT p.product_id, p.product_name, COUNT(*) as order_count
+FROM products p
+INNER JOIN order_items oi ON p.product_id = oi.product_id
+INNER JOIN orders o ON oi.order_id = o.order_id
+WHERE o.created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+GROUP BY oi.product_id
+ORDER BY order_count DESC LIMIT 5;
+```
+
+#### 2. 캐싱 전략 (선택)
+- Redis 캐싱: 인기 상품 TOP 5 (5분 TTL)
+- 데이터베이스 쿼리 결과 캐시 (읽기 위주 데이터)
+
+#### 3. 파티셔닝 고려사항
+- 현재 데이터 규모에서는 불필요
+- **향후 확장 시**:
+  - orders, order_items: created_at 기준 월별 파티셔닝
+  - user_coupons: user_id 범위 파티셔닝
+
+---
+
+### 주의사항
+
+1. **트레이드오프**: 인덱스 추가 → 쓰기 성능 저하 (INSERT/UPDATE 시간 증가)
+   - Phase 1 인덱스부터 단계적 적용 권장
+
+2. **인덱스 선택도(Cardinality)**:
+   - product_options.stock은 선택도가 낮을 수 있음 (0~100 범위)
+   - 불필요 시 Phase 2에서 제거 가능
+
+3. **데이터 증가에 따른 재검토**:
+   - 월 100만+ 주문 발생 시 파티셔닝 재검토 필요
+   - 6개월마다 인덱스 효율성 분석 권장
