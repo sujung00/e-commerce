@@ -34,12 +34,20 @@
 
 **Query Parameters**:
 ```
-- page (Integer, optional, default: 0): 페이지 번호
-- size (Integer, optional, default: 10): 페이지당 항목 수
+- page (Integer, optional, default: 0): 페이지 번호 (≥ 0)
+- size (Integer, optional, default: 10): 페이지당 항목 수 (1 ≤ size ≤ 100)
 - sort (String, optional, default: "product_id,desc"): 정렬 기준
+  (product_id | product_name | price | created_at, asc|desc)
 ```
 
-**Response (200 OK)**:
+**Request Examples**:
+```
+GET /api/products?page=0&size=10&sort=product_id,desc
+GET /api/products?page=1&size=20&sort=price,asc
+GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
+```
+
+**Success Response (200 OK)**:
 ```json
 {
   "content": [
@@ -51,6 +59,15 @@
       "total_stock": 100,
       "status": "판매 중",
       "created_at": "2025-10-29T10:00:00Z"
+    },
+    {
+      "product_id": 2,
+      "product_name": "청바지",
+      "description": "고급 데님 청바지",
+      "price": 79900,
+      "total_stock": 80,
+      "status": "판매 중",
+      "created_at": "2025-10-29T10:05:00Z"
     }
   ],
   "totalElements": 50,
@@ -60,15 +77,48 @@
 }
 ```
 
+**Response Fields**:
+- `content` (Array): 상품 목록
+  - `product_id` (Long): 상품 고유 식별자 (PK)
+  - `product_name` (String): 상품명 (1~255자)
+  - `description` (String): 상품 설명 (0~1000자)
+  - `price` (Long): 상품 가격 (원 단위, ≥ 0)
+  - `total_stock` (Long): 총 재고 수량 = SUM(product_options.stock) (≥ 0)
+  - `status` (String): 판매 상태 (판매 중 | 품절 | 판매 중지)
+  - `created_at` (Timestamp): 상품 생성 시각 (ISO 8601)
+- `totalElements` (Long): 전체 상품 수
+- `totalPages` (Long): 전체 페이지 수
+- `currentPage` (Integer): 현재 페이지 번호 (0-based)
+- `size` (Integer): 페이지당 항목 수
+
 **Status Codes**:
-- `200 OK`: 요청 성공
+- `200 OK`: 상품 목록 조회 성공 (빈 목록도 200 반환)
 - `400 Bad Request`: 유효하지 않은 페이지 파라미터
 
-**Entity Relations** (data-model.md):
-- products: product_id, product_name, description, price, total_stock, status
+**Error Response (400)**:
+```json
+{
+  "error_code": "INVALID_REQUEST",
+  "error_message": "페이지 크기는 1 이상 100 이하여야 합니다",
+  "timestamp": "2025-10-29T12:45:00Z",
+  "request_id": "req-abc123def456"
+}
+```
+
+**Common Errors**:
+- `page=-1`: 음수 페이지 번호
+- `size=0`: 페이지 크기가 0
+- `size=101`: 페이지 크기 초과 (최대 100)
+- `sort=invalid_field`: 존재하지 않는 정렬 필드
+
+**Entity Relations** (data-models.md):
+- products: product_id(PK), product_name, description, price, total_stock, status, created_at
+
+**Sequence Diagram** (sequence-diagrams.md): N/A (직접 조회)
 
 **Performance** (요구사항 3.1):
 - 응답 시간: 평균 < 1초
+- 인덱싱: created_at DESC, product_id DESC
 
 ---
 
@@ -80,10 +130,10 @@
 
 **Path Parameters**:
 ```
-- product_id (Long, required): 상품 ID
+- product_id (Long, required): 상품 고유 식별자 (> 0)
 ```
 
-**Response (200 OK)**:
+**Success Response (200 OK)**:
 ```json
 {
   "product_id": 1,
@@ -104,27 +154,75 @@
       "name": "블랙/L",
       "stock": 25,
       "version": 5
+    },
+    {
+      "option_id": 103,
+      "name": "화이트/M",
+      "stock": 45,
+      "version": 3
     }
   ],
   "created_at": "2025-10-29T10:00:00Z"
 }
 ```
 
-**Status Codes**:
-- `200 OK`: 요청 성공
-- `404 Not Found`: 상품을 찾을 수 없음
+**Response Fields**:
+- `product_id` (Long): 상품 고유 식별자 (PK)
+- `product_name` (String): 상품명 (1~255자)
+- `description` (String): 상품 설명 (0~1000자)
+- `price` (Long): 상품 단가 (원 단위, ≥ 0)
+- `total_stock` (Long): 총 재고 수량 = SUM(product_options.stock) (≥ 0)
+- `status` (String): 판매 상태 (판매 중 | 품절 | 판매 중지)
+- `options` (Array): 상품 옵션 목록
+  - `option_id` (Long): 옵션 고유 식별자 (PK)
+  - `name` (String): 옵션 이름 (예: "검정/M", "파랑/32") (1~100자)
+  - `stock` (Integer): 현재 옵션별 재고 (≥ 0)
+  - `version` (Long): 낙관적 락 버전 (동시성 제어용, ≥ 0)
+- `created_at` (Timestamp): 상품 생성 시각 (ISO 8601)
 
-**Entity Relations** (data-model.md):
-- products: product_id, product_name, description, price, total_stock, status
-- product_options: option_id, name, stock, version
+**Status Codes**:
+- `200 OK`: 상품 조회 성공
+- `400 Bad Request`: 유효하지 않은 product_id (음수 또는 0)
+- `404 Not Found`: 상품을 찾을 수 없음 (존재하지 않는 product_id)
+
+**Error Response (404)**:
+```json
+{
+  "error_code": "PRODUCT_NOT_FOUND",
+  "error_message": "상품을 찾을 수 없습니다 (ID: 999)",
+  "timestamp": "2025-10-29T12:45:00Z",
+  "request_id": "req-abc123def456"
+}
+```
+
+**Error Response (400)**:
+```json
+{
+  "error_code": "INVALID_REQUEST",
+  "error_message": "product_id는 양수여야 합니다",
+  "timestamp": "2025-10-29T12:45:00Z",
+  "request_id": "req-abc123def456"
+}
+```
+
+**Entity Relations** (data-models.md):
+- products: product_id(PK), product_name, description, price, total_stock, status, created_at
+- product_options: option_id(PK), product_id(FK), name, stock, version
+
+**Sequence Diagram** (sequence-diagrams.md): "1. 상품 조회 흐름"
 
 **Business Rules** (BR-02, BR-04-2):
-- total_stock = SUM(product_options.stock)
-- 옵션별 재고는 음수가 될 수 없음
+- total_stock = SUM(product_options.stock) (계산된 필드)
+- 옵션별 재고는 음수가 될 수 없음 (stock ≥ 0)
+- 모든 옵션의 stock이 0이면 status는 "품절"로 변경
+
+**Performance** (요구사항 3.1):
+- 응답 시간: < 1초
+- 인덱싱: product_id (PK), product_options.product_id (FK)
 
 ---
 
-### 1.3 인기 상품 조회 (TOP 5)
+### 1.3 인기 상품 조회 (TOP 5, 최근 3일)
 
 **Endpoint**: `GET /products/popular`
 
@@ -132,7 +230,7 @@
 
 **Query Parameters**: 없음
 
-**Response (200 OK)**:
+**Success Response (200 OK)**:
 ```json
 {
   "products": [
@@ -144,16 +242,42 @@
       "status": "판매 중",
       "order_count_3days": 150,
       "rank": 1
+    },
+    {
+      "product_id": 5,
+      "product_name": "슬리퍼",
+      "price": 19900,
+      "total_stock": 200,
+      "status": "판매 중",
+      "order_count_3days": 120,
+      "rank": 2
     }
   ]
 }
 ```
 
+**Response Fields**:
+- `products` (Array): 인기 상품 목록 (최대 5개)
+  - `product_id` (Long): 상품 고유 식별자
+  - `product_name` (String): 상품명
+  - `price` (Long): 상품 가격 (원 단위)
+  - `total_stock` (Long): 현재 재고 수량
+  - `status` (String): 판매 상태 (판매 중 | 품절 | 판매 중지)
+  - `order_count_3days` (Long): 최근 3일간 판매 수량 (순위 기준)
+  - `rank` (Integer): 순위 (1~5)
+
 **Status Codes**:
-- `200 OK`: 요청 성공
+- `200 OK`: 인기 상품 조회 성공 (빈 결과도 200 반환)
+
+**Business Rules** (요구사항 2.1.3):
+- **집계 기간**: 현재 기준 최근 3일 (NOW() - 3days)
+- **순위 기준**: order_count_3days (내림차순, 판매 수량 많은 순)
+- **결과 제한**: 상위 5개만 반환
+- **재고 포함**: 품절 상품도 포함하여 조회
 
 **Performance** (요구사항 3.1):
 - 응답 시간: < 2초
+- 캐싱: 1시간 TTL (실시간 집계 부담 경감)
 
 ---
 
@@ -167,13 +291,13 @@
 
 **Request Body**: 없음
 
-**Response (200 OK)**:
+**Success Response (200 OK)**:
 ```json
 {
   "cart_id": 1,
   "user_id": 100,
-  "total_items": 2,
-  "total_price": 89700,
+  "total_items": 3,
+  "total_price": 109700,
   "items": [
     {
       "cart_item_id": 1001,
@@ -184,20 +308,52 @@
       "quantity": 2,
       "unit_price": 29900,
       "subtotal": 59800
+    },
+    {
+      "cart_item_id": 1002,
+      "product_id": 5,
+      "product_name": "슬리퍼",
+      "option_id": 501,
+      "option_name": "검정/260mm",
+      "quantity": 1,
+      "unit_price": 19900,
+      "subtotal": 19900
     }
   ],
   "updated_at": "2025-10-29T12:30:00Z"
 }
 ```
 
+**Response Fields**:
+- `cart_id` (Long): 장바구니 고유 식별자 (사용자별 1:1, PK)
+- `user_id` (Long): 사용자 고유 식별자 (FK)
+- `total_items` (Integer): 장바구니 내 총 아이템 수 (≥ 0)
+- `total_price` (Long): 장바구니 총 금액 = SUM(cart_items.subtotal) (원 단위, ≥ 0)
+- `items` (Array): 장바구니 아이템 목록 (최대 1000개)
+  - `cart_item_id` (Long): 장바구니 아이템 고유 식별자 (PK)
+  - `product_id` (Long): 상품 고유 식별자 (FK)
+  - `product_name` (String): 상품명 (스냅샷, 1~255자)
+  - `option_id` (Long): 옵션 고유 식별자 (FK, NOT NULL)
+  - `option_name` (String): 옵션명 (스냅샷, 예: "검정/M", "파랑/32")
+  - `quantity` (Integer): 수량 (1 ≤ qty ≤ 1000)
+  - `unit_price` (Long): 단가 (추가 시점의 상품 가격, 원 단위)
+  - `subtotal` (Long): 소계 = unit_price * quantity (원 단위, 계산 필드)
+- `updated_at` (Timestamp): 장바구니 마지막 수정 시각 (ISO 8601)
+
 **Status Codes**:
-- `200 OK`: 요청 성공
+- `200 OK`: 장바구니 조회 성공 (빈 장바구니도 200)
 
-**Entity Relations** (data-model.md):
-- carts (1:1 with users)
-- cart_items (1:N with carts)
+**Entity Relations** (data-models.md):
+- carts: cart_id(PK), user_id(FK, UNIQUE), total_items, total_price, updated_at
+- cart_items: cart_item_id(PK), cart_id(FK), product_id(FK), option_id(FK, NOT NULL), quantity, unit_price, subtotal
 
-**Sequence Diagram**: sequence-diagrams-ko.md "2. 장바구니 담기 흐름"
+**Sequence Diagram** (sequence-diagrams.md): "2. 장바구니 담기 흐름"
+
+**Business Rules** (요구사항 2.2.1):
+- 사용자당 1개의 장바구니만 존재 (1:1 관계)
+- 재고 차감 없음 (주문 시점에만 차감)
+- option_id는 필수 (NOT NULL)
+- subtotal은 조회 시 실시간 계산
 
 ---
 
@@ -216,16 +372,12 @@
 }
 ```
 
-**Request Schema**:
-```
-{
-  "product_id": Long (required, > 0),
-  "option_id": Long (required, > 0),
-  "quantity": Integer (required, 0 < qty ≤ 1000)
-}
-```
+**Request Fields**:
+- `product_id` (Long, required): 상품 고유 식별자 (> 0)
+- `option_id` (Long, required): 옵션 고유 식별자 (> 0, NOT NULL)
+- `quantity` (Integer, required): 수량 (1 ≤ qty ≤ 1000)
 
-**Response (201 Created)**:
+**Success Response (201 Created)**:
 ```json
 {
   "cart_item_id": 1001,
@@ -241,19 +393,65 @@
 }
 ```
 
+**Response Fields**:
+- `cart_item_id` (Long): 장바구니 아이템 고유 식별자 (PK)
+- `cart_id` (Long): 장바구니 ID (사용자별 1:1)
+- `product_id` (Long): 상품 고유 식별자
+- `product_name` (String): 상품명 (스냅샷)
+- `option_id` (Long): 옵션 고유 식별자
+- `option_name` (String): 옵션명 (스냅샷)
+- `quantity` (Integer): 수량
+- `unit_price` (Long): 추가 시점의 상품 단가 (원 단위)
+- `subtotal` (Long): 소계 = unit_price * quantity (원 단위)
+- `created_at` (Timestamp): 아이템 추가 시각 (ISO 8601)
+
 **Status Codes**:
-- `201 Created`: 아이템 추가 성공
-- `400 Bad Request`: 유효하지 않은 파라미터
+- `201 Created`: 장바구니 아이템 추가 성공
+- `400 Bad Request`: 유효하지 않은 요청 파라미터
 - `404 Not Found`: 상품 또는 옵션을 찾을 수 없음
 
-**Entity Relations** (data-model.md):
-- cart_items: cart_id, product_id, option_id (REQUIRED), quantity, unit_price
+**Error Response (400)**:
+```json
+{
+  "error_code": "INVALID_REQUEST",
+  "error_message": "수량은 1 이상 1000 이하여야 합니다",
+  "timestamp": "2025-10-29T12:45:00Z",
+  "request_id": "req-abc123def456"
+}
+```
 
-**Business Rules** (BR-03):
+**Error Response (404)**:
+```json
+{
+  "error_code": "PRODUCT_NOT_FOUND",
+  "error_message": "상품을 찾을 수 없습니다 (ID: 999)",
+  "timestamp": "2025-10-29T12:45:00Z",
+  "request_id": "req-abc123def456"
+}
+```
+
+**Common Errors**:
+- `quantity=0`: 수량이 0 (최소 1 필요)
+- `quantity=1001`: 수량 초과 (최대 1000)
+- `product_id=null`: product_id 누락
+- `option_id` 존재하지 않음: 유효하지 않은 옵션
+
+**Entity Relations** (data-models.md):
+- carts: cart_id(PK), user_id(FK, UNIQUE)
+- cart_items: cart_item_id(PK), cart_id(FK), product_id(FK), option_id(FK, NOT NULL), quantity, unit_price, subtotal
+- products: product_id(PK), product_name, price
+- product_options: option_id(PK), product_id(FK), name, stock
+
+**Business Rules** (요구사항 2.2.1, BR-03):
 - 장바구니 추가 단계에서는 재고 차감 없음
 - option_id는 필수 (NOT NULL)
+- 가격은 추가 시점의 상품 가격으로 스냅샷 저장
+- 동일한 상품-옵션 조합을 다시 추가하면 기존 아이템의 수량 증가 처리 가능
 
-**Sequence Diagram**: sequence-diagrams-ko.md "2. 장바구니 담기 흐름"
+**Sequence Diagram** (sequence-diagrams.md): "2. 장바구니 담기 흐름"
+
+**Performance** (요구사항 3.1):
+- 응답 시간: < 1초
 
 ---
 

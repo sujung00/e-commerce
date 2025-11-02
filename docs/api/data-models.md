@@ -2,23 +2,29 @@
 
 ## 개요
 
-데이터 모델은 옵션 기반 재고를 갖춘 상품 카탈로그 관리, 쇼핑 카트 기능, 원자적 거래가 있는 주문 처리, 쿠폰 기반 할인을 지원합니다. 핵심 설계: 재고는 상품 옵션별로 추적되고, 카트는 재고에 영향을 주지 않으며, 주문은 원자적입니다 (재고 + 잔액 + 쿠폰).
+데이터 모델은 옵션 기반 재고를 갖춘 상품 카탈로그 관리, 쇼핑 카트 기능, 원자적 거래가 있는 주문 처리, 쿠폰 기반 할인을 지원합니다.
+핵심 설계:
+- 재고는 상품 옵션별로 추적되고 (option_id 기준)
+- 카트는 재고에 영향을 주지 않으며
+- 주문은 원자적 거래로 보장됨 (재고 + 잔액 + 쿠폰 + 외부 전송)
+- 외부 시스템 연동은 Outbox 패턴으로 신뢰성 확보
 
 ---
 
 ## 엔티티 요약
 
-| 엔티티 | 목적 |
-|--------|---------|
-| **users** | 잔액이 있는 사용자 계정 |
-| **products** | 상품 카탈로그 |
-| **product_options** | 독립적인 재고가 있는 상품 변형 |
-| **carts** | 사용자별 쇼핑 카트 |
-| **cart_items** | 카트 라인 항목 |
-| **orders** | 완료된 주문 |
-| **order_items** | 주문 라인 항목 |
-| **coupons** | 할인 쿠폰 |
-| **user_coupons** | 쿠폰 발급 및 사용 |
+| 엔티티 | 목적 | 관련 시퀀스 |
+|--------|---------|-----------|
+| **users** | 잔액이 있는 사용자 계정 | 3, 4, 7 |
+| **products** | 상품 카탈로그 | 1, 2, 3 |
+| **product_options** | 독립적인 재고가 있는 상품 변형 (낙관적 락) | 1, 2, 3, 4 |
+| **carts** | 사용자별 쇼핑 카트 (1:1) | 2 |
+| **cart_items** | 카트 라인 항목 (옵션 필수) | 2 |
+| **orders** | 주문 (COMPLETED/PENDING/FAILED) | 3, 6, 7 |
+| **order_items** | 주문 라인 항목 (스냅샷 포함) | 3, 6, 7 |
+| **coupons** | 할인 쿠폰 (FIXED_AMOUNT or PERCENTAGE) | 3, 5, 7 |
+| **user_coupons** | 쿠폰 발급 및 사용 (ACTIVE/USED/EXPIRED) | 5, 7 |
+| **outbox** | 외부 시스템 전송 메시지 큐 (비동기) | 3, 8 |
 
 ---
 
@@ -77,6 +83,7 @@ product_id      : Long (FK → products)
 option_id       : Long (FK → product_options, REQUIRED)
 quantity        : Integer
 unit_price      : Long
+subtotal        : Long (unit_price * quantity)
 created_at      : Timestamp
 updated_at      : Timestamp
 ```
@@ -100,11 +107,26 @@ order_item_id   : Long (PK)
 order_id        : Long (FK → orders)
 product_id      : Long (FK → products)
 option_id       : Long (FK → product_options)
-product_name    : String (snapshot)
-option_name     : String (snapshot)
+product_name    : String (snapshot - 상품명 감사 추적)
+option_name     : String (snapshot - 옵션명 감사 추적)
 quantity        : Integer
 unit_price      : Long
+subtotal        : Long (unit_price * quantity)
 created_at      : Timestamp
+```
+
+### outbox
+```
+message_id      : Long (PK)
+order_id        : Long (FK → orders, NOT NULL)
+message_type    : String (SHIPPING_REQUEST | PAYMENT_NOTIFICATION | ...)
+status          : String (PENDING | SENT | FAILED)
+payload         : JSON (전송할 데이터)
+retry_count     : Integer (재시도 횟수)
+last_attempt    : Timestamp (nullable - 마지막 시도 시간)
+sent_at         : Timestamp (nullable - 전송 완료 시간)
+created_at      : Timestamp
+updated_at      : Timestamp
 ```
 
 ### coupons
@@ -156,6 +178,7 @@ erDiagram
     ORDERS ||--o{ ORDER_ITEMS : contains
     ORDERS }o--|| COUPONS : applies
     ORDERS ||--o{ USER_COUPONS : uses
+    ORDERS ||--o{ OUTBOX : generates
 
     COUPONS ||--o{ USER_COUPONS : distributes
 
@@ -230,33 +253,36 @@ erDiagram
 
 ## 주요 제약 조건 & 카디널리티
 
-| 관계 | 카디널리티 | 제약 조건 |
-|--------------|-------------|-----------|
-| users → carts | 1:1 | UNIQUE(user_id) |
-| users → orders | 1:N | FK user_id |
-| users → user_coupons | 1:N | FK user_id |
-| carts → cart_items | 1:N | FK cart_id |
-| products → product_options | 1:N | FK product_id |
-| product_options → cart_items | 1:N | FK option_id, REQUIRED |
-| product_options → order_items | 1:N | FK option_id |
-| orders → order_items | 1:N | FK order_id |
-| orders → coupons | N:1 | FK coupon_id (nullable) |
-| coupons → user_coupons | 1:N | FK coupon_id |
-| user_coupons → orders | N:1 | FK order_id (nullable) |
+| 관계 | 카디널리티 | 제약 조건 | 설명 |
+|--------------|-------------|-----------|------|
+| users → carts | 1:1 | UNIQUE(user_id) | 사용자당 하나의 카트 |
+| users → orders | 1:N | FK user_id | 사용자는 여러 주문 가능 |
+| users → user_coupons | 1:N | FK user_id | 사용자는 여러 쿠폰 보유 가능 |
+| carts → cart_items | 1:N | FK cart_id | 카트는 여러 항목 포함 |
+| products → product_options | 1:N | FK product_id | 상품은 여러 옵션 보유 |
+| product_options → cart_items | 1:N | FK option_id, REQUIRED | 옵션은 필수 (NOT NULL) |
+| product_options → order_items | 1:N | FK option_id | 옵션별 주문 항목 추적 |
+| orders → order_items | 1:N | FK order_id | 주문은 여러 항목 포함 |
+| orders → coupons | N:1 | FK coupon_id (nullable) | 주문은 쿠폰 선택적 적용 |
+| orders → outbox | 1:N | FK order_id | 주문당 여러 외부전송 메시지 |
+| coupons → user_coupons | 1:N | FK coupon_id | 쿠폰은 여러 사용자에게 발급 |
+| user_coupons → orders | N:1 | FK order_id (nullable) | 쿠폰 사용 시 주문 기록 |
 
 ---
 
 ## 핵심 데이터 제약 조건
 
-| 제약 조건 | 엔티티 | 상세 정보 |
-|-----------|--------|---------|
-| 재고 음수 금지 | product_options | stock >= 0 |
-| 옵션 필수 | cart_items | option_id NOT NULL |
-| 상품별 고유 옵션 | product_options | UNIQUE(product_id, name) |
-| 사용자별 고유 쿠폰 | user_coupons | UNIQUE(user_id, coupon_id) |
-| 사용자당 하나의 카트 | carts | UNIQUE(user_id) |
-| 총 재고 계산 | products | total_stock = SUM(option stocks) |
-| 낙관적 락 | product_options, coupons | 동시성을 위한 버전 컬럼 |
+| 제약 조건 | 엔티티 | 상세 정보 | 목적 |
+|-----------|--------|---------|------|
+| 재고 음수 금지 | product_options | stock >= 0 | 음수 재고 방지 |
+| 옵션 필수 | cart_items | option_id NOT NULL | 옵션 선택 강제 |
+| 상품별 고유 옵션 | product_options | UNIQUE(product_id, name) | 중복 옵션 방지 |
+| 사용자별 고유 쿠폰 | user_coupons | UNIQUE(user_id, coupon_id) | 중복 발급 방지 (1인 1매) |
+| 사용자당 하나의 카트 | carts | UNIQUE(user_id) | 사용자마다 단일 카트 |
+| 총 재고 계산 | products | total_stock = SUM(option stocks) | 데이터 일관성 유지 |
+| 낙관적 락 | product_options, coupons | version 필드 사용 | 동시성 제어 (Race Condition 방지) |
+| Outbox 패턴 | outbox, orders | FK order_id NOT NULL | 외부 전송 신뢰성 보장 |
+| 재시도 전략 | outbox | retry_count, last_attempt, status | 외부 전송 실패 시 자동 재시도 |
 
 ---
 
@@ -494,3 +520,49 @@ ORDER BY order_count DESC LIMIT 5;
 3. **데이터 증가에 따른 재검토**:
    - 월 100만+ 주문 발생 시 파티셔닝 재검토 필요
    - 6개월마다 인덱스 효율성 분석 권장
+
+---
+
+## 시퀀스 다이어그램과의 동기화
+
+본 데이터 모델은 sequence-diagrams.md의 10가지 비즈니스 흐름과 완벽하게 동기화되어 있습니다:
+
+| 시퀀스 | 설명 | 관련 엔티티 | 핵심 로직 |
+|--------|------|-----------|---------|
+| **1. 상품 조회** | 사용자가 상품과 옵션 조회 | products, product_options | 옵션별 재고 조회, 캐싱 고려 |
+| **2. 장바구니** | 옵션과 수량 선택해 카트에 추가 | carts, cart_items, product_options | 옵션 검증, 재고 영향 X |
+| **3. 주문 생성** | 재고 확인 → 원자적 거래 → Outbox | orders, order_items, product_options, users, coupons, outbox | 3단계: 검증 → 원자적 거래 → 비동기 전송 |
+| **4. 동시 주문** | 2개 주문이 1개 재고를 놓고 경합 | product_options (version field) | 낙관적 락으로 race condition 방지 |
+| **5. 쿠폰 발급** | 선착순 발급, 중복 방지 | coupons, user_coupons | 비관적 락, 원자적 감소, UNIQUE 제약 |
+| **6. 주문 조회** | 사용자가 과거 주문 조회 | orders, order_items, products | 스냅샷으로 과거 상품명 조회 가능 |
+| **7. 쿠폰 적용 주문** | 할인액 계산 후 결제 | orders, order_items, user_coupons, coupons | 할인액 = discount_type에 따라 계산 |
+| **8. 외부 전송** | 주문 후 배송 시스템 호출 (비동기) | outbox, orders | 재시도 전략: 지수 백오프, 최대 5회 |
+| **9. 데이터 일관성** | 일일 배치로 재고 검증 | products, product_options | total_stock = SUM(option.stock) 검증 |
+| **10. 에러 처리** | ERR-001~004 상황별 대응 | orders, product_options, users, coupons | 트랜잭션 ROLLBACK으로 모든 변경 취소 |
+
+### 상태(Status) 필드 정의
+
+| 엔티티 | 필드 | 가능한 값 | 상태 전이 |
+|--------|------|----------|---------|
+| **orders** | order_status | COMPLETED, PENDING, FAILED | - → PENDING → COMPLETED (or FAILED on rollback) |
+| **user_coupons** | status | ACTIVE, USED, EXPIRED | ACTIVE → USED (사용 시) / ACTIVE → EXPIRED (만료 시) |
+| **outbox** | status | PENDING, SENT, FAILED | PENDING → SENT (전송 성공) / PENDING → FAILED (5회 재시도 후) |
+| **products** | status | 판매 중, 품절 | 판매 중 → 품절 (모든 옵션 stock=0) / 품절 → 판매 중 (재입고 시) |
+
+### 버전 필드 (동시성 제어)
+
+| 엔티티 | 필드 | 용도 | 증가 시점 |
+|--------|------|------|---------|
+| **product_options** | version | Optimistic Lock | 주문 시 재고 차감 시 +1 |
+| **coupons** | version | Optimistic Lock | 쿠폰 발급 시 remaining_qty 감소 시 +1 |
+
+### 계산 필드 (Derived/Computed)
+
+| 엔티티 | 필드 | 계산식 | 관리 방식 |
+|--------|------|--------|---------|
+| **products** | total_stock | SUM(product_options.stock) | 일일 배치로 검증, 불일치 시 자동 수정 |
+| **carts** | total_items | COUNT(cart_items) | 카트에 아이템 추가/제거 시 갱신 |
+| **carts** | total_price | SUM(cart_items.subtotal) | 카트에 아이템 추가/제거 시 갱신 |
+| **cart_items** | subtotal | quantity * unit_price | 추가 시 계산 |
+| **orders** | final_amount | subtotal - coupon_discount | 주문 생성 시 계산 |
+| **order_items** | subtotal | quantity * unit_price | 주문 생성 시 계산 |
