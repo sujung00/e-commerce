@@ -1,0 +1,11 @@
+{
+  "/products/:product_id": "/products?product_id=:product_id",
+  "/carts/:cart_id": "/carts?cart_id=:cart_id",
+  "/orders/:order_id": "/orders?order_id=:order_id",
+  "/coupons/:coupon_id": "/coupons?coupon_id=:coupon_id",
+  "/users/:user_id": "/users?user_id=:user_id",
+  "/product_options/:option_id": "/product_options?option_id=:option_id",
+  "/cart_items/:cart_item_id": "/cart_items?cart_item_id=:cart_item_id",
+  "/order_items/:order_item_id": "/order_items?order_item_id=:order_item_id",
+  "/user_coupons/:user_coupon_id": "/user_coupons?user_coupon_id=:user_coupon_id"
+}

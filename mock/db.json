@@ -1,0 +1,410 @@
+{
+  "products": [
+    {
+      "product_id": 1,
+      "product_name": "티셔츠",
+      "description": "100% 면 티셔츠",
+      "price": 29900,
+      "total_stock": 100,
+      "status": "판매 중",
+      "created_at": "2025-10-29T10:00:00Z"
+    },
+    {
+      "product_id": 2,
+      "product_name": "청바지",
+      "description": "고급 데님 청바지",
+      "price": 79900,
+      "total_stock": 80,
+      "status": "판매 중",
+      "created_at": "2025-10-29T10:05:00Z"
+    },
+    {
+      "product_id": 3,
+      "product_name": "후드집업",
+      "description": "편한 코튼 후드집업",
+      "price": 59900,
+      "total_stock": 60,
+      "status": "판매 중",
+      "created_at": "2025-10-29T10:10:00Z"
+    },
+    {
+      "product_id": 4,
+      "product_name": "바지",
+      "description": "캐주얼 바지",
+      "price": 49900,
+      "total_stock": 120,
+      "status": "판매 중",
+      "created_at": "2025-10-29T10:15:00Z"
+    },
+    {
+      "product_id": 5,
+      "product_name": "슬리퍼",
+      "description": "편한 실내용 슬리퍼",
+      "price": 19900,
+      "total_stock": 200,
+      "status": "판매 중",
+      "created_at": "2025-10-29T10:20:00Z"
+    }
+  ],
+  "product_options": [
+    {
+      "option_id": 101,
+      "product_id": 1,
+      "name": "블랙/M",
+      "stock": 30,
+      "version": 5
+    },
+    {
+      "option_id": 102,
+      "product_id": 1,
+      "name": "블랙/L",
+      "stock": 25,
+      "version": 5
+    },
+    {
+      "option_id": 103,
+      "product_id": 1,
+      "name": "화이트/M",
+      "stock": 45,
+      "version": 3
+    },
+    {
+      "option_id": 201,
+      "product_id": 2,
+      "name": "청색/32",
+      "stock": 30,
+      "version": 4
+    },
+    {
+      "option_id": 202,
+      "product_id": 2,
+      "name": "청색/34",
+      "stock": 25,
+      "version": 4,
+      "id": "95f1"
+    },
+    {
+      "option_id": 203,
+      "product_id": 2,
+      "name": "검정색/32",
+      "stock": 25,
+      "version": 2
+    },
+    {
+      "option_id": 301,
+      "product_id": 3,
+      "name": "검정/M",
+      "stock": 20,
+      "version": 3
+    },
+    {
+      "option_id": 302,
+      "product_id": 3,
+      "name": "검정/L",
+      "stock": 20,
+      "version": 3
+    },
+    {
+      "option_id": 303,
+      "product_id": 3,
+      "name": "회색/M",
+      "stock": 20,
+      "version": 2
+    },
+    {
+      "option_id": 401,
+      "product_id": 4,
+      "name": "검정/M",
+      "stock": 40,
+      "version": 2
+    },
+    {
+      "option_id": 402,
+      "product_id": 4,
+      "name": "검정/L",
+      "stock": 40,
+      "version": 2
+    },
+    {
+      "option_id": 403,
+      "product_id": 4,
+      "name": "베이지/M",
+      "stock": 40,
+      "version": 1
+    },
+    {
+      "option_id": 501,
+      "product_id": 5,
+      "name": "검정/260mm",
+      "stock": 100,
+      "version": 2
+    },
+    {
+      "option_id": 502,
+      "product_id": 5,
+      "name": "흰색/260mm",
+      "stock": 100,
+      "version": 2
+    }
+  ],
+  "users": [
+    {
+      "user_id": 100,
+      "username": "john_doe",
+      "email": "john@example.com",
+      "balance": 500000,
+      "created_at": "2025-01-15T08:00:00Z"
+    },
+    {
+      "user_id": 101,
+      "username": "jane_smith",
+      "email": "jane@example.com",
+      "balance": 300000,
+      "created_at": "2025-02-20T09:00:00Z"
+    }
+  ],
+  "carts": [
+    {
+      "cart_id": 1,
+      "user_id": 100,
+      "total_items": 2,
+      "total_price": 89700,
+      "updated_at": "2025-10-29T12:30:00Z"
+    },
+    {
+      "cart_id": 2,
+      "user_id": 101,
+      "total_items": 1,
+      "total_price": 29900,
+      "updated_at": "2025-10-29T12:35:00Z"
+    }
+  ],
+  "cart_items": [
+    {
+      "cart_item_id": 1002,
+      "cart_id": 1,
+      "product_id": 5,
+      "product_name": "슬리퍼",
+      "option_id": 501,
+      "option_name": "검정/260mm",
+      "quantity": 1,
+      "unit_price": 19900,
+      "subtotal": 19900
+    },
+    {
+      "cart_item_id": 2001,
+      "cart_id": 2,
+      "product_id": 1,
+      "product_name": "티셔츠",
+      "option_id": 103,
+      "option_name": "화이트/M",
+      "quantity": 1,
+      "unit_price": 29900,
+      "subtotal": 29900
+    },
+    {
+      "id": "ce4a",
+      "cart_id": 1,
+      "product_id": 4,
+      "product_name": "바지",
+      "option_id": 401,
+      "option_name": "검정/M",
+      "quantity": 1,
+      "unit_price": 49900,
+      "subtotal": 49900
+    }
+  ],
+  "orders": [
+    {
+      "order_id": 5001,
+      "user_id": 100,
+      "order_status": "COMPLETED",
+      "subtotal": 139700,
+      "coupon_discount": 0,
+      "coupon_id": null,
+      "final_amount": 139700,
+      "created_at": "2025-10-29T12:45:00Z"
+    },
+    {
+      "order_id": 5002,
+      "user_id": 100,
+      "order_status": "COMPLETED",
+      "subtotal": 99800,
+      "coupon_discount": 9980,
+      "coupon_id": 1,
+      "final_amount": 89820,
+      "created_at": "2025-10-28T14:20:00Z"
+    },
+    {
+      "order_id": 5003,
+      "user_id": 101,
+      "order_status": "COMPLETED",
+      "subtotal": 59900,
+      "coupon_discount": 0,
+      "coupon_id": null,
+      "final_amount": 59900,
+      "created_at": "2025-10-27T10:15:00Z"
+    },
+    {
+      "id": "e054",
+      "user_id": 102,
+      "order_status": "PENDING",
+      "subtotal": 25000,
+      "coupon_discount": 0,
+      "coupon_id": null,
+      "final_amount": 25000,
+      "created_at": "2025-10-31T10:00:00Z"
+    }
+  ],
+  "order_items": [
+    {
+      "order_item_id": 5001,
+      "order_id": 5001,
+      "product_id": 1,
+      "product_name": "티셔츠",
+      "option_id": 101,
+      "option_name": "블랙/M",
+      "quantity": 2,
+      "unit_price": 29900
+    },
+    {
+      "order_item_id": 5002,
+      "order_id": 5001,
+      "product_id": 2,
+      "product_name": "청바지",
+      "option_id": 201,
+      "option_name": "청색/32",
+      "quantity": 1,
+      "unit_price": 79900
+    },
+    {
+      "order_item_id": 5003,
+      "order_id": 5002,
+      "product_id": 3,
+      "product_name": "후드집업",
+      "option_id": 301,
+      "option_name": "검정/M",
+      "quantity": 1,
+      "unit_price": 59900
+    },
+    {
+      "order_item_id": 5004,
+      "order_id": 5002,
+      "product_id": 5,
+      "product_name": "슬리퍼",
+      "option_id": 501,
+      "option_name": "검정/260mm",
+      "quantity": 2,
+      "unit_price": 19900
+    },
+    {
+      "order_item_id": 5005,
+      "order_id": 5003,
+      "product_id": 3,
+      "product_name": "후드집업",
+      "option_id": 302,
+      "option_name": "검정/L",
+      "quantity": 1,
+      "unit_price": 59900
+    }
+  ],
+  "coupons": [
+    {
+      "coupon_id": 1,
+      "coupon_name": "10% 할인 쿠폰",
+      "description": "모든 상품 10% 할인",
+      "discount_type": "PERCENTAGE",
+      "discount_rate": 0.1,
+      "discount_amount": null,
+      "is_active": true,
+      "remaining_qty": 50,
+      "valid_from": "2025-10-29T00:00:00Z",
+      "valid_until": "2025-10-31T23:59:59Z",
+      "version": 3
+    },
+    {
+      "coupon_id": 2,
+      "coupon_name": "무료배송",
+      "description": "50,000원 이상 주문 무료배송",
+      "discount_type": "FIXED_AMOUNT",
+      "discount_amount": 5000,
+      "discount_rate": null,
+      "is_active": true,
+      "remaining_qty": 100,
+      "valid_from": "2025-10-01T00:00:00Z",
+      "valid_until": "2025-12-31T23:59:59Z",
+      "version": 2
+    },
+    {
+      "coupon_id": 3,
+      "coupon_name": "신규회원 20% 할인",
+      "description": "신규회원 20% 할인쿠폰",
+      "discount_type": "PERCENTAGE",
+      "discount_rate": 0.2,
+      "discount_amount": null,
+      "is_active": true,
+      "remaining_qty": 200,
+      "valid_from": "2025-10-15T00:00:00Z",
+      "valid_until": "2025-11-30T23:59:59Z",
+      "version": 1
+    }
+  ],
+  "user_coupons": [
+    {
+      "user_coupon_id": 2001,
+      "user_id": 100,
+      "coupon_id": 1,
+      "coupon_name": "10% 할인 쿠폰",
+      "discount_type": "PERCENTAGE",
+      "discount_rate": 0.1,
+      "discount_amount": null,
+      "status": "USED",
+      "issued_at": "2025-10-29T13:00:00Z",
+      "used_at": "2025-10-28T14:20:00Z",
+      "valid_from": "2025-10-29T00:00:00Z",
+      "valid_until": "2025-10-31T23:59:59Z"
+    },
+    {
+      "user_coupon_id": 2002,
+      "user_id": 100,
+      "coupon_id": 3,
+      "coupon_name": "신규회원 20% 할인",
+      "discount_type": "PERCENTAGE",
+      "discount_rate": 0.2,
+      "discount_amount": null,
+      "status": "ACTIVE",
+      "issued_at": "2025-10-29T13:10:00Z",
+      "used_at": null,
+      "valid_from": "2025-10-15T00:00:00Z",
+      "valid_until": "2025-11-30T23:59:59Z"
+    },
+    {
+      "user_coupon_id": 2003,
+      "user_id": 101,
+      "coupon_id": 2,
+      "coupon_name": "무료배송",
+      "discount_type": "FIXED_AMOUNT",
+      "discount_amount": 5000,
+      "discount_rate": null,
+      "status": "ACTIVE",
+      "issued_at": "2025-10-28T10:00:00Z",
+      "used_at": null,
+      "valid_from": "2025-10-01T00:00:00Z",
+      "valid_until": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "a5de",
+      "user_id": 100,
+      "coupon_id": 1,
+      "coupon_name": "10% 할인 쿠폰",
+      "discount_type": "PERCENTAGE",
+      "discount_rate": 0.1,
+      "discount_amount": null,
+      "status": "ACTIVE",
+      "issued_at": "2025-10-29T13:00:00Z",
+      "used_at": null,
+      "valid_from": "2025-10-29T00:00:00Z",
+      "valid_until": "2025-10-31T23:59:59Z"
+    }
+  ]
+}
