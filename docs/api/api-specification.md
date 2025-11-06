@@ -553,6 +553,11 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 
 **Method**: POST
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Request Body**:
 ```json
 {
@@ -683,6 +688,11 @@ COMMIT (또는 ROLLBACK on version mismatch)
 
 **Method**: GET
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Path Parameters**:
 ```
 - order_id (Long, required): 주문 ID
@@ -727,6 +737,11 @@ COMMIT (또는 ROLLBACK on version mismatch)
 **Endpoint**: `GET /orders`
 
 **Method**: GET
+
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
 
 **Query Parameters**:
 ```

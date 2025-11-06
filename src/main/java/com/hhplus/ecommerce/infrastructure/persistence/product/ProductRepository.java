@@ -225,6 +225,11 @@ public class ProductRepository implements com.hhplus.ecommerce.domain.product.Pr
                 .updatedAt(now)
                 .build();
 
+        // 상품에 옵션 할당
+        product1.getOptions().addAll(List.of(option101, option102, option103));
+        product2.getOptions().addAll(List.of(option201, option202));
+        product3.getOptions().addAll(List.of(option301, option302));
+
         // 상품 저장
         products.put(1L, product1);
         products.put(2L, product2);

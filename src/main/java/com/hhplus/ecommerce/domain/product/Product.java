@@ -3,6 +3,8 @@ package com.hhplus.ecommerce.domain.product;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Product 도메인 엔티티
@@ -23,4 +25,7 @@ public class Product {
     private String status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @Builder.Default
+    private List<ProductOption> options = new ArrayList<>();
 }
