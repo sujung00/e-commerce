@@ -2,6 +2,7 @@ package com.hhplus.ecommerce.presentation.common;
 
 import com.hhplus.ecommerce.domain.cart.CartItemNotFoundException;
 import com.hhplus.ecommerce.domain.cart.InvalidQuantityException;
+import com.hhplus.ecommerce.domain.coupon.CouponNotFoundException;
 import com.hhplus.ecommerce.domain.order.OrderNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
@@ -84,6 +85,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(CartItemNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCartItemNotFoundException(CartItemNotFoundException e) {
         ErrorResponse errorResponse = new ErrorResponse("CART_ITEM_NOT_FOUND", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    }
+
+    /**
+     * 쿠폰을 찾을 수 없는 경우 (404)
+     *
+     * API 명세:
+     * - Error Code: COUPON_NOT_FOUND
+     * - HTTP Status: 404 Not Found
+     */
+    @ExceptionHandler(CouponNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleCouponNotFoundException(CouponNotFoundException e) {
+        ErrorResponse errorResponse = new ErrorResponse(e.getErrorCode(), e.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 

@@ -15,7 +15,7 @@ import java.util.Optional;
  * OrderController - 주문 API 엔드포인트
  */
 @RestController
-@RequestMapping("/api/orders")
+@RequestMapping("/orders")
 public class OrderController {
 
     private final OrderService orderService;

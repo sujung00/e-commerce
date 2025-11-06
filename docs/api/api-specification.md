@@ -783,6 +783,12 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 
 **Method**: POST
 
+**Request Headers** (required):
+```
+X-USER-ID: Long (required) - 사용자 식별자
+Content-Type: application/json
+```
+
 **Request Body**:
 ```json
 {
@@ -792,6 +798,12 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 
 **Request Schema**:
 ```
+Headers:
+{
+  "X-USER-ID": Long (required)
+}
+
+Body:
 {
   "coupon_id": Long (required)
 }
@@ -814,37 +826,68 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 }
 ```
 
+**Response Fields**:
+- `user_coupon_id` (Long): 사용자 쿠폰 발급 ID
+- `user_id` (Long): 사용자 ID (X-USER-ID 헤더에서 추출)
+- `coupon_id` (Long): 쿠폰 ID
+- `coupon_name` (String): 쿠폰 이름
+- `discount_type` (String): 할인 타입 (FIXED_AMOUNT | PERCENTAGE)
+- `discount_amount` (Long, nullable): 고정 할인액
+- `discount_rate` (Double): 할인율
+- `status` (String): 쿠폰 상태 (ACTIVE | USED | EXPIRED)
+- `issued_at` (Timestamp): 발급 시각
+- `valid_from` (Timestamp): 유효 시작 시각
+- `valid_until` (Timestamp): 유효 종료 시각
+
 **Status Codes**:
 - `201 Created`: 쿠폰 발급 성공
-- `404 Not Found`: COUPON_NOT_FOUND
-- `400 Bad Request`: ERR-003 - "쿠폰이 모두 소진되었습니다"
-- `400 Bad Request`: ERR-003 - "쿠폰이 유효기간을 벗어났습니다"
-- `400 Bad Request`: ERR-003 - "이 쿠폰은 이미 발급받으셨습니다"
-- `400 Bad Request`: ERR-003 - "쿠폰이 비활성화되어 있습니다"
+- `404 Not Found`: COUPON_NOT_FOUND - 쿠폰을 찾을 수 없음
+- `400 Bad Request`: ERR-003 - "쿠폰이 모두 소진되었습니다" (재고 부족)
+- `400 Bad Request`: ERR-003 - "쿠폰이 유효기간을 벗어났습니다" (유효 기간 검증 실패)
+- `400 Bad Request`: ERR-003 - "이 쿠폰은 이미 발급받으셨습니다" (중복 발급 방지)
+- `400 Bad Request`: ERR-003 - "쿠폰이 비활성화되어 있습니다" (is_active=false)
 
-**발급 프로세스** (sequence-diagrams-ko.md "5. 쿠폰 발급 흐름" 참고):
+**아키텍처** (4계층):
+- **Presentation**: `CouponController.issueCoupon(userId, couponId)` - X-USER-ID 헤더에서 userId 추출
+- **Application**: `CouponService.issueCoupon(userId, couponId)` - 비즈니스 로직 및 검증
+- **Domain**: `Coupon`, `UserCoupon` 엔티티 + 예외 처리
+- **Infrastructure**: `CouponRepository`, `UserCouponRepository` - ConcurrentHashMap 기반
 
-1. **비관적 락**: SELECT coupons WHERE coupon_id=? FOR UPDATE
-2. **검증**:
-   - is_active=true (요구사항 2.3.1)
-   - valid_from <= NOW <= valid_until (요구사항 2.3.2)
-   - remaining_qty > 0 (요구사항 2.3.1)
-3. **UNIQUE 확인**: UNIQUE(user_id, coupon_id)로 중복 발급 방지
-4. **원자적 감소**: remaining_qty--, version++ (요구사항 2.3.1)
-5. **발급 기록**: INSERT user_coupons (status=ACTIVE)
+**발급 프로세스** (sequence-diagrams.md "5. 쿠폰 발급 흐름" 참고):
 
-**Entity Relations** (data-model.md):
-- coupons: coupon_id, coupon_name, discount_type, discount_amount, discount_rate, remaining_qty, version
-- user_coupons: user_coupon_id, user_id, coupon_id, status, issued_at
+```
+1. Presentation: X-USER-ID 헤더에서 userId 추출
+   ↓
+2. Application (CouponService):
+   - 비관적 락: synchronized 블록으로 동시성 제어
+   - 검증:
+     * is_active=true (요구사항 2.3.1)
+     * valid_from <= NOW <= valid_until (요구사항 2.3.2)
+     * remaining_qty > 0 (요구사항 2.3.1)
+   - UNIQUE 확인: UNIQUE(user_id, coupon_id)로 중복 발급 방지
+   - 원자적 감소: remaining_qty--, version++
+   ↓
+3. Infrastructure:
+   - CouponRepository.save(coupon) - remaining_qty 업데이트
+   - UserCouponRepository.save(userCoupon) - 발급 기록 저장
+   ↓
+4. Response: user_coupon_id, user_id, coupon_id, ...
+```
 
-**Business Rules** (BR-09, BR-10):
-- 쿠폰은 발급 가능 수량 범위 내에서만 발급
-- 선착순 발급 시 수량 초과 방지 (원자적 감소)
+**Entity Relations** (data-models.md):
+- **coupons**: coupon_id, coupon_name, discount_type, discount_amount, discount_rate, remaining_qty, version, is_active, valid_from, valid_until
+- **user_coupons**: user_coupon_id, user_id, coupon_id, status (ACTIVE/USED/EXPIRED), issued_at
 
-**Concurrency Control** (요구사항 3.2):
-- 비관적 락: SELECT ... FOR UPDATE로 동시 발급 요청 차단
+**Business Rules** (요구사항 2.3):
+- 쿠폰은 발급 가능 수량 범위 내에서만 발급 (요구사항 2.3.1)
+- 선착순 발급 시 수량 초과 방지 (요구사항 2.3.1)
+- 유효 기간 검증 (요구사항 2.3.2)
+- 중복 발급 방지 (UNIQUE constraint)
 
-**Sequence Diagram**: sequence-diagrams-ko.md "5. 쿠폰 발급 흐름"
+**Concurrency Control** (InMemory DB):
+- **동시성 제어**: ConcurrentHashMap + synchronized 블록으로 race condition 방지
+- **비관적 락 시뮬레이션**: synchronized로 같은 쿠폰의 동시 발급 요청 차단
+- **버전 관리**: version 필드로 낙관적 락 지원 (향후 DB 마이그레이션 대비)
 
 ---
 
@@ -853,6 +896,11 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 **Endpoint**: `GET /coupons/issued`
 
 **Method**: GET
+
+**Request Headers** (required):
+```
+X-USER-ID: Long (required) - 사용자 식별자
+```
 
 **Query Parameters**:
 ```
@@ -879,8 +927,32 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 }
 ```
 
+**Response Fields**:
+- `user_coupons` (Array): 사용자가 보유한 쿠폰 목록
+  - `user_coupon_id` (Long): 발급 기록 ID
+  - `coupon_id` (Long): 쿠폰 ID
+  - `coupon_name` (String): 쿠폰 이름
+  - `discount_type` (String): 할인 타입 (FIXED_AMOUNT | PERCENTAGE)
+  - `discount_rate` (Double): 할인율
+  - `status` (String): 쿠폰 상태 (ACTIVE | USED | EXPIRED)
+  - `issued_at` (Timestamp): 발급 시각
+  - `used_at` (Timestamp, nullable): 사용 시각 (status=USED일 때만 설정)
+  - `valid_from` (Timestamp): 유효 시작 시각
+  - `valid_until` (Timestamp): 유효 종료 시각
+
 **Status Codes**:
-- `200 OK`: 요청 성공
+- `200 OK`: 요청 성공 (빈 배열도 200 반환)
+
+**아키텍처** (4계층):
+- **Presentation**: `CouponController.getUserCoupons(userId, status)` - X-USER-ID 헤더에서 userId 추출
+- **Application**: `CouponService.getUserCoupons(userId, status)` - status별 필터링
+- **Domain**: `UserCoupon` 엔티티
+- **Infrastructure**: `UserCouponRepository.findByUserId(userId, status)` - ConcurrentHashMap 기반 조회
+
+**Business Logic**:
+- 사용자의 쿠폰 발급 기록을 상태별로 조회
+- status 파라미터로 필터링 (기본값: ACTIVE)
+- 현재 사용자(X-USER-ID)의 쿠폰만 조회 가능
 
 ---
 
@@ -889,6 +961,11 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 **Endpoint**: `GET /coupons`
 
 **Method**: GET
+
+**Request Headers** (optional):
+```
+X-USER-ID: Long (optional) - 사용자 식별자 (조회만 필요한 경우 생략 가능)
+```
 
 **Query Parameters**: 없음
 
@@ -920,8 +997,34 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 }
 ```
 
+**Response Fields**:
+- `coupons` (Array): 발급 가능한 쿠폰 목록 (active=true, 유효 기간 내, remaining_qty > 0)
+  - `coupon_id` (Long): 쿠폰 ID
+  - `coupon_name` (String): 쿠폰 이름
+  - `description` (String): 쿠폰 설명
+  - `discount_type` (String): 할인 타입 (FIXED_AMOUNT | PERCENTAGE)
+  - `discount_rate` (Double): 할인율 (discount_type=PERCENTAGE일 때)
+  - `discount_amount` (Long): 할인액 (discount_type=FIXED_AMOUNT일 때)
+  - `valid_from` (Timestamp): 유효 시작 시각
+  - `valid_until` (Timestamp): 유효 종료 시각
+  - `remaining_qty` (Integer): 남은 발급 가능 수량
+
 **Status Codes**:
-- `200 OK`: 요청 성공
+- `200 OK`: 요청 성공 (빈 배열도 200 반환)
+
+**아키텍처** (4계층):
+- **Presentation**: `CouponController.getAvailableCoupons()` - 사용자 정보 필요 없음 (공개 조회)
+- **Application**: `CouponService.getAvailableCoupons()` - 발급 가능 쿠폰만 필터링
+- **Domain**: `Coupon` 엔티티
+- **Infrastructure**: `CouponRepository.findAllAvailable()` - ConcurrentHashMap 기반 조회
+
+**Business Logic**:
+- 현재 발급 가능한 모든 쿠폰 조회 (필터링 조건)
+  * is_active = true
+  * valid_from <= NOW <= valid_until
+  * remaining_qty > 0
+- 사용자 로그인 없이 접근 가능 (공개 조회)
+- 사용자가 이미 발급받은 쿠폰도 표시됨 (선택지 제공)
 
 ---
 
