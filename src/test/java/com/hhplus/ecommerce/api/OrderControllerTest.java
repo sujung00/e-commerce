@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.api;
+package com.hhplus.ecommerce.presentation.product;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;

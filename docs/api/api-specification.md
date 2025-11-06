@@ -289,6 +289,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 
 **Method**: GET
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Request Body**: 없음
 
 **Success Response (200 OK)**:
@@ -362,6 +367,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 **Endpoint**: `POST /carts/items`
 
 **Method**: POST
+
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
 
 **Request Body**:
 ```json
@@ -461,6 +471,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 
 **Method**: PUT
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Path Parameters**:
 ```
 - cart_item_id (Long, required): 장바구니 아이템 ID
@@ -506,6 +521,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 **Endpoint**: `DELETE /carts/items/{cart_item_id}`
 
 **Method**: DELETE
+
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
 
 **Path Parameters**:
 ```
