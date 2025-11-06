@@ -1,18 +1,18 @@
-package com.hhplus.ecommerce.presentation;
+package com.hhplus.ecommerce.presentation.product;
 
-import com.hhplus.ecommerce.dto.ProductDetailResponse;
-import com.hhplus.ecommerce.dto.ProductListResponse;
-import com.hhplus.ecommerce.application.ProductService;
+import com.hhplus.ecommerce.presentation.product.response.ProductDetailResponse;
+import com.hhplus.ecommerce.presentation.product.response.ProductListResponse;
+import com.hhplus.ecommerce.application.product.ProductService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * ProductController - 상품 조회 API (Presentation 계층)
- * GET /api/products - 상품 목록 조회 (페이지네이션, 정렬)
- * GET /api/products/{product_id} - 상품 상세 조회 (옵션 포함)
+ * GET /products - 상품 목록 조회 (페이지네이션, 정렬)
+ * GET /products/{product_id} - 상품 상세 조회 (옵션 포함)
  */
 @RestController
-@RequestMapping("/api/products")
+@RequestMapping("/products")
 public class ProductController {
 
     private final ProductService productService;

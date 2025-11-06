@@ -1,7 +1,10 @@
-package com.hhplus.ecommerce.dto;
+package com.hhplus.ecommerce.presentation.product.response;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -9,6 +12,8 @@ import java.util.List;
  * 상품 상세 조회 (GET /products/{product_id}) 응답 DTO
  * 상품 정보와 옵션 목록을 포함
  */
+@Setter
+@Getter
 public class ProductDetailResponse {
     @JsonProperty("product_id")
     private Long productId;
@@ -44,67 +49,4 @@ public class ProductDetailResponse {
         this.createdAt = createdAt;
     }
 
-    public Long getProductId() {
-        return productId;
-    }
-
-    public void setProductId(Long productId) {
-        this.productId = productId;
-    }
-
-    public String getProductName() {
-        return productName;
-    }
-
-    public void setProductName(String productName) {
-        this.productName = productName;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public Long getPrice() {
-        return price;
-    }
-
-    public void setPrice(Long price) {
-        this.price = price;
-    }
-
-    public Integer getTotalStock() {
-        return totalStock;
-    }
-
-    public void setTotalStock(Integer totalStock) {
-        this.totalStock = totalStock;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public List<ProductOptionResponse> getOptions() {
-        return options;
-    }
-
-    public void setOptions(List<ProductOptionResponse> options) {
-        this.options = options;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
 }

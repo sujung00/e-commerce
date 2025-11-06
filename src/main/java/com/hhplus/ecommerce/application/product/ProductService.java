@@ -1,10 +1,13 @@
-package com.hhplus.ecommerce.application;
+package com.hhplus.ecommerce.application.product;
 
-import com.hhplus.ecommerce.domain.Product;
-import com.hhplus.ecommerce.domain.ProductOption;
-import com.hhplus.ecommerce.dto.*;
-import com.hhplus.ecommerce.common.exception.ProductNotFoundException;
-import com.hhplus.ecommerce.repository.ProductRepository;
+import com.hhplus.ecommerce.domain.product.Product;
+import com.hhplus.ecommerce.domain.product.ProductOption;
+import com.hhplus.ecommerce.domain.product.ProductRepository;
+import com.hhplus.ecommerce.presentation.product.response.ProductDetailResponse;
+import com.hhplus.ecommerce.presentation.product.response.ProductListResponse;
+import com.hhplus.ecommerce.presentation.product.response.ProductResponse;
+import com.hhplus.ecommerce.presentation.product.response.ProductOptionResponse;
+import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;

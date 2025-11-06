@@ -1,6 +1,6 @@
-package com.hhplus.ecommerce.application;
+package com.hhplus.ecommerce.application.product;
 
-import com.hhplus.ecommerce.dto.PopularProductListResponse;
+import com.hhplus.ecommerce.presentation.product.response.PopularProductListResponse;
 
 /**
  * PopularProductService - 인기 상품 조회 비즈니스 로직 (Application 계층)

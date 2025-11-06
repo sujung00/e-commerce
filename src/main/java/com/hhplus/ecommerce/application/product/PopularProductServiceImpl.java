@@ -1,9 +1,9 @@
-package com.hhplus.ecommerce.application;
+package com.hhplus.ecommerce.application.product;
 
-import com.hhplus.ecommerce.domain.Product;
-import com.hhplus.ecommerce.dto.PopularProductListResponse;
-import com.hhplus.ecommerce.dto.PopularProductView;
-import com.hhplus.ecommerce.repository.ProductRepository;
+import com.hhplus.ecommerce.domain.product.Product;
+import com.hhplus.ecommerce.domain.product.ProductRepository;
+import com.hhplus.ecommerce.presentation.product.response.PopularProductListResponse;
+import com.hhplus.ecommerce.presentation.product.response.PopularProductView;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;

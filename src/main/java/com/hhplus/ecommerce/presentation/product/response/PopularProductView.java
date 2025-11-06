@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.dto;
+package com.hhplus.ecommerce.presentation.product.response;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;

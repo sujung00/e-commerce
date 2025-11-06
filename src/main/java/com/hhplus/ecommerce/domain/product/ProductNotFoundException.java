@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.common.exception;
+package com.hhplus.ecommerce.domain.product;
 
 import lombok.Getter;
 
@@ -12,5 +12,4 @@ public class ProductNotFoundException extends RuntimeException {
     public ProductNotFoundException(String message) {
         super(message);
     }
-
 }

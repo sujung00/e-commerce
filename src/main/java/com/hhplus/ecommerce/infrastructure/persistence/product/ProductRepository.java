@@ -1,7 +1,7 @@
-package com.hhplus.ecommerce.repository;
+package com.hhplus.ecommerce.infrastructure.persistence.product;
 
-import com.hhplus.ecommerce.domain.Product;
-import com.hhplus.ecommerce.domain.ProductOption;
+import com.hhplus.ecommerce.domain.product.Product;
+import com.hhplus.ecommerce.domain.product.ProductOption;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -9,14 +9,14 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * ProductRepository - 인메모리 저장소 (Infrastructure 계층)
- * 상품 및 상품 옵션 데이터 접근만 담당
+ * InMemory Product Repository 구현
+ * ConcurrentHashMap 기반의 인메모리 저장소 (Infrastructure 계층)
  *
  * Note: 최근 3일 주문 수량(orderCount3Days) 조회는 별도의 데이터 소스(e.g., orders table)에서
  * 조회해야 하며, 이는 Application 계층의 PopularProductService에서 처리합니다.
  */
 @Repository
-public class ProductRepository {
+public class ProductRepository implements com.hhplus.ecommerce.domain.product.ProductRepository {
 
     // 상품 저장소
     private final Map<Long, Product> products = new HashMap<>();
@@ -151,7 +151,7 @@ public class ProductRepository {
         Product product4 = Product.builder()
                 .productId(4L)
                 .productName("후드 집업")
-                .description("따뜨한 겨울용 후드")
+                .description("따뜘한 겨울용 후드")
                 .price(49900L)
                 .totalStock(150)
                 .status("판매 중")
@@ -273,23 +273,17 @@ public class ProductRepository {
         orderCount3DaysMap.put(10L, 65L);  // 양말
     }
 
-    /**
-     * 모든 상품 조회
-     */
+    @Override
     public List<Product> findAll() {
         return new ArrayList<>(products.values());
     }
 
-    /**
-     * ID로 상품 조회
-     */
+    @Override
     public Optional<Product> findById(Long productId) {
         return Optional.ofNullable(products.get(productId));
     }
 
-    /**
-     * 상품 ID로 옵션들 조회
-     */
+    @Override
     public List<ProductOption> findOptionsByProductId(Long productId) {
         return productToOptionsMap.getOrDefault(productId, Collections.emptyList())
                 .stream()
@@ -298,31 +292,22 @@ public class ProductRepository {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 옵션 ID로 옵션 조회
-     */
+    @Override
     public Optional<ProductOption> findOptionById(Long optionId) {
         return Optional.ofNullable(productOptions.get(optionId));
     }
 
-    /**
-     * 최근 3일 주문 수량 조회
-     * Application 계층에서 인기 상품 계산 시 사용
-     */
+    @Override
     public Long getOrderCount3Days(Long productId) {
         return orderCount3DaysMap.getOrDefault(productId, 0L);
     }
 
-    /**
-     * 상품 저장
-     */
+    @Override
     public void save(Product product) {
         products.put(product.getProductId(), product);
     }
 
-    /**
-     * 옵션 저장
-     */
+    @Override
     public void saveOption(ProductOption option) {
         productOptions.put(option.getOptionId(), option);
     }

@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.domain;
+package com.hhplus.ecommerce.domain.product;
 
 /**
  * 상품 판매 상태 열거형
