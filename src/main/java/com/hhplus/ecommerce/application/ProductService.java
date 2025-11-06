@@ -104,57 +104,6 @@ public class ProductService {
     }
 
     /**
-     * 인기 상품 조회 (최근 3일 판매량 기준 TOP 5)
-     *
-     * Note: orderCount3Days와 rank는 DTO에서만 관리되며,
-     * Application 계층에서 Repository로부터 데이터를 조회하여 계산합니다.
-     *
-     * @return 인기 상품 목록 응답
-     */
-    public PopularProductListResponse getPopularProductList() {
-        // 인기 상품 조회
-        List<Product> allProducts = productRepository.findAll();
-
-        // 최근 3일 주문 수량 기준으로 내림차순 정렬하여 상위 5개 추출
-        // Application 계층에서 Infrastructure 계층의 데이터를 조합하여 처리
-        List<PopularProductView> topProducts = allProducts.stream()
-                .map(product -> {
-                    Long orderCount3Days = productRepository.getOrderCount3Days(product.getProductId());
-                    return new ProductWithOrderCount(product, orderCount3Days);
-                })
-                .sorted((p1, p2) -> Long.compare(p2.orderCount3Days, p1.orderCount3Days))
-                .limit(5)
-                .map((p) -> PopularProductView.builder()
-                        .productId(p.product.getProductId())
-                        .productName(p.product.getProductName())
-                        .price(p.product.getPrice())
-                        .totalStock(p.product.getTotalStock())
-                        .status(p.product.getStatus())
-                        .orderCount3Days(p.orderCount3Days)
-                        .rank(0) // 수정 예정
-                        .createdAt(p.product.getCreatedAt())
-                        .build())
-                .collect(Collectors.toList());
-
-        // 순위 정보 추가
-        for (int i = 0; i < topProducts.size(); i++) {
-            PopularProductView view = topProducts.get(i);
-            topProducts.set(i, PopularProductView.builder()
-                    .productId(view.getProductId())
-                    .productName(view.getProductName())
-                    .price(view.getPrice())
-                    .totalStock(view.getTotalStock())
-                    .status(view.getStatus())
-                    .orderCount3Days(view.getOrderCount3Days())
-                    .rank(i + 1)
-                    .createdAt(view.getCreatedAt())
-                    .build());
-        }
-
-        return new PopularProductListResponse(topProducts);
-    }
-
-    /**
      * 상품과 주문 수량을 임시로 보관하는 내부 클래스
      * Application 계층에서 Domain과 Infrastructure 계층의 데이터를 조합할 때 사용
      */

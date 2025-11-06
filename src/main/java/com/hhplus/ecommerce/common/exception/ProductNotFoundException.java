@@ -1,8 +1,11 @@
 package com.hhplus.ecommerce.common.exception;
 
+import lombok.Getter;
+
 /**
  * 상품을 찾을 수 없을 때 발생하는 예외
  */
+@Getter
 public class ProductNotFoundException extends RuntimeException {
     private final String errorCode = "PRODUCT_NOT_FOUND";
 
@@ -10,7 +13,4 @@ public class ProductNotFoundException extends RuntimeException {
         super(message);
     }
 
-    public String getErrorCode() {
-        return errorCode;
-    }
 }
