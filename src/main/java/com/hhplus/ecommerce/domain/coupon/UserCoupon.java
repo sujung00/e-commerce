@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.domain;
+package com.hhplus.ecommerce.domain.coupon;
 
 import lombok.*;
 

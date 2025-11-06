@@ -1,12 +1,9 @@
 package com.hhplus.ecommerce.application.cart;
 
-import com.hhplus.ecommerce.domain.cart.Cart;
-import com.hhplus.ecommerce.domain.cart.CartItem;
-import com.hhplus.ecommerce.domain.cart.CartItemNotFoundException;
-import com.hhplus.ecommerce.domain.cart.InvalidQuantityException;
+import com.hhplus.ecommerce.domain.cart.*;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.infrastructure.persistence.cart.CartRepository;
+import com.hhplus.ecommerce.infrastructure.persistence.cart.InMemoryCartRepository;
 import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
 import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
 import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
@@ -24,16 +21,16 @@ import java.util.stream.Collectors;
 @Service
 public class CartService {
 
-    private final com.hhplus.ecommerce.domain.cart.CartRepository cartRepository;
-    private final UserRepository userRepository;
     private final CartRepository cartRepository;
+    private final UserRepository userRepository;
+    private final InMemoryCartRepository inMemoryCartRepository;
 
-    public CartService(com.hhplus.ecommerce.domain.cart.CartRepository cartRepository,
+    public CartService(CartRepository cartRepository,
                        UserRepository userRepository,
-                       CartRepository inMemoryCartRepository) {
+                       InMemoryCartRepository inMemoryCartRepository) {
         this.cartRepository = cartRepository;
         this.userRepository = userRepository;
-        this.cartRepository = inMemoryCartRepository;
+        this.inMemoryCartRepository = inMemoryCartRepository;
     }
 
     /**
@@ -45,8 +42,8 @@ public class CartService {
             throw new UserNotFoundException(userId);
         }
 
-        Cart cart = cartRepository.findOrCreateByUserId(userId);
-        List<CartItem> cartItems = cartRepository.getCartItems(cart.getCartId());
+        Cart cart = inMemoryCartRepository.findOrCreateByUserId(userId);
+        List<CartItem> cartItems = inMemoryCartRepository.getCartItems(cart.getCartId());
 
         // CartItem을 Response로 변환
         List<CartItemResponse> itemResponses = cartItems.stream()
@@ -80,7 +77,7 @@ public class CartService {
         validateQuantity(request.getQuantity());
 
         // 장바구니 조회 또는 생성
-        Cart cart = cartRepository.findOrCreateByUserId(userId);
+        Cart cart = inMemoryCartRepository.findOrCreateByUserId(userId);
 
         // CartItem 생성
         CartItem cartItem = CartItem.builder()
@@ -95,7 +92,7 @@ public class CartService {
                 .build();
 
         // CartItem 저장
-        CartItem savedItem = cartRepository.saveCartItem(cartItem);
+        CartItem savedItem = inMemoryCartRepository.saveCartItem(cartItem);
 
         // 장바구니 업데이트
         updateCartTotals(cart);
@@ -118,11 +115,11 @@ public class CartService {
         validateQuantity(request.getQuantity());
 
         // CartItem 조회
-        CartItem cartItem = cartRepository.findCartItemById(cartItemId)
+        CartItem cartItem = inMemoryCartRepository.findCartItemById(cartItemId)
                 .orElseThrow(() -> new CartItemNotFoundException(cartItemId));
 
         // 사용자의 아이템 확인
-        Cart cart = cartRepository.findByUserId(userId)
+        Cart cart = inMemoryCartRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
         if (!cartItem.getCartId().equals(cart.getCartId())) {
@@ -134,7 +131,7 @@ public class CartService {
         cartItem.setSubtotal((long) request.getQuantity() * cartItem.getUnitPrice());
         cartItem.setUpdatedAt(LocalDateTime.now());
 
-        CartItem savedItem = cartRepository.saveCartItem(cartItem);
+        CartItem savedItem = inMemoryCartRepository.saveCartItem(cartItem);
 
         // 장바구니 업데이트
         updateCartTotals(cart);
@@ -154,11 +151,11 @@ public class CartService {
         }
 
         // CartItem 조회
-        CartItem cartItem = cartRepository.findCartItemById(cartItemId)
+        CartItem cartItem = inMemoryCartRepository.findCartItemById(cartItemId)
                 .orElseThrow(() -> new CartItemNotFoundException(cartItemId));
 
         // 사용자의 아이템 확인
-        Cart cart = cartRepository.findByUserId(userId)
+        Cart cart = inMemoryCartRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
         if (!cartItem.getCartId().equals(cart.getCartId())) {
@@ -166,7 +163,7 @@ public class CartService {
         }
 
         // 아이템 삭제
-        cartRepository.deleteCartItem(cartItemId);
+        inMemoryCartRepository.deleteCartItem(cartItemId);
 
         // 장바구니 업데이트
         updateCartTotals(cart);
@@ -176,7 +173,7 @@ public class CartService {
      * 장바구니 총액 업데이트
      */
     private void updateCartTotals(Cart cart) {
-        List<CartItem> items = cartRepository.getCartItems(cart.getCartId());
+        List<CartItem> items = inMemoryCartRepository.getCartItems(cart.getCartId());
         int totalItems = items.size();
         long totalPrice = items.stream().mapToLong(CartItem::getSubtotal).sum();
 
@@ -184,7 +181,7 @@ public class CartService {
         cart.setTotalPrice(totalPrice);
         cart.setUpdatedAt(LocalDateTime.now());
 
-        cartRepository.saveCart(cart);
+        inMemoryCartRepository.saveCart(cart);
     }
 
     /**

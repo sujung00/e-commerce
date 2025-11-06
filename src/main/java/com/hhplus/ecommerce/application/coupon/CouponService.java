@@ -1,7 +1,7 @@
 package com.hhplus.ecommerce.application.coupon;
 
-import com.hhplus.ecommerce.domain.Coupon;
-import com.hhplus.ecommerce.domain.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.Coupon;
+import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.CouponNotFoundException;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;

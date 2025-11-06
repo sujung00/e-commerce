@@ -1,6 +1,6 @@
 package com.hhplus.ecommerce.infrastructure.persistence.coupon;
 
-import com.hhplus.ecommerce.domain.Coupon;
+import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import org.springframework.stereotype.Repository;
 

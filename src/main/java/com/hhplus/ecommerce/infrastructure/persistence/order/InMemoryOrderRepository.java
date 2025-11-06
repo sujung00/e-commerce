@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
  * ConcurrentHashMap을 사용하여 스레드 안전성 제공
  */
 @Repository
-public class OrderRepository implements com.hhplus.ecommerce.domain.order.OrderRepository {
+public class InMemoryOrderRepository implements com.hhplus.ecommerce.domain.order.OrderRepository {
 
     private final ConcurrentHashMap<Long, Order> orders = new ConcurrentHashMap<>();
     private Long orderIdSequence = 5000L;  // 초기 order_id 값

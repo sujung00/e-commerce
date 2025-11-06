@@ -1,7 +1,7 @@
 package com.hhplus.ecommerce.presentation.coupon.response;
 
-import com.hhplus.ecommerce.domain.Coupon;
-import com.hhplus.ecommerce.domain.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.Coupon;
+import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import lombok.*;
 
 import java.math.BigDecimal;

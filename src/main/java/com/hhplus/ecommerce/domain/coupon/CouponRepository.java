@@ -1,7 +1,5 @@
 package com.hhplus.ecommerce.domain.coupon;
 
-import com.hhplus.ecommerce.domain.Coupon;
-
 import java.util.List;
 import java.util.Optional;
 

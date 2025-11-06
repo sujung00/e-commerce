@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * OrderRepository - Order 도메인 영속성 Port Interface
+ * InMemoryOrderRepository - Order 도메인 영속성 Port Interface
  * 주문 데이터의 저장 및 조회를 담당
  */
 public interface OrderRepository {

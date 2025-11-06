@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
  * 조회해야 하며, 이는 Application 계층의 PopularProductService에서 처리합니다.
  */
 @Repository
-public class ProductRepository implements com.hhplus.ecommerce.domain.product.ProductRepository {
+public class InMemoryProductRepository implements com.hhplus.ecommerce.domain.product.ProductRepository {
 
     // 상품 저장소
     private final Map<Long, Product> products = new HashMap<>();
@@ -31,7 +31,7 @@ public class ProductRepository implements com.hhplus.ecommerce.domain.product.Pr
     // 실제 환경에서는 Order 테이블에서 조회해야 함
     private final Map<Long, Long> orderCount3DaysMap = new HashMap<>();
 
-    public ProductRepository() {
+    public InMemoryProductRepository() {
         initializeData();
     }
 

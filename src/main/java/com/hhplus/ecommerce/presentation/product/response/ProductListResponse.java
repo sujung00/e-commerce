@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.presentation.product.response;
 
+import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,6 +12,7 @@ import java.util.List;
  */
 @Setter
 @Getter
+@Builder
 public class ProductListResponse {
     private List<ProductResponse> content;
     private Long totalElements;

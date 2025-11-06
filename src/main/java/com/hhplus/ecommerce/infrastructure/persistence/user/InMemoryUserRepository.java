@@ -1,6 +1,7 @@
 package com.hhplus.ecommerce.infrastructure.persistence.user;
 
 import com.hhplus.ecommerce.domain.user.User;
+import com.hhplus.ecommerce.domain.user.UserRepository;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -11,11 +12,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * InMemory User Repository 구현
  */
 @Repository
-public class UserRepository implements com.hhplus.ecommerce.domain.user.UserRepository {
+public class InMemoryUserRepository implements UserRepository {
 
     private final ConcurrentHashMap<Long, User> users = new ConcurrentHashMap<>();
 
-    public UserRepository() {
+    public InMemoryUserRepository() {
         initializeSampleData();
     }
 
@@ -55,4 +56,10 @@ public class UserRepository implements com.hhplus.ecommerce.domain.user.UserRepo
     public boolean existsById(Long userId) {
         return users.containsKey(userId);
     }
+
+    @Override
+    public void save(User user) {
+
+    }
+
 }

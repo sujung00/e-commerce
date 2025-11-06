@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * ConcurrentHashMap 기반의 인메모리 저장소
  */
 @Repository
-public class CartRepository implements com.hhplus.ecommerce.domain.cart.CartRepository {
+public class InMemoryCartRepository implements com.hhplus.ecommerce.domain.cart.CartRepository {
 
     private final ConcurrentHashMap<Long, Cart> carts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, CartItem> cartItems = new ConcurrentHashMap<>();
@@ -23,7 +23,7 @@ public class CartRepository implements com.hhplus.ecommerce.domain.cart.CartRepo
     private final AtomicLong cartIdGenerator = new AtomicLong(0);
     private final AtomicLong cartItemIdGenerator = new AtomicLong(0);
 
-    public CartRepository() {
+    public InMemoryCartRepository() {
         initializeSampleData();
     }
 

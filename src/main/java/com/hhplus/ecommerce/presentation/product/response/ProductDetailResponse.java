@@ -2,6 +2,7 @@ package com.hhplus.ecommerce.presentation.product.response;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -14,6 +15,7 @@ import java.util.List;
  */
 @Setter
 @Getter
+@Builder
 public class ProductDetailResponse {
     @JsonProperty("product_id")
     private Long productId;
