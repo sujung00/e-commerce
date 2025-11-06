@@ -1030,53 +1030,7 @@ X-USER-ID: Long (optional) - 사용자 식별자 (조회만 필요한 경우 생
 
 ## 통계 API
 
-### 5.1 인기 상품 조회 (TOP 5, 최근 3일)
-
-**Endpoint**: `GET /products/popular`
-
-**Method**: GET
-
-**Query Parameters**: 없음
-
-**Response (200 OK)**:
-```json
-{
-  "products": [
-    {
-      "product_id": 1,
-      "product_name": "티셔츠",
-      "price": 29900,
-      "total_stock": 100,
-      "status": "판매 중",
-      "order_count_3days": 150,
-      "rank": 1
-    },
-    {
-      "product_id": 5,
-      "product_name": "슬리퍼",
-      "price": 19900,
-      "total_stock": 200,
-      "status": "판매 중",
-      "order_count_3days": 120,
-      "rank": 2
-    }
-  ]
-}
-```
-
-**Status Codes**:
-- `200 OK`: 요청 성공
-
-**Performance** (요구사항 3.1):
-- 응답 시간: < 2초
-
-**Business Rules** (요구사항 2.1.3):
-- 최근 3일간 인기 상품 기준
-- 상위 5개만 반환
-
----
-
-### 5.2 재고 현황 조회 (상품별)
+### 5.1 재고 현황 조회 (상품별)
 
 **Endpoint**: `GET /inventory/{product_id}`
 
