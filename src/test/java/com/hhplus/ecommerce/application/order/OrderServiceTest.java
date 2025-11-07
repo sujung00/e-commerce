@@ -71,7 +71,11 @@ class OrderServiceTest {
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
-        orderService = new OrderService(orderRepository, productRepository, userRepository, orderTransactionService);
+
+        // Mock OrderCancelTransactionService
+        OrderCancelTransactionService orderCancelTransactionService = mock(OrderCancelTransactionService.class);
+
+        orderService = new OrderService(orderRepository, productRepository, userRepository, orderTransactionService, orderCancelTransactionService);
     }
 
     // ========== 주문 생성 (createOrder) ==========

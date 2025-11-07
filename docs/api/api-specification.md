@@ -775,6 +775,134 @@ X-USER-ID: Long (required) - 사용자 고유 식별자
 
 ---
 
+### 3.4 주문 취소 (재고 복구)
+
+**Endpoint**: `POST /orders/{order_id}/cancel`
+
+**Method**: POST
+
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
+**Path Parameters**:
+```
+- order_id (Long, required): 주문 ID
+```
+
+**Request Body**: (없음)
+
+**Success Response (200 OK)**:
+```json
+{
+  "order_id": 5001,
+  "order_status": "CANCELLED",
+  "subtotal": 139700,
+  "coupon_discount": 0,
+  "final_amount": 139700,
+  "restored_amount": 139700,
+  "cancelled_at": "2025-10-29T13:45:00Z",
+  "restored_items": [
+    {
+      "order_item_id": 5001,
+      "product_id": 1,
+      "product_name": "티셔츠",
+      "option_id": 101,
+      "option_name": "블랙/M",
+      "quantity": 2,
+      "restored_stock": 2
+    },
+    {
+      "order_item_id": 5002,
+      "product_id": 2,
+      "product_name": "청바지",
+      "option_id": 201,
+      "option_name": "청색/32",
+      "quantity": 1,
+      "restored_stock": 1
+    }
+  ]
+}
+```
+
+**Response Fields**:
+- `order_id` (Long): 주문 ID
+- `order_status` (String): 주문 상태 ("CANCELLED")
+- `subtotal` (Long): 주문 상품 합계 (원 단위)
+- `coupon_discount` (Long): 쿠폰 할인액
+- `final_amount` (Long): 최종 주문 금액
+- `restored_amount` (Long): 복구된 잔액 (최종 주문 금액과 동일)
+- `cancelled_at` (Timestamp): 취소 시각 (ISO 8601)
+- `restored_items` (Array): 재고가 복구된 아이템 목록
+  - `order_item_id` (Long): 주문 아이템 ID
+  - `product_id` (Long): 상품 ID
+  - `product_name` (String): 상품명
+  - `option_id` (Long): 옵션 ID
+  - `option_name` (String): 옵션명
+  - `quantity` (Integer): 주문 수량
+  - `restored_stock` (Integer): 복구된 재고 수량
+
+**Status Codes**:
+- `200 OK`: 주문 취소 성공 (재고 복구 완료)
+- `400 Bad Request`: INVALID_ORDER_STATUS - 취소 불가능한 상태 (이미 취소됨, 배송 중 등)
+- `404 Not Found`: ORDER_NOT_FOUND - 주문을 찾을 수 없음
+- `404 Not Found`: USER_MISMATCH - 주문 사용자 불일치
+
+**Error Response (400)**:
+```json
+{
+  "error_code": "INVALID_ORDER_STATUS",
+  "error_message": "이미 취소된 주문입니다",
+  "timestamp": "2025-10-29T13:45:00Z",
+  "request_id": "req-abc123def456"
+}
+```
+
+**주문 취소 및 재고 복구 프로세스** (sequence-diagrams.md "3. 주문 생성 흐름" 역프로세스 참고):
+
+**1단계: 검증 (읽기 전용)**
+- 주문 존재 여부 확인
+- 주문 상태 검증: COMPLETED만 취소 가능 (취소된 주문, 배송 중인 주문은 불가)
+- 사용자 권한 확인: X-USER-ID와 주문의 user_id 일치
+
+**2단계: 원자적 거래 (모두 성공하거나 모두 롤백)**
+```
+BEGIN TRANSACTION
+  - UPDATE product_options SET stock = stock + qty WHERE option_id = ? AND version = current_version
+    (낙관적 락: version 업데이트로 동시성 제어)
+  - UPDATE users SET balance = balance + final_amount WHERE user_id = ?
+  - UPDATE orders SET order_status = 'CANCELLED', cancelled_at = NOW() WHERE order_id = ?
+  - if coupon_id is not null:
+    * UPDATE user_coupons SET status = 'ACTIVE', used_at = NULL WHERE user_coupon_id = ?
+    * UPDATE coupons SET remaining_qty = remaining_qty + 1, version = version + 1
+COMMIT (또는 ROLLBACK on version mismatch)
+```
+
+**Entity Relations** (data-models.md):
+- orders: order_id, user_id, order_status, coupon_id, subtotal, final_amount, cancelled_at
+- order_items: order_item_id, order_id, product_id, option_id, quantity
+- product_options: option_id, stock, version
+- user_coupons: user_coupon_id, status
+
+**Business Rules** (요구사항 2.2):
+- 주문 취소는 COMPLETED 상태에서만 가능
+- 재고는 주문 수량만큼 원래대로 복구됨
+- 사용자 잔액은 최종 결제 금액 전액 복구
+- 쿠폰이 적용된 경우 쿠폰 상태를 ACTIVE로 복원하고 remaining_qty 복구
+- 모든 작업이 원자적으로 처리됨 (부분 취소 불가)
+
+**Concurrency Control** (요구사항 3.2):
+- 낙관적 락: product_options.version과 coupons.version으로 Race Condition 방지
+- 동시에 주문을 다시 생성하는 경우에 대비
+
+**Performance** (요구사항 3.1):
+- 응답 시간: < 3초
+
+**Sequence Diagram**: sequence-diagrams.md "3. 주문 생성 흐름" 역프로세스 (재고 복구)
+
+---
+
 ## 쿠폰 API
 
 ### 4.1 쿠폰 발급 (선착순)
