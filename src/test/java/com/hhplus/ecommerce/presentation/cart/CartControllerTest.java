@@ -15,7 +15,9 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import com.hhplus.ecommerce.common.BaseControllerTest;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDateTime;
@@ -45,8 +47,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * - 경계값 테스트: 최소/최대값, 특수한 경우
  */
 @ExtendWith(MockitoExtension.class)
+@TestPropertySource(properties = {"spring.web.resources.add-mappings=false"})
 @DisplayName("CartController 단위 테스트")
-class CartControllerTest {
+class CartControllerTest extends BaseControllerTest {
 
     private MockMvc mockMvc;
 

@@ -1,16 +1,23 @@
 package com.hhplus.ecommerce.presentation.product;
 
 import com.hhplus.ecommerce.application.product.ProductService;
+import com.hhplus.ecommerce.common.BaseControllerTest;
 import com.hhplus.ecommerce.presentation.product.response.ProductDetailResponse;
 import com.hhplus.ecommerce.presentation.product.response.ProductListResponse;
 import com.hhplus.ecommerce.presentation.product.response.ProductOptionResponse;
 import com.hhplus.ecommerce.presentation.product.response.ProductResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -23,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * ProductControllerTest - Presentation Layer Unit Test
- * @WebMvcTest를 사용한 통합 테스트
+ * Mockito 및 MockMvcBuilders.standaloneSetup() 사용
  *
  * 테스트 대상: ProductController
  * - GET /products - 상품 목록 조회 (페이지네이션, 정렬)
@@ -34,17 +41,30 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * - 경계값 테스트: 첫 페이지, 마지막 페이지, 최소/최대 size
  * - 실패 케이스: 유효하지 않은 파라미터
  */
-@WebMvcTest(ProductController.class)
+@ExtendWith(MockitoExtension.class)
 @DisplayName("ProductController 단위 테스트")
-class ProductControllerTest {
+class ProductControllerTest extends BaseControllerTest {
 
-    @Autowired
     private MockMvc mockMvc;
 
-    @MockitoBean
+    private ObjectMapper objectMapper;
+
+    @Mock
     private ProductService productService;
 
+    @InjectMocks
+    private ProductController productController;
+
     private static final Long TEST_PRODUCT_ID = 1L;
+
+    @BeforeEach
+    void setup() {
+        MockitoAnnotations.openMocks(this);
+        this.objectMapper = new ObjectMapper();
+        this.mockMvc = MockMvcBuilders.standaloneSetup(productController)
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .build();
+    }
 
     // ========== 상품 목록 조회 (GET /products) ==========
 
@@ -69,10 +89,10 @@ class ProductControllerTest {
         // When & Then
         mockMvc.perform(get("/products"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.products").isArray())
-                .andExpect(jsonPath("$.products", hasSize(2)))
-                .andExpect(jsonPath("$.total_count").value(100L))
-                .andExpect(jsonPath("$.current_page").value(0));
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.totalElements").value(100L))
+                .andExpect(jsonPath("$.currentPage").value(0));
     }
 
     @Test
