@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.presentation.product.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;

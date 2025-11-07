@@ -1,5 +1,7 @@
 package com.hhplus.ecommerce.presentation.order.response;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.hhplus.ecommerce.domain.order.Order;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -18,14 +20,31 @@ import java.util.stream.Collectors;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CreateOrderResponse {
+    @JsonProperty("order_id")
     private Long orderId;
+
+    @JsonProperty("user_id")
     private Long userId;
+
+    @JsonProperty("order_status")
     private String orderStatus;
+
     private Long subtotal;
+
+    @JsonProperty("coupon_discount")
     private Long couponDiscount;
+
+    @JsonProperty("coupon_id")
     private Long couponId;
+
+    @JsonProperty("final_amount")
     private Long finalAmount;
+
+    @JsonProperty("order_items")
     private List<OrderItemResponse> orderItems;
+
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
+    @JsonProperty("created_at")
     private LocalDateTime createdAt;
 
     public static CreateOrderResponse fromOrder(Order order) {
