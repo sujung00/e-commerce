@@ -239,10 +239,29 @@ class IntegrationConcurrencyTest {
         // Given
         int numUsers = 20;
         int couponCount = 5;
+
+        // 혼합 시나리오용 별도 쿠폰 생성 (5개 한정)
+        Coupon mixedCoupon = Coupon.builder()
+                .couponId(1003L)
+                .couponName("혼합 시나리오 테스트 쿠폰")
+                .discountType("FIXED_AMOUNT")
+                .discountAmount(2000L)
+                .isActive(true)
+                .totalQuantity(5)
+                .remainingQty(5)
+                .validFrom(LocalDateTime.now().minusDays(1))
+                .validUntil(LocalDateTime.now().plusDays(30))
+                .version(0L)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        couponRepository.save(mixedCoupon);
+
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch endLatch = new CountDownLatch(numUsers * 2);
         AtomicInteger couponSuccessCount = new AtomicInteger(0);
         AtomicInteger orderSuccessCount = new AtomicInteger(0);
+        AtomicInteger orderFailureCount = new AtomicInteger(0);
 
         ExecutorService executor = Executors.newFixedThreadPool(40);
 
@@ -254,7 +273,7 @@ class IntegrationConcurrencyTest {
             executor.submit(() -> {
                 try {
                     startLatch.await();
-                    couponService.issueCoupon(userId, 1001L);
+                    couponService.issueCoupon(userId, 1003L);
                     couponSuccessCount.incrementAndGet();
                 } catch (Exception e) {
                     // 예상된 실패 (쿠폰 한정)
@@ -263,14 +282,31 @@ class IntegrationConcurrencyTest {
                 }
             });
 
-            // 주문 생성 시도 (생략 - 간단한 예제)
+            // 주문 생성 시도 (재고 차감 포함)
             executor.submit(() -> {
                 try {
                     startLatch.await();
-                    // 주문 생성 로직 (실제 구현 생략)
-                    orderSuccessCount.incrementAndGet();
+                    // 주문 생성 로직: 재고 차감 (동시성 제어 포함)
+                    Product product = productRepository.findById(1001L).orElseThrow();
+                    ProductOption option = product.getOptions().get(0);
+
+                    // 재고 확인 및 차감 (Double-checked locking 패턴)
+                    if (option.getStock() >= 1) {
+                        synchronized (option) {
+                            if (option.getStock() >= 1) {
+                                option.setStock(option.getStock() - 1);
+                                option.setVersion(option.getVersion() + 1);
+                                productRepository.saveOption(option);
+                                orderSuccessCount.incrementAndGet();
+                            } else {
+                                orderFailureCount.incrementAndGet();
+                            }
+                        }
+                    } else {
+                        orderFailureCount.incrementAndGet();
+                    }
                 } catch (Exception e) {
-                    // 예상된 실패
+                    orderFailureCount.incrementAndGet();
                 } finally {
                     endLatch.countDown();
                 }
@@ -284,8 +320,11 @@ class IntegrationConcurrencyTest {
         // Then
         assertTrue(couponSuccessCount.get() <= couponCount,
                 "쿠폰 발급 성공 수는 한정 수량 이하여야 합니다");
+        // 재고가 50개이고 20명이 주문하므로 모두 성공 가능
         assertEquals(numUsers, orderSuccessCount.get(),
                 "모든 주문이 성공해야 합니다");
+        assertEquals(0, orderFailureCount.get(),
+                "주문 실패가 없어야 합니다");
     }
 
     // ========== 성능 테스트: 대규모 동시 요청 ==========
@@ -311,16 +350,29 @@ class IntegrationConcurrencyTest {
                 .build();
         couponRepository.save(coupon);
 
+        // 성능 테스트용 1000명의 사용자 생성
         int numRequests = 1000;
+        for (int i = 1; i <= numRequests; i++) {
+            User user = User.builder()
+                    .userId((long) (10000 + i))
+                    .email("perfuser" + i + "@test.com")
+                    .name("성능테스트사용자" + i)
+                    .balance(100000L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            userRepository.save(user);
+        }
         int threadPoolSize = 100;
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch endLatch = new CountDownLatch(numRequests);
         AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failureCount = new AtomicInteger(0);
         long startTime = System.currentTimeMillis();
 
         ExecutorService executor = Executors.newFixedThreadPool(threadPoolSize);
 
-        // When
+        // When - 1000명이 동시에 쿠폰 발급 요청
         for (int i = 1; i <= numRequests; i++) {
             final long userId = 10000 + i;
             executor.submit(() -> {
@@ -328,8 +380,13 @@ class IntegrationConcurrencyTest {
                     startLatch.await();
                     couponService.issueCoupon(userId, 1002L);
                     successCount.incrementAndGet();
+                } catch (IllegalArgumentException e) {
+                    // 쿠폰 소진 시 예상되는 실패
+                    failureCount.incrementAndGet();
                 } catch (Exception e) {
-                    // 기대되는 실패
+                    // 기타 예상 못한 실패
+                    failureCount.incrementAndGet();
+                    System.err.println("Unexpected error: " + e.getMessage());
                 } finally {
                     endLatch.countDown();
                 }
@@ -341,10 +398,15 @@ class IntegrationConcurrencyTest {
         executor.shutdown();
         long endTime = System.currentTimeMillis();
 
-        // Then
+        // Then - 1000개의 쿠폰이 모두 발급되어야 함
+        // (재시도 로직으로 동시성 이슈 해결)
         assertEquals(1000, successCount.get(),
-                "1000개의 쿠폰이 모두 발급되어야 합니다");
-        System.out.println("Performance Test: " + numRequests +
-                " requests completed in " + (endTime - startTime) + "ms");
+                "1000개의 쿠폰이 모두 발급되어야 합니다. 실패: " + failureCount.get());
+        assertEquals(0, failureCount.get(),
+                "모든 요청이 성공해야 합니다");
+
+        System.out.println("[Performance Test] " + numRequests +
+                " requests completed in " + (endTime - startTime) + "ms" +
+                " (Success: " + successCount.get() + ", Failure: " + failureCount.get() + ")");
     }
 }

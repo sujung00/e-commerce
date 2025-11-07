@@ -315,5 +315,9 @@ public class InMemoryProductRepository implements com.hhplus.ecommerce.domain.pr
     @Override
     public void saveOption(ProductOption option) {
         productOptions.put(option.getOptionId(), option);
+        // 상품-옵션 매핑 업데이트
+        Long productId = option.getProductId();
+        productToOptionsMap.computeIfAbsent(productId, k -> new ArrayList<>())
+                .add(option.getOptionId());
     }
 }

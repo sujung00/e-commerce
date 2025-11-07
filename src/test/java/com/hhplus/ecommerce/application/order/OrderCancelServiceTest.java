@@ -95,14 +95,12 @@ class OrderCancelServiceTest {
 
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(TEST_ORDER_ID)
-                .userId(TEST_USER_ID)
                 .orderStatus("CANCELLED")
                 .subtotal(100000L)
                 .couponDiscount(5000L)
-                .couponId(1L)
                 .finalAmount(95000L)
                 .restoredAmount(95000L)
-                .cancelledAt(LocalDateTime.now())
+                .cancelledAt(java.time.Instant.now())
                 .restoredItems(new ArrayList<>())
                 .build();
 
@@ -141,14 +139,12 @@ class OrderCancelServiceTest {
 
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(TEST_ORDER_ID)
-                .userId(TEST_USER_ID)
                 .orderStatus("CANCELLED")
                 .subtotal(50000L)
                 .couponDiscount(0L)
-                .couponId(null)
                 .finalAmount(50000L)
                 .restoredAmount(50000L)
-                .cancelledAt(LocalDateTime.now())
+                .cancelledAt(java.time.Instant.now())
                 .restoredItems(new ArrayList<>())
                 .build();
 
@@ -163,7 +159,6 @@ class OrderCancelServiceTest {
         // Then
         assertNotNull(result);
         assertEquals(0L, result.getCouponDiscount());
-        assertNull(result.getCouponId());
         verify(orderCancelTransactionService, times(1)).executeTransactionalCancel(TEST_ORDER_ID, TEST_USER_ID, order);
     }
 
@@ -205,7 +200,7 @@ class OrderCancelServiceTest {
                 .thenReturn(Optional.of(order));
 
         // When & Then
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(com.hhplus.ecommerce.domain.order.UserMismatchException.class, () -> {
             orderService.cancelOrder(otherUserId, TEST_ORDER_ID);
         });
 
@@ -233,7 +228,7 @@ class OrderCancelServiceTest {
                 .thenReturn(Optional.of(order));
 
         // When & Then
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(com.hhplus.ecommerce.domain.order.InvalidOrderStatusException.class, () -> {
             orderService.cancelOrder(TEST_USER_ID, TEST_ORDER_ID);
         });
 
@@ -261,7 +256,7 @@ class OrderCancelServiceTest {
                 .thenReturn(Optional.of(order));
 
         // When & Then
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(com.hhplus.ecommerce.domain.order.InvalidOrderStatusException.class, () -> {
             orderService.cancelOrder(TEST_USER_ID, TEST_ORDER_ID);
         });
 
@@ -287,14 +282,12 @@ class OrderCancelServiceTest {
 
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(TEST_ORDER_ID)
-                .userId(TEST_USER_ID)
                 .orderStatus("CANCELLED")
                 .subtotal(100000L)
                 .couponDiscount(5000L)
-                .couponId(1L)
                 .finalAmount(95000L)
                 .restoredAmount(95000L)
-                .cancelledAt(LocalDateTime.now())
+                .cancelledAt(java.time.Instant.now())
                 .restoredItems(new ArrayList<>())
                 .build();
 

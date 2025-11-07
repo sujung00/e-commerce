@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - 엔드-투-엔드 주문 처리 시나리오
  */
 @SpringBootTest
+@Transactional
 @DisplayName("통합 테스트")
 class IntegrationTest {
 
@@ -110,6 +111,10 @@ class IntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
         productRepository.save(testProduct);
+
+        // 옵션 저장 (중요: 옵션을 별도로 저장해야 함)
+        productRepository.saveOption(option1);
+        productRepository.saveOption(option2);
 
         // 쿠폰 생성
         testCoupon = Coupon.builder()

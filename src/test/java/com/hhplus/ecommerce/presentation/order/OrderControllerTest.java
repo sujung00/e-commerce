@@ -20,6 +20,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.hhplus.ecommerce.presentation.order.response.CancelOrderResponse;
+import com.hhplus.ecommerce.domain.order.OrderNotFoundException;
+import com.hhplus.ecommerce.domain.order.UserMismatchException;
+import com.hhplus.ecommerce.domain.order.InvalidOrderStatusException;
+
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -569,5 +575,251 @@ class OrderControllerTest {
                 .andExpect(jsonPath("$.total_page").isNumber())
                 .andExpect(jsonPath("$.current_page").isNumber())
                 .andExpect(jsonPath("$.page_size").isNumber());
+    }
+
+    // ========== 주문 취소 (3.4 API) ==========
+
+    @Test
+    @DisplayName("주문 취소 - 성공 (200 OK)")
+    void testCancelOrder_Success() throws Exception {
+        // Given
+        Long orderId = 100L;
+        CancelOrderResponse response = CancelOrderResponse.builder()
+                .orderId(orderId)
+                .orderStatus("CANCELLED")
+                .subtotal(100000L)
+                .couponDiscount(5000L)
+                .finalAmount(95000L)
+                .restoredAmount(95000L)
+                .cancelledAt(Instant.now())
+                .restoredItems(Collections.singletonList(
+                        CancelOrderResponse.RestoredItem.builder()
+                                .orderItemId(1L)
+                                .productId(1L)
+                                .productName("상품1")
+                                .optionId(101L)
+                                .optionName("기본옵션")
+                                .quantity(2)
+                                .restoredStock(10)
+                                .build()
+                ))
+                .build();
+
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+
+        // When & Then
+        mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
+                .header("X-USER-ID", TEST_USER_ID)
+                .contentType("application/json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.order_id").value(orderId))
+                .andExpect(jsonPath("$.order_status").value("CANCELLED"))
+                .andExpect(jsonPath("$.subtotal").value(100000L))
+                .andExpect(jsonPath("$.coupon_discount").value(5000L))
+                .andExpect(jsonPath("$.final_amount").value(95000L))
+                .andExpect(jsonPath("$.restored_amount").value(95000L))
+                .andExpect(jsonPath("$.cancelled_at").isNotEmpty())
+                .andExpect(jsonPath("$.restored_items").isArray())
+                .andExpect(jsonPath("$.restored_items[0].order_item_id").value(1L))
+                .andExpect(jsonPath("$.restored_items[0].product_id").value(1L))
+                .andExpect(jsonPath("$.restored_items[0].product_name").value("상품1"))
+                .andExpect(jsonPath("$.restored_items[0].option_id").value(101L))
+                .andExpect(jsonPath("$.restored_items[0].option_name").value("기본옵션"))
+                .andExpect(jsonPath("$.restored_items[0].quantity").value(2))
+                .andExpect(jsonPath("$.restored_items[0].restored_stock").value(10));
+
+        verify(orderService, times(1)).cancelOrder(TEST_USER_ID, orderId);
+    }
+
+    @Test
+    @DisplayName("주문 취소 - 실패 (404 Not Found - ORDER_NOT_FOUND)")
+    void testCancelOrder_Failed_OrderNotFound() throws Exception {
+        // Given
+        Long orderId = 999L;
+        when(orderService.cancelOrder(TEST_USER_ID, orderId))
+                .thenThrow(new OrderNotFoundException(orderId));
+
+        // When & Then
+        mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
+                .header("X-USER-ID", TEST_USER_ID)
+                .contentType("application/json"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("ORDER_NOT_FOUND"))
+                .andExpect(jsonPath("$.error_message").isNotEmpty())
+                .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.request_id").isNotEmpty());
+
+        verify(orderService, times(1)).cancelOrder(TEST_USER_ID, orderId);
+    }
+
+    @Test
+    @DisplayName("주문 취소 - 실패 (404 Not Found - USER_MISMATCH)")
+    void testCancelOrder_Failed_UserMismatch() throws Exception {
+        // Given
+        Long orderId = 100L;
+        Long otherUserId = 999L;
+        when(orderService.cancelOrder(otherUserId, orderId))
+                .thenThrow(new UserMismatchException(orderId, otherUserId));
+
+        // When & Then
+        mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
+                .header("X-USER-ID", otherUserId)
+                .contentType("application/json"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("USER_MISMATCH"))
+                .andExpect(jsonPath("$.error_message").isNotEmpty())
+                .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.request_id").isNotEmpty());
+
+        verify(orderService, times(1)).cancelOrder(otherUserId, orderId);
+    }
+
+    @Test
+    @DisplayName("주문 취소 - 실패 (400 Bad Request - INVALID_ORDER_STATUS)")
+    void testCancelOrder_Failed_InvalidOrderStatus() throws Exception {
+        // Given
+        Long orderId = 100L;
+        when(orderService.cancelOrder(TEST_USER_ID, orderId))
+                .thenThrow(new InvalidOrderStatusException("주문 상태가 COMPLETED가 아니므로 취소할 수 없습니다"));
+
+        // When & Then
+        mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
+                .header("X-USER-ID", TEST_USER_ID)
+                .contentType("application/json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("INVALID_ORDER_STATUS"))
+                .andExpect(jsonPath("$.error_message").isNotEmpty())
+                .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.request_id").isNotEmpty());
+
+        verify(orderService, times(1)).cancelOrder(TEST_USER_ID, orderId);
+    }
+
+    @Test
+    @DisplayName("주문 취소 - 성공 (쿠폰 미적용)")
+    void testCancelOrder_Success_NoCoupon() throws Exception {
+        // Given
+        Long orderId = 100L;
+        CancelOrderResponse response = CancelOrderResponse.builder()
+                .orderId(orderId)
+                .orderStatus("CANCELLED")
+                .subtotal(50000L)
+                .couponDiscount(0L)
+                .finalAmount(50000L)
+                .restoredAmount(50000L)
+                .cancelledAt(Instant.now())
+                .restoredItems(Collections.singletonList(
+                        CancelOrderResponse.RestoredItem.builder()
+                                .orderItemId(1L)
+                                .productId(1L)
+                                .productName("상품1")
+                                .optionId(101L)
+                                .optionName("기본옵션")
+                                .quantity(1)
+                                .restoredStock(11)
+                                .build()
+                ))
+                .build();
+
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+
+        // When & Then
+        mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
+                .header("X-USER-ID", TEST_USER_ID)
+                .contentType("application/json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.coupon_discount").value(0L))
+                .andExpect(jsonPath("$.final_amount").value(50000L))
+                .andExpect(jsonPath("$.restored_amount").value(50000L));
+
+        verify(orderService, times(1)).cancelOrder(TEST_USER_ID, orderId);
+    }
+
+    @Test
+    @DisplayName("주문 취소 - 다중 항목 복구 검증")
+    void testCancelOrder_Success_MultipleItems() throws Exception {
+        // Given
+        Long orderId = 100L;
+        CancelOrderResponse response = CancelOrderResponse.builder()
+                .orderId(orderId)
+                .orderStatus("CANCELLED")
+                .subtotal(150000L)
+                .couponDiscount(0L)
+                .finalAmount(150000L)
+                .restoredAmount(150000L)
+                .cancelledAt(Instant.now())
+                .restoredItems(Arrays.asList(
+                        CancelOrderResponse.RestoredItem.builder()
+                                .orderItemId(1L)
+                                .productId(1L)
+                                .productName("상품1")
+                                .optionId(101L)
+                                .optionName("옵션A")
+                                .quantity(2)
+                                .restoredStock(10)
+                                .build(),
+                        CancelOrderResponse.RestoredItem.builder()
+                                .orderItemId(2L)
+                                .productId(2L)
+                                .productName("상품2")
+                                .optionId(102L)
+                                .optionName("옵션B")
+                                .quantity(3)
+                                .restoredStock(8)
+                                .build()
+                ))
+                .build();
+
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+
+        // When & Then
+        mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
+                .header("X-USER-ID", TEST_USER_ID)
+                .contentType("application/json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.restored_items", hasSize(2)))
+                .andExpect(jsonPath("$.restored_items[0].order_item_id").value(1L))
+                .andExpect(jsonPath("$.restored_items[0].product_id").value(1L))
+                .andExpect(jsonPath("$.restored_items[0].quantity").value(2))
+                .andExpect(jsonPath("$.restored_items[1].order_item_id").value(2L))
+                .andExpect(jsonPath("$.restored_items[1].product_id").value(2L))
+                .andExpect(jsonPath("$.restored_items[1].quantity").value(3));
+
+        verify(orderService, times(1)).cancelOrder(TEST_USER_ID, orderId);
+    }
+
+    @Test
+    @DisplayName("주문 취소 - 요청/응답 필드 검증")
+    void testCancelOrder_RequestResponseValidation() throws Exception {
+        // Given
+        Long orderId = 100L;
+        CancelOrderResponse response = CancelOrderResponse.builder()
+                .orderId(orderId)
+                .orderStatus("CANCELLED")
+                .subtotal(100000L)
+                .couponDiscount(0L)
+                .finalAmount(100000L)
+                .restoredAmount(100000L)
+                .cancelledAt(Instant.now())
+                .restoredItems(new ArrayList<>())
+                .build();
+
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+
+        // When & Then - response fields should use snake_case
+        mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
+                .header("X-USER-ID", TEST_USER_ID)
+                .contentType("application/json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.order_id").exists())
+                .andExpect(jsonPath("$.order_status").exists())
+                .andExpect(jsonPath("$.subtotal").exists())
+                .andExpect(jsonPath("$.coupon_discount").exists())
+                .andExpect(jsonPath("$.final_amount").exists())
+                .andExpect(jsonPath("$.restored_amount").exists())
+                .andExpect(jsonPath("$.cancelled_at").exists())
+                .andExpect(jsonPath("$.restored_items").exists());
+
+        verify(orderService, times(1)).cancelOrder(TEST_USER_ID, orderId);
     }
 }
