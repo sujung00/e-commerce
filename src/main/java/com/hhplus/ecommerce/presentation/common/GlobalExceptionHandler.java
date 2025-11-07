@@ -45,7 +45,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(ProductNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleProductNotFoundException(ProductNotFoundException e) {
-        ErrorResponse errorResponse = new ErrorResponse(e.getErrorCode(), e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of(e.getErrorCode(), e.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 
@@ -58,7 +58,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleUserNotFoundException(UserNotFoundException e) {
-        ErrorResponse errorResponse = new ErrorResponse("USER_NOT_FOUND", e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of("USER_NOT_FOUND", e.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 
@@ -71,7 +71,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(OrderNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleOrderNotFoundException(OrderNotFoundException e) {
-        ErrorResponse errorResponse = new ErrorResponse("ORDER_NOT_FOUND", e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of("ORDER_NOT_FOUND", e.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 
@@ -84,7 +84,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(CartItemNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCartItemNotFoundException(CartItemNotFoundException e) {
-        ErrorResponse errorResponse = new ErrorResponse("CART_ITEM_NOT_FOUND", e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of("CART_ITEM_NOT_FOUND", e.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 
@@ -97,7 +97,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(CouponNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCouponNotFoundException(CouponNotFoundException e) {
-        ErrorResponse errorResponse = new ErrorResponse(e.getErrorCode(), e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of(e.getErrorCode(), e.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 
@@ -110,7 +110,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(InvalidQuantityException.class)
     public ResponseEntity<ErrorResponse> handleInvalidQuantityException(InvalidQuantityException e) {
-        ErrorResponse errorResponse = new ErrorResponse("INVALID_REQUEST", e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of("INVALID_REQUEST", e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
     }
 
@@ -128,7 +128,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException e) {
-        ErrorResponse errorResponse = new ErrorResponse("INVALID_REQUEST", e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of("INVALID_REQUEST", e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
     }
 
@@ -144,7 +144,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ErrorResponse> handleIllegalStateException(IllegalStateException e) {
         String errorCode = e.getMessage().contains("ERR-004") ? "ERR-004" : "CONFLICT";
-        ErrorResponse errorResponse = new ErrorResponse(errorCode, e.getMessage());
+        ErrorResponse errorResponse = ErrorResponse.of(errorCode, e.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
     }
 
@@ -158,7 +158,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
-        ErrorResponse errorResponse = new ErrorResponse("INTERNAL_SERVER_ERROR", "서버 오류가 발생했습니다");
+        ErrorResponse errorResponse = ErrorResponse.of("INTERNAL_SERVER_ERROR", "서버 오류가 발생했습니다");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
     }
 }

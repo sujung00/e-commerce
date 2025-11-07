@@ -3,6 +3,8 @@ package com.hhplus.ecommerce.application.order;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderNotFoundException;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
+import com.hhplus.ecommerce.domain.order.InvalidOrderStatusException;
+import com.hhplus.ecommerce.domain.order.UserMismatchException;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
@@ -11,6 +13,7 @@ import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.presentation.order.request.CreateOrderRequest;
 import com.hhplus.ecommerce.presentation.order.request.OrderItemRequest;
+import com.hhplus.ecommerce.presentation.order.response.CancelOrderResponse;
 import com.hhplus.ecommerce.presentation.order.response.CreateOrderResponse;
 import com.hhplus.ecommerce.presentation.order.response.OrderDetailResponse;
 import com.hhplus.ecommerce.presentation.order.response.OrderListResponse;
@@ -58,15 +61,18 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final OrderTransactionService orderTransactionService;
+    private final OrderCancelTransactionService orderCancelTransactionService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
                        UserRepository userRepository,
-                       OrderTransactionService orderTransactionService) {
+                       OrderTransactionService orderTransactionService,
+                       OrderCancelTransactionService orderCancelTransactionService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.orderTransactionService = orderTransactionService;
+        this.orderCancelTransactionService = orderCancelTransactionService;
     }
 
     /**
@@ -226,5 +232,47 @@ public class OrderService {
                 .currentPage(page)
                 .size(size)
                 .build();
+    }
+
+    /**
+     * 주문 취소 (재고 복구)
+     *
+     * 1단계: 검증 (읽기 전용)
+     * - 주문 존재 여부 확인
+     * - 사용자 권한 확인
+     * - 주문 상태 확인 (COMPLETED만 취소 가능)
+     *
+     * 2단계: 원자적 거래 (OrderCancelTransactionService에서 처리)
+     * - 재고 복구
+     * - 사용자 잔액 복구
+     * - 주문 상태 변경
+     * - 쿠폰 상태 복구
+     *
+     * @param userId 사용자 ID
+     * @param orderId 주문 ID
+     * @return 취소 응답
+     * @throws OrderNotFoundException 주문을 찾을 수 없음 (404)
+     * @throws UserMismatchException 주문 사용자 불일치 (404)
+     * @throws InvalidOrderStatusException 취소 불가능한 주문 상태 (400)
+     */
+    public CancelOrderResponse cancelOrder(Long userId, Long orderId) {
+        // 1단계: 검증 (읽기 전용)
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        // 권한 확인 - USER_MISMATCH 예외 발생 (404 Not Found)
+        if (!order.getUserId().equals(userId)) {
+            throw new UserMismatchException(orderId, userId);
+        }
+
+        // 주문 상태 확인 (COMPLETED만 취소 가능) - INVALID_ORDER_STATUS 예외 발생 (400 Bad Request)
+        if (!"COMPLETED".equals(order.getOrderStatus())) {
+            throw new InvalidOrderStatusException(orderId, order.getOrderStatus());
+        }
+
+        // 2단계: 원자적 거래 (프록시를 통해 호출)
+        CancelOrderResponse response = orderCancelTransactionService.executeTransactionalCancel(orderId, userId, order);
+
+        return response;
     }
 }

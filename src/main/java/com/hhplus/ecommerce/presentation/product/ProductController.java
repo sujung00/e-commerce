@@ -34,6 +34,15 @@ public class ProductController {
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "10") int size,
             @RequestParam(value = "sort", defaultValue = "product_id,desc") String sort) {
+
+        // Controller 계층에서 기본적인 파라미터 검증
+        if (page < 0) {
+            throw new IllegalArgumentException("페이지 번호는 0 이상이어야 합니다");
+        }
+        if (size < 1 || size > 100) {
+            throw new IllegalArgumentException("페이지 크기는 1 이상 100 이하여야 합니다");
+        }
+
         ProductListResponse response = productService.getProductList(page, size, sort);
         return ResponseEntity.ok(response);
     }
@@ -47,6 +56,12 @@ public class ProductController {
     @GetMapping("/{product_id}")
     public ResponseEntity<ProductDetailResponse> getProductDetail(
             @PathVariable("product_id") Long productId) {
+
+        // Controller 계층에서 기본적인 파라미터 검증
+        if (productId == null || productId <= 0) {
+            throw new IllegalArgumentException("상품 ID는 양수여야 합니다");
+        }
+
         ProductDetailResponse response = productService.getProductDetail(productId);
         return ResponseEntity.ok(response);
     }

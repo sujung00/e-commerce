@@ -1,18 +1,22 @@
 package com.hhplus.ecommerce.presentation.common.response;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
+import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
- * API 에러 응답 DTO
+ * 통일된 에러 응답 DTO
+ * API 명세의 에러 응답 구조 (3.4 주문 취소 API)
  */
 @Getter
-@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class ErrorResponse {
     @JsonProperty("error_code")
     private String errorCode;
@@ -20,21 +24,21 @@ public class ErrorResponse {
     @JsonProperty("error_message")
     private String errorMessage;
 
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
-    private LocalDateTime timestamp;
+    @JsonProperty("timestamp")
+    private Instant timestamp;
 
     @JsonProperty("request_id")
     private String requestId;
 
-    public ErrorResponse() {
-        this.timestamp = LocalDateTime.now();
-        this.requestId = "req-" + UUID.randomUUID().toString().substring(0, 20);
+    /**
+     * 에러 응답 생성 헬퍼 메서드
+     */
+    public static ErrorResponse of(String errorCode, String errorMessage) {
+        return ErrorResponse.builder()
+                .errorCode(errorCode)
+                .errorMessage(errorMessage)
+                .timestamp(Instant.now())
+                .requestId("req-" + UUID.randomUUID().toString().substring(0, 12))
+                .build();
     }
-
-    public ErrorResponse(String errorCode, String errorMessage) {
-        this();
-        this.errorCode = errorCode;
-        this.errorMessage = errorMessage;
-    }
-
 }

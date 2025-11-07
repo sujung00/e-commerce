@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * CouponService - Application 계층
@@ -87,6 +88,41 @@ public class CouponService {
             throw new UserNotFoundException(userId);
         }
 
+        // 재시도 로직 (최대 5회)
+        int maxRetries = 5;
+        int retryCount = 0;
+        long retryDelayMs = 5;
+
+        while (retryCount < maxRetries) {
+            try {
+                return issueCouponWithLock(userId, couponId);
+            } catch (IllegalArgumentException e) {
+                // 쿠폰 소진, 유효기간 만료, 중복 발급 등은 재시도하지 않음
+                throw e;
+            } catch (Exception e) {
+                retryCount++;
+                if (retryCount >= maxRetries) {
+                    throw e;
+                }
+                // 동시성 이슈로 인한 실패 시 짧은 시간 대기 후 재시도
+                try {
+                    Thread.sleep(retryDelayMs);
+                    retryDelayMs *= 2;  // Exponential backoff
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("쿠폰 발급 중 인터럽트됨", ie);
+                }
+            }
+        }
+
+        throw new IllegalArgumentException("쿠폰 발급 실패: 재시도 횟수 초과");
+    }
+
+    /**
+     * 쿠폰 발급 (락 포함)
+     * 실제 비관적 락과 쿠폰 감소 로직 수행
+     */
+    private IssueCouponResponse issueCouponWithLock(Long userId, Long couponId) {
         // === 2단계: 비관적 락 획득 ===
         // SELECT coupons WHERE coupon_id=? FOR UPDATE (InMemory: synchronized)
         Coupon coupon = couponRepository.findByIdForUpdate(couponId)
