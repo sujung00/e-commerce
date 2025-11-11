@@ -289,6 +289,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 
 **Method**: GET
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Request Body**: 없음
 
 **Success Response (200 OK)**:
@@ -362,6 +367,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 **Endpoint**: `POST /carts/items`
 
 **Method**: POST
+
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
 
 **Request Body**:
 ```json
@@ -461,6 +471,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 
 **Method**: PUT
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Path Parameters**:
 ```
 - cart_item_id (Long, required): 장바구니 아이템 ID
@@ -507,6 +522,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 
 **Method**: DELETE
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Path Parameters**:
 ```
 - cart_item_id (Long, required): 장바구니 아이템 ID
@@ -532,6 +552,11 @@ GET /api/products (기본값: page=0, size=10, sort=product_id,desc)
 **Endpoint**: `POST /orders`
 
 **Method**: POST
+
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
 
 **Request Body**:
 ```json
@@ -663,6 +688,11 @@ COMMIT (또는 ROLLBACK on version mismatch)
 
 **Method**: GET
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Path Parameters**:
 ```
 - order_id (Long, required): 주문 ID
@@ -708,6 +738,11 @@ COMMIT (또는 ROLLBACK on version mismatch)
 
 **Method**: GET
 
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
 **Query Parameters**:
 ```
 - page (Integer, optional, default: 0): 페이지 번호
@@ -740,6 +775,134 @@ COMMIT (또는 ROLLBACK on version mismatch)
 
 ---
 
+### 3.4 주문 취소 (재고 복구)
+
+**Endpoint**: `POST /orders/{order_id}/cancel`
+
+**Method**: POST
+
+**Headers**:
+```
+X-USER-ID: Long (required) - 사용자 고유 식별자
+```
+
+**Path Parameters**:
+```
+- order_id (Long, required): 주문 ID
+```
+
+**Request Body**: (없음)
+
+**Success Response (200 OK)**:
+```json
+{
+  "order_id": 5001,
+  "order_status": "CANCELLED",
+  "subtotal": 139700,
+  "coupon_discount": 0,
+  "final_amount": 139700,
+  "restored_amount": 139700,
+  "cancelled_at": "2025-10-29T13:45:00Z",
+  "restored_items": [
+    {
+      "order_item_id": 5001,
+      "product_id": 1,
+      "product_name": "티셔츠",
+      "option_id": 101,
+      "option_name": "블랙/M",
+      "quantity": 2,
+      "restored_stock": 2
+    },
+    {
+      "order_item_id": 5002,
+      "product_id": 2,
+      "product_name": "청바지",
+      "option_id": 201,
+      "option_name": "청색/32",
+      "quantity": 1,
+      "restored_stock": 1
+    }
+  ]
+}
+```
+
+**Response Fields**:
+- `order_id` (Long): 주문 ID
+- `order_status` (String): 주문 상태 ("CANCELLED")
+- `subtotal` (Long): 주문 상품 합계 (원 단위)
+- `coupon_discount` (Long): 쿠폰 할인액
+- `final_amount` (Long): 최종 주문 금액
+- `restored_amount` (Long): 복구된 잔액 (최종 주문 금액과 동일)
+- `cancelled_at` (Timestamp): 취소 시각 (ISO 8601)
+- `restored_items` (Array): 재고가 복구된 아이템 목록
+  - `order_item_id` (Long): 주문 아이템 ID
+  - `product_id` (Long): 상품 ID
+  - `product_name` (String): 상품명
+  - `option_id` (Long): 옵션 ID
+  - `option_name` (String): 옵션명
+  - `quantity` (Integer): 주문 수량
+  - `restored_stock` (Integer): 복구된 재고 수량
+
+**Status Codes**:
+- `200 OK`: 주문 취소 성공 (재고 복구 완료)
+- `400 Bad Request`: INVALID_ORDER_STATUS - 취소 불가능한 상태 (이미 취소됨, 배송 중 등)
+- `404 Not Found`: ORDER_NOT_FOUND - 주문을 찾을 수 없음
+- `404 Not Found`: USER_MISMATCH - 주문 사용자 불일치
+
+**Error Response (400)**:
+```json
+{
+  "error_code": "INVALID_ORDER_STATUS",
+  "error_message": "이미 취소된 주문입니다",
+  "timestamp": "2025-10-29T13:45:00Z",
+  "request_id": "req-abc123def456"
+}
+```
+
+**주문 취소 및 재고 복구 프로세스** (sequence-diagrams.md "3. 주문 생성 흐름" 역프로세스 참고):
+
+**1단계: 검증 (읽기 전용)**
+- 주문 존재 여부 확인
+- 주문 상태 검증: COMPLETED만 취소 가능 (취소된 주문, 배송 중인 주문은 불가)
+- 사용자 권한 확인: X-USER-ID와 주문의 user_id 일치
+
+**2단계: 원자적 거래 (모두 성공하거나 모두 롤백)**
+```
+BEGIN TRANSACTION
+  - UPDATE product_options SET stock = stock + qty WHERE option_id = ? AND version = current_version
+    (낙관적 락: version 업데이트로 동시성 제어)
+  - UPDATE users SET balance = balance + final_amount WHERE user_id = ?
+  - UPDATE orders SET order_status = 'CANCELLED', cancelled_at = NOW() WHERE order_id = ?
+  - if coupon_id is not null:
+    * UPDATE user_coupons SET status = 'ACTIVE', used_at = NULL WHERE user_coupon_id = ?
+    * UPDATE coupons SET remaining_qty = remaining_qty + 1, version = version + 1
+COMMIT (또는 ROLLBACK on version mismatch)
+```
+
+**Entity Relations** (data-models.md):
+- orders: order_id, user_id, order_status, coupon_id, subtotal, final_amount, cancelled_at
+- order_items: order_item_id, order_id, product_id, option_id, quantity
+- product_options: option_id, stock, version
+- user_coupons: user_coupon_id, status
+
+**Business Rules** (요구사항 2.2):
+- 주문 취소는 COMPLETED 상태에서만 가능
+- 재고는 주문 수량만큼 원래대로 복구됨
+- 사용자 잔액은 최종 결제 금액 전액 복구
+- 쿠폰이 적용된 경우 쿠폰 상태를 ACTIVE로 복원하고 remaining_qty 복구
+- 모든 작업이 원자적으로 처리됨 (부분 취소 불가)
+
+**Concurrency Control** (요구사항 3.2):
+- 낙관적 락: product_options.version과 coupons.version으로 Race Condition 방지
+- 동시에 주문을 다시 생성하는 경우에 대비
+
+**Performance** (요구사항 3.1):
+- 응답 시간: < 3초
+
+**Sequence Diagram**: sequence-diagrams.md "3. 주문 생성 흐름" 역프로세스 (재고 복구)
+
+---
+
 ## 쿠폰 API
 
 ### 4.1 쿠폰 발급 (선착순)
@@ -747,6 +910,12 @@ COMMIT (또는 ROLLBACK on version mismatch)
 **Endpoint**: `POST /coupons/issue`
 
 **Method**: POST
+
+**Request Headers** (required):
+```
+X-USER-ID: Long (required) - 사용자 식별자
+Content-Type: application/json
+```
 
 **Request Body**:
 ```json
@@ -757,6 +926,12 @@ COMMIT (또는 ROLLBACK on version mismatch)
 
 **Request Schema**:
 ```
+Headers:
+{
+  "X-USER-ID": Long (required)
+}
+
+Body:
 {
   "coupon_id": Long (required)
 }
@@ -779,37 +954,68 @@ COMMIT (또는 ROLLBACK on version mismatch)
 }
 ```
 
+**Response Fields**:
+- `user_coupon_id` (Long): 사용자 쿠폰 발급 ID
+- `user_id` (Long): 사용자 ID (X-USER-ID 헤더에서 추출)
+- `coupon_id` (Long): 쿠폰 ID
+- `coupon_name` (String): 쿠폰 이름
+- `discount_type` (String): 할인 타입 (FIXED_AMOUNT | PERCENTAGE)
+- `discount_amount` (Long, nullable): 고정 할인액
+- `discount_rate` (Double): 할인율
+- `status` (String): 쿠폰 상태 (ACTIVE | USED | EXPIRED)
+- `issued_at` (Timestamp): 발급 시각
+- `valid_from` (Timestamp): 유효 시작 시각
+- `valid_until` (Timestamp): 유효 종료 시각
+
 **Status Codes**:
 - `201 Created`: 쿠폰 발급 성공
-- `404 Not Found`: COUPON_NOT_FOUND
-- `400 Bad Request`: ERR-003 - "쿠폰이 모두 소진되었습니다"
-- `400 Bad Request`: ERR-003 - "쿠폰이 유효기간을 벗어났습니다"
-- `400 Bad Request`: ERR-003 - "이 쿠폰은 이미 발급받으셨습니다"
-- `400 Bad Request`: ERR-003 - "쿠폰이 비활성화되어 있습니다"
+- `404 Not Found`: COUPON_NOT_FOUND - 쿠폰을 찾을 수 없음
+- `400 Bad Request`: ERR-003 - "쿠폰이 모두 소진되었습니다" (재고 부족)
+- `400 Bad Request`: ERR-003 - "쿠폰이 유효기간을 벗어났습니다" (유효 기간 검증 실패)
+- `400 Bad Request`: ERR-003 - "이 쿠폰은 이미 발급받으셨습니다" (중복 발급 방지)
+- `400 Bad Request`: ERR-003 - "쿠폰이 비활성화되어 있습니다" (is_active=false)
 
-**발급 프로세스** (sequence-diagrams-ko.md "5. 쿠폰 발급 흐름" 참고):
+**아키텍처** (4계층):
+- **Presentation**: `CouponController.issueCoupon(userId, couponId)` - X-USER-ID 헤더에서 userId 추출
+- **Application**: `CouponService.issueCoupon(userId, couponId)` - 비즈니스 로직 및 검증
+- **Domain**: `Coupon`, `UserCoupon` 엔티티 + 예외 처리
+- **Infrastructure**: `CouponRepository`, `UserCouponRepository` - ConcurrentHashMap 기반
 
-1. **비관적 락**: SELECT coupons WHERE coupon_id=? FOR UPDATE
-2. **검증**:
-   - is_active=true (요구사항 2.3.1)
-   - valid_from <= NOW <= valid_until (요구사항 2.3.2)
-   - remaining_qty > 0 (요구사항 2.3.1)
-3. **UNIQUE 확인**: UNIQUE(user_id, coupon_id)로 중복 발급 방지
-4. **원자적 감소**: remaining_qty--, version++ (요구사항 2.3.1)
-5. **발급 기록**: INSERT user_coupons (status=ACTIVE)
+**발급 프로세스** (sequence-diagrams.md "5. 쿠폰 발급 흐름" 참고):
 
-**Entity Relations** (data-model.md):
-- coupons: coupon_id, coupon_name, discount_type, discount_amount, discount_rate, remaining_qty, version
-- user_coupons: user_coupon_id, user_id, coupon_id, status, issued_at
+```
+1. Presentation: X-USER-ID 헤더에서 userId 추출
+   ↓
+2. Application (CouponService):
+   - 비관적 락: synchronized 블록으로 동시성 제어
+   - 검증:
+     * is_active=true (요구사항 2.3.1)
+     * valid_from <= NOW <= valid_until (요구사항 2.3.2)
+     * remaining_qty > 0 (요구사항 2.3.1)
+   - UNIQUE 확인: UNIQUE(user_id, coupon_id)로 중복 발급 방지
+   - 원자적 감소: remaining_qty--, version++
+   ↓
+3. Infrastructure:
+   - CouponRepository.save(coupon) - remaining_qty 업데이트
+   - UserCouponRepository.save(userCoupon) - 발급 기록 저장
+   ↓
+4. Response: user_coupon_id, user_id, coupon_id, ...
+```
 
-**Business Rules** (BR-09, BR-10):
-- 쿠폰은 발급 가능 수량 범위 내에서만 발급
-- 선착순 발급 시 수량 초과 방지 (원자적 감소)
+**Entity Relations** (data-models.md):
+- **coupons**: coupon_id, coupon_name, discount_type, discount_amount, discount_rate, remaining_qty, version, is_active, valid_from, valid_until
+- **user_coupons**: user_coupon_id, user_id, coupon_id, status (ACTIVE/USED/EXPIRED), issued_at
 
-**Concurrency Control** (요구사항 3.2):
-- 비관적 락: SELECT ... FOR UPDATE로 동시 발급 요청 차단
+**Business Rules** (요구사항 2.3):
+- 쿠폰은 발급 가능 수량 범위 내에서만 발급 (요구사항 2.3.1)
+- 선착순 발급 시 수량 초과 방지 (요구사항 2.3.1)
+- 유효 기간 검증 (요구사항 2.3.2)
+- 중복 발급 방지 (UNIQUE constraint)
 
-**Sequence Diagram**: sequence-diagrams-ko.md "5. 쿠폰 발급 흐름"
+**Concurrency Control** (InMemory DB):
+- **동시성 제어**: ConcurrentHashMap + synchronized 블록으로 race condition 방지
+- **비관적 락 시뮬레이션**: synchronized로 같은 쿠폰의 동시 발급 요청 차단
+- **버전 관리**: version 필드로 낙관적 락 지원 (향후 DB 마이그레이션 대비)
 
 ---
 
@@ -818,6 +1024,11 @@ COMMIT (또는 ROLLBACK on version mismatch)
 **Endpoint**: `GET /coupons/issued`
 
 **Method**: GET
+
+**Request Headers** (required):
+```
+X-USER-ID: Long (required) - 사용자 식별자
+```
 
 **Query Parameters**:
 ```
@@ -844,8 +1055,32 @@ COMMIT (또는 ROLLBACK on version mismatch)
 }
 ```
 
+**Response Fields**:
+- `user_coupons` (Array): 사용자가 보유한 쿠폰 목록
+  - `user_coupon_id` (Long): 발급 기록 ID
+  - `coupon_id` (Long): 쿠폰 ID
+  - `coupon_name` (String): 쿠폰 이름
+  - `discount_type` (String): 할인 타입 (FIXED_AMOUNT | PERCENTAGE)
+  - `discount_rate` (Double): 할인율
+  - `status` (String): 쿠폰 상태 (ACTIVE | USED | EXPIRED)
+  - `issued_at` (Timestamp): 발급 시각
+  - `used_at` (Timestamp, nullable): 사용 시각 (status=USED일 때만 설정)
+  - `valid_from` (Timestamp): 유효 시작 시각
+  - `valid_until` (Timestamp): 유효 종료 시각
+
 **Status Codes**:
-- `200 OK`: 요청 성공
+- `200 OK`: 요청 성공 (빈 배열도 200 반환)
+
+**아키텍처** (4계층):
+- **Presentation**: `CouponController.getUserCoupons(userId, status)` - X-USER-ID 헤더에서 userId 추출
+- **Application**: `CouponService.getUserCoupons(userId, status)` - status별 필터링
+- **Domain**: `UserCoupon` 엔티티
+- **Infrastructure**: `UserCouponRepository.findByUserId(userId, status)` - ConcurrentHashMap 기반 조회
+
+**Business Logic**:
+- 사용자의 쿠폰 발급 기록을 상태별로 조회
+- status 파라미터로 필터링 (기본값: ACTIVE)
+- 현재 사용자(X-USER-ID)의 쿠폰만 조회 가능
 
 ---
 
@@ -854,6 +1089,11 @@ COMMIT (또는 ROLLBACK on version mismatch)
 **Endpoint**: `GET /coupons`
 
 **Method**: GET
+
+**Request Headers** (optional):
+```
+X-USER-ID: Long (optional) - 사용자 식별자 (조회만 필요한 경우 생략 가능)
+```
 
 **Query Parameters**: 없음
 
@@ -885,60 +1125,40 @@ COMMIT (또는 ROLLBACK on version mismatch)
 }
 ```
 
+**Response Fields**:
+- `coupons` (Array): 발급 가능한 쿠폰 목록 (active=true, 유효 기간 내, remaining_qty > 0)
+  - `coupon_id` (Long): 쿠폰 ID
+  - `coupon_name` (String): 쿠폰 이름
+  - `description` (String): 쿠폰 설명
+  - `discount_type` (String): 할인 타입 (FIXED_AMOUNT | PERCENTAGE)
+  - `discount_rate` (Double): 할인율 (discount_type=PERCENTAGE일 때)
+  - `discount_amount` (Long): 할인액 (discount_type=FIXED_AMOUNT일 때)
+  - `valid_from` (Timestamp): 유효 시작 시각
+  - `valid_until` (Timestamp): 유효 종료 시각
+  - `remaining_qty` (Integer): 남은 발급 가능 수량
+
 **Status Codes**:
-- `200 OK`: 요청 성공
+- `200 OK`: 요청 성공 (빈 배열도 200 반환)
+
+**아키텍처** (4계층):
+- **Presentation**: `CouponController.getAvailableCoupons()` - 사용자 정보 필요 없음 (공개 조회)
+- **Application**: `CouponService.getAvailableCoupons()` - 발급 가능 쿠폰만 필터링
+- **Domain**: `Coupon` 엔티티
+- **Infrastructure**: `CouponRepository.findAllAvailable()` - ConcurrentHashMap 기반 조회
+
+**Business Logic**:
+- 현재 발급 가능한 모든 쿠폰 조회 (필터링 조건)
+  * is_active = true
+  * valid_from <= NOW <= valid_until
+  * remaining_qty > 0
+- 사용자 로그인 없이 접근 가능 (공개 조회)
+- 사용자가 이미 발급받은 쿠폰도 표시됨 (선택지 제공)
 
 ---
 
 ## 통계 API
 
-### 5.1 인기 상품 조회 (TOP 5, 최근 3일)
-
-**Endpoint**: `GET /products/popular`
-
-**Method**: GET
-
-**Query Parameters**: 없음
-
-**Response (200 OK)**:
-```json
-{
-  "products": [
-    {
-      "product_id": 1,
-      "product_name": "티셔츠",
-      "price": 29900,
-      "total_stock": 100,
-      "status": "판매 중",
-      "order_count_3days": 150,
-      "rank": 1
-    },
-    {
-      "product_id": 5,
-      "product_name": "슬리퍼",
-      "price": 19900,
-      "total_stock": 200,
-      "status": "판매 중",
-      "order_count_3days": 120,
-      "rank": 2
-    }
-  ]
-}
-```
-
-**Status Codes**:
-- `200 OK`: 요청 성공
-
-**Performance** (요구사항 3.1):
-- 응답 시간: < 2초
-
-**Business Rules** (요구사항 2.1.3):
-- 최근 3일간 인기 상품 기준
-- 상위 5개만 반환
-
----
-
-### 5.2 재고 현황 조회 (상품별)
+### 5.1 재고 현황 조회 (상품별)
 
 **Endpoint**: `GET /inventory/{product_id}`
 
