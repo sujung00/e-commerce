@@ -1,18 +1,21 @@
 package com.hhplus.ecommerce.presentation.cart;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hhplus.ecommerce.config.TestRepositoryConfiguration;
 import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
 import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +30,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - DELETE /carts/items/{cart_item_id} - 장바구니 아이템 제거 (X-USER-ID 헤더)
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestRepositoryConfiguration.class)
+@Transactional
 @DisplayName("CartController 통합 테스트")
 class CartControllerIntegrationTest {
 

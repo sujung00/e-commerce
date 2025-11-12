@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.domain.coupon;
 
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -12,37 +13,61 @@ import java.time.LocalDateTime;
  * version은 낙관적 락(쿠폰 발급 시 동시성 제어)
  * remaining_qty는 원자적으로 감소되어야 함
  */
+@Entity
+@Table(name = "coupons")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Coupon {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "coupon_id")
     private Long couponId;
+
+    @Column(name = "coupon_name", nullable = false)
     private String couponName;
+
+    @Column(name = "description")
     private String description;
+
+    @Column(name = "discount_type", nullable = false)
     private String discountType;
 
-    // ✅ 수정: nullable 제거, 기본값 설정
+    @Column(name = "discount_amount", nullable = false)
     @Builder.Default
-    private Long discountAmount = 0L;  // FIXED_AMOUNT 타입일 때만 사용
+    private Long discountAmount = 0L;
 
+    @Column(name = "discount_rate", nullable = false)
     @Builder.Default
-    private BigDecimal discountRate = BigDecimal.ZERO;  // PERCENTAGE 타입일 때만 사용
+    private BigDecimal discountRate = BigDecimal.ZERO;
 
+    @Column(name = "total_quantity", nullable = false)
     private Integer totalQuantity;
+
+    @Column(name = "remaining_qty", nullable = false)
     private Integer remainingQty;
+
+    @Column(name = "valid_from", nullable = false)
     private LocalDateTime validFrom;
+
+    @Column(name = "valid_until", nullable = false)
     private LocalDateTime validUntil;
 
-    // ✅ 수정: nullable 제거, 기본값 설정
+    @Column(name = "is_active", nullable = false)
     @Builder.Default
-    private Boolean isActive = true;  // 기본값: true (활성)
+    private Boolean isActive = true;
 
+    @Version
+    @Column(name = "version")
     @Builder.Default
-    private Long version = 1L;  // 기본값: 1 (낙관적 락)
+    private Long version = 1L;
 
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     /**

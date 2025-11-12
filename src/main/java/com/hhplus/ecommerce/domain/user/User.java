@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.domain.user;
 
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -17,18 +18,39 @@ import java.time.LocalDateTime;
  * - 출금 시 충분한 잔액 필요
  * - 충전 시 음수 금액 불가능
  */
+@Entity
+@Table(name = "users", uniqueConstraints = {
+    @UniqueConstraint(columnNames = "email")
+})
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "user_id")
     private Long userId;
+
+    @Column(name = "email", unique = true, nullable = false)
     private String email;
+
+    @Column(name = "password_hash")
     private String passwordHash;
+
+    @Column(name = "name")
     private String name;
+
+    @Column(name = "phone")
     private String phone;
+
+    @Column(name = "balance", nullable = false)
     private Long balance;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     /**

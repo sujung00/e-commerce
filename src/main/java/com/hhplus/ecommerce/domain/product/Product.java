@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.domain.product;
 
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -22,20 +23,41 @@ import java.util.Optional;
  * - 가격은 0보다 커야 함
  * - 옵션은 null이 될 수 없음
  */
+@Entity
+@Table(name = "products")
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "product_id")
     private Long productId;
+
+    @Column(name = "product_name", nullable = false)
     private String productName;
+
+    @Column(name = "description")
     private String description;
+
+    @Column(name = "price", nullable = false)
     private Long price;
+
+    @Column(name = "total_stock", nullable = false)
     private Integer totalStock;
-    private String status;  // IN_STOCK, SOLD_OUT
+
+    @Column(name = "status", nullable = false)
+    private String status;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @JoinColumn(name = "product_id", insertable = false, updatable = false)
     @Builder.Default
     private List<ProductOption> options = new ArrayList<>();
 

@@ -1,16 +1,19 @@
 package com.hhplus.ecommerce.presentation.order;
 
+import com.hhplus.ecommerce.config.TestRepositoryConfiguration;
 import com.hhplus.ecommerce.presentation.order.request.CreateOrderRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - POST /orders/{order_id}/cancel - 주문 취소 (X-USER-ID 헤더)
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestRepositoryConfiguration.class)
+@Transactional
 @DisplayName("OrderController 통합 테스트")
 class OrderControllerIntegrationTest {
 

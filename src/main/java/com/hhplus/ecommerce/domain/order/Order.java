@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.domain.order;
 
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -19,22 +20,48 @@ import java.util.List;
  * - 취소된 주문은 다시 활성화 불가능
  * - 주문 생성 시 반드시 최소 1개 이상의 항목 필요
  */
+@Entity
+@Table(name = "orders")
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "order_id")
     private Long orderId;
+
+    @Column(name = "user_id", nullable = false)
     private Long userId;
-    private OrderStatus orderStatus;  // 도메인 값 객체로 변경
+
+    @Column(name = "order_status", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private OrderStatus orderStatus;
+
+    @Column(name = "coupon_id")
     private Long couponId;
+
+    @Column(name = "coupon_discount", nullable = false)
     private Long couponDiscount;
+
+    @Column(name = "subtotal", nullable = false)
     private Long subtotal;
+
+    @Column(name = "final_amount", nullable = false)
     private Long finalAmount;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @JoinColumn(name = "order_id", insertable = false, updatable = false)
     @Builder.Default
     private List<OrderItem> orderItems = new ArrayList<>();
 

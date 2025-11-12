@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.domain.order;
 
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -19,20 +20,43 @@ import java.time.LocalDateTime;
  * - 주문 시점의 상품명/옵션명을 스냅샷으로 저장
  *   (추후 상품 가격 변경 시에도 원래 가격으로 청구)
  */
+@Entity
+@Table(name = "order_items")
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class OrderItem {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "order_item_id")
     private Long orderItemId;
+
+    @Column(name = "order_id", nullable = false)
     private Long orderId;
+
+    @Column(name = "product_id", nullable = false)
     private Long productId;
+
+    @Column(name = "option_id", nullable = false)
     private Long optionId;
-    private String productName;      // 스냅샷: 주문 시점의 상품명
-    private String optionName;       // 스냅샷: 주문 시점의 옵션명
+
+    @Column(name = "product_name", nullable = false)
+    private String productName;
+
+    @Column(name = "option_name", nullable = false)
+    private String optionName;
+
+    @Column(name = "quantity", nullable = false)
     private Integer quantity;
+
+    @Column(name = "unit_price", nullable = false)
     private Long unitPrice;
-    private Long subtotal;           // unitPrice * quantity
+
+    @Column(name = "subtotal", nullable = false)
+    private Long subtotal;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /**

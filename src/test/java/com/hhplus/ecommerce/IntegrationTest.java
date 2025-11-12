@@ -3,6 +3,7 @@ package com.hhplus.ecommerce;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.inventory.InventoryService;
 import com.hhplus.ecommerce.application.order.OrderService;
+import com.hhplus.ecommerce.config.TestRepositoryConfiguration;
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.product.Product;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -38,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - 엔드-투-엔드 주문 처리 시나리오
  */
 @SpringBootTest
+@Import(TestRepositoryConfiguration.class)
 @Transactional
 @DisplayName("통합 테스트")
 class IntegrationTest {

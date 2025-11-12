@@ -1,14 +1,17 @@
 package com.hhplus.ecommerce.presentation.coupon;
 
+import com.hhplus.ecommerce.config.TestRepositoryConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - GET /coupons - 사용 가능한 쿠폰 조회
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestRepositoryConfiguration.class)
+@Transactional
 @DisplayName("CouponController 통합 테스트")
 class CouponControllerIntegrationTest {
 

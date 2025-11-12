@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.domain.product;
 
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -19,17 +20,35 @@ import java.time.LocalDateTime;
  * - 복구 시 재고 합계 상한선 검증 필요
  * - version을 통한 동시성 제어 (낙관적 락)
  */
+@Entity
+@Table(name = "product_options")
 @Getter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class ProductOption {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "option_id")
     private Long optionId;
+
+    @Column(name = "product_id", nullable = false)
     private Long productId;
+
+    @Column(name = "name", nullable = false)
     private String name;
+
+    @Column(name = "stock", nullable = false)
     private Integer stock;
+
+    @Version
+    @Column(name = "version")
     private Long version;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     /**

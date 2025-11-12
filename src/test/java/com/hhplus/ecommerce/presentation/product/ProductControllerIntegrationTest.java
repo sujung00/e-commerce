@@ -1,12 +1,15 @@
 package com.hhplus.ecommerce.presentation.product;
 
+import com.hhplus.ecommerce.config.TestRepositoryConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - GET /products/popular - 인기 상품 조회
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestRepositoryConfiguration.class)
+@Transactional
 @DisplayName("ProductController 통합 테스트")
 class ProductControllerIntegrationTest {
 
