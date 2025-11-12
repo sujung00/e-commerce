@@ -12,6 +12,9 @@ import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.order.OutboxRepository;
+import com.hhplus.ecommerce.domain.coupon.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
+import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,15 +48,18 @@ public class OrderTransactionService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final OutboxRepository outboxRepository;
+    private final UserCouponRepository userCouponRepository;
 
     public OrderTransactionService(OrderRepository orderRepository,
                                    ProductRepository productRepository,
                                    UserRepository userRepository,
-                                   OutboxRepository outboxRepository) {
+                                   OutboxRepository outboxRepository,
+                                   UserCouponRepository userCouponRepository) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.outboxRepository = outboxRepository;
+        this.userCouponRepository = userCouponRepository;
     }
 
     /**
@@ -198,11 +204,23 @@ public class OrderTransactionService {
 
     /**
      * 쿠폰 사용 처리
+     * UPDATE user_coupons SET status = 'USED', used_at = NOW() WHERE user_id = ? AND coupon_id = ?
+     *
+     * ✅ 수정: String "USED" → Enum UserCouponStatus.USED
      */
     private void markCouponAsUsed(Long userId, Long couponId, Long orderId) {
-        // user_coupons 테이블에서 해당 쿠폰을 'USED'로 표시
-        // UPDATE user_coupons SET status = 'USED', used_at = NOW() WHERE user_id = ? AND coupon_id = ?
-        System.out.println("[OrderTransactionService] 쿠폰 사용 처리: userId=" + userId + ", couponId=" + couponId);
+        UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자 쿠폰을 찾을 수 없습니다"));
+
+        // ✅ 수정: Enum을 사용하여 상태 변경
+        userCoupon.setStatus(UserCouponStatus.USED);
+        userCoupon.setUsedAt(java.time.LocalDateTime.now());
+        userCoupon.setOrderId(orderId);
+
+        userCouponRepository.update(userCoupon);
+
+        System.out.println("[OrderTransactionService] 쿠폰 사용 처리 완료: userId=" + userId +
+                ", couponId=" + couponId + ", orderId=" + orderId);
     }
 
     /**

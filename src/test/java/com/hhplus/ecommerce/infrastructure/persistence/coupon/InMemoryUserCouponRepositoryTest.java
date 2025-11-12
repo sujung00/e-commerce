@@ -1,6 +1,7 @@
 package com.hhplus.ecommerce.infrastructure.persistence.coupon;
 
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,9 +22,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("InMemoryUserCouponRepository 테스트")
 class InMemoryUserCouponRepositoryTest {
 
-    private static final String STATUS_ACTIVE = "ACTIVE";
-    private static final String STATUS_USED = "USED";
-    private static final String STATUS_EXPIRED = "EXPIRED";
+    private static final UserCouponStatus STATUS_ACTIVE = UserCouponStatus.UNUSED;
+    private static final UserCouponStatus STATUS_USED = UserCouponStatus.USED;
+    private static final UserCouponStatus STATUS_EXPIRED = UserCouponStatus.EXPIRED;
 
     private InMemoryUserCouponRepository userCouponRepository;
 
@@ -51,7 +52,7 @@ class InMemoryUserCouponRepositoryTest {
         assertTrue(saved.getUserCouponId() >= 2001L);
         assertEquals(100L, saved.getUserId());
         assertEquals(1L, saved.getCouponId());
-        assertEquals(STATUS_ACTIVE, saved.getStatus());
+        assertEquals(STATUS_ACTIVE, saved.getStatus().name());
     }
 
     @Test
@@ -135,7 +136,7 @@ class InMemoryUserCouponRepositoryTest {
         UserCoupon saved2 = userCouponRepository.save(userCoupon2);
 
         // When
-        List<UserCoupon> activeCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_ACTIVE);
+        List<UserCoupon> activeCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_ACTIVE.name());
 
         // Then
         assertTrue(activeCoupons.size() >= 2);
@@ -157,7 +158,7 @@ class InMemoryUserCouponRepositoryTest {
         userCouponRepository.update(saved);
 
         // When
-        List<UserCoupon> usedCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_USED);
+        List<UserCoupon> usedCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_USED.name());
 
         // Then
         assertTrue(usedCoupons.size() >= 1);
@@ -179,7 +180,7 @@ class InMemoryUserCouponRepositoryTest {
         userCouponRepository.update(saved);
 
         // When
-        List<UserCoupon> expiredCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_EXPIRED);
+        List<UserCoupon> expiredCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_EXPIRED.name());
 
         // Then
         assertTrue(expiredCoupons.size() >= 1);
@@ -190,7 +191,7 @@ class InMemoryUserCouponRepositoryTest {
     @DisplayName("findByUserIdAndStatus - 없는 상태는 빈 리스트")
     void testFindByUserIdAndStatus_EmptyList() {
         // When
-        List<UserCoupon> coupons = userCouponRepository.findByUserIdAndStatus(999L, STATUS_ACTIVE);
+        List<UserCoupon> coupons = userCouponRepository.findByUserIdAndStatus(999L, STATUS_ACTIVE.name());
 
         // Then
         assertTrue(coupons.isEmpty());
@@ -341,9 +342,9 @@ class InMemoryUserCouponRepositoryTest {
         List<UserCoupon> allCoupons = userCouponRepository.findByUserId(100L);
 
         // Then
-        assertTrue(allCoupons.stream().anyMatch(uc -> STATUS_ACTIVE.equals(uc.getStatus())));
-        assertTrue(allCoupons.stream().anyMatch(uc -> STATUS_USED.equals(uc.getStatus())));
-        assertTrue(allCoupons.stream().anyMatch(uc -> STATUS_EXPIRED.equals(uc.getStatus())));
+        assertTrue(allCoupons.stream().anyMatch(uc -> STATUS_ACTIVE == uc.getStatus()));
+        assertTrue(allCoupons.stream().anyMatch(uc -> STATUS_USED == uc.getStatus()));
+        assertTrue(allCoupons.stream().anyMatch(uc -> STATUS_EXPIRED == uc.getStatus()));
     }
 
     // ========== UserCoupon 업데이트 ==========
@@ -439,7 +440,7 @@ class InMemoryUserCouponRepositoryTest {
 
         // Then - 3. 상태 변경 확인
         assertEquals(STATUS_USED, updated.getStatus());
-        List<UserCoupon> usedCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_USED);
+        List<UserCoupon> usedCoupons = userCouponRepository.findByUserIdAndStatus(100L, STATUS_USED.name());
         assertTrue(usedCoupons.stream().anyMatch(uc -> uc.getCouponId().equals(1L)));
     }
 
@@ -477,11 +478,11 @@ class InMemoryUserCouponRepositoryTest {
         userCouponRepository.update(saved2);
 
         // When - 활성 쿠폰만 조회
-        List<UserCoupon> activeCoupons = userCouponRepository.findByUserIdAndStatus(200L, STATUS_ACTIVE);
+        List<UserCoupon> activeCoupons = userCouponRepository.findByUserIdAndStatus(200L, STATUS_ACTIVE.name());
 
         // Then
         assertTrue(activeCoupons.size() >= 1);
-        assertTrue(activeCoupons.stream().allMatch(uc -> STATUS_ACTIVE.equals(uc.getStatus())));
+        assertTrue(activeCoupons.stream().allMatch(uc -> STATUS_ACTIVE == uc.getStatus()));
     }
 
     @Test

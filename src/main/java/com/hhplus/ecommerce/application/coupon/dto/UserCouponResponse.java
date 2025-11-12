@@ -2,6 +2,7 @@ package com.hhplus.ecommerce.application.coupon.dto;
 
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,7 +26,10 @@ public class UserCouponResponse {
     private String discountType;
     private Long discountAmount;
     private BigDecimal discountRate;
+
+    // ✅ 수정: String → Enum (외부 반환 시 .name()으로 String 변환)
     private String status;
+
     private LocalDateTime issuedAt;
     private LocalDateTime validFrom;
     private LocalDateTime validUntil;
@@ -39,7 +43,8 @@ public class UserCouponResponse {
                 .discountType(coupon.getDiscountType())
                 .discountAmount(coupon.getDiscountAmount())
                 .discountRate(coupon.getDiscountRate())
-                .status(userCoupon.getStatus())
+                // ✅ 수정: Enum을 String으로 변환
+                .status(userCoupon.getStatus().name())
                 .issuedAt(userCoupon.getIssuedAt())
                 .validFrom(coupon.getValidFrom())
                 .validUntil(coupon.getValidUntil())

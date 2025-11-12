@@ -86,7 +86,7 @@ class CouponControllerTest {
                 .discountType("FIXED_AMOUNT")
                 .discountAmount(5000L)
                 .discountRate(null)
-                .status("ACTIVE")
+                .status("UNUSED")
                 .issuedAt(LocalDateTime.now())
                 .validFrom(LocalDateTime.now())
                 .validUntil(LocalDateTime.now().plusDays(30))
@@ -107,7 +107,7 @@ class CouponControllerTest {
                 .andExpect(jsonPath("$.user_coupon_id").value(TEST_USER_COUPON_ID))
                 .andExpect(jsonPath("$.coupon_name").value("신규고객 할인 쿠폰"))
                 .andExpect(jsonPath("$.discount_type").value("FIXED_AMOUNT"))
-                .andExpect(jsonPath("$.status").value("ACTIVE"));
+                .andExpect(jsonPath("$.status").value("UNUSED"));
 
         verify(couponService, times(1)).issueCoupon(TEST_USER_ID, TEST_COUPON_ID);
     }
@@ -124,7 +124,7 @@ class CouponControllerTest {
                 .discountType("PERCENTAGE")
                 .discountAmount(null)
                 .discountRate(new BigDecimal("10.00"))
-                .status("ACTIVE")
+                .status("UNUSED")
                 .issuedAt(LocalDateTime.now())
                 .validFrom(LocalDateTime.now())
                 .validUntil(LocalDateTime.now().plusDays(14))
@@ -200,7 +200,7 @@ class CouponControllerTest {
                                 .couponName("신규고객 할인")
                                 .discountType("FIXED_AMOUNT")
                                 .discountAmount(5000L)
-                                .status("ACTIVE")
+                                .status("UNUSED")
                                 .issuedAt(LocalDateTime.now().minusDays(5))
                                 .validFrom(LocalDateTime.now().minusDays(5))
                                 .validUntil(LocalDateTime.now().plusDays(25))
@@ -211,7 +211,7 @@ class CouponControllerTest {
                                 .couponName("여름 세일")
                                 .discountType("PERCENTAGE")
                                 .discountRate(new BigDecimal("15.00"))
-                                .status("ACTIVE")
+                                .status("UNUSED")
                                 .issuedAt(LocalDateTime.now().minusDays(2))
                                 .validFrom(LocalDateTime.now().minusDays(2))
                                 .validUntil(LocalDateTime.now().plusDays(28))
@@ -219,7 +219,7 @@ class CouponControllerTest {
                 ))
                 .build();
 
-        when(couponService.getUserCoupons(TEST_USER_ID, "ACTIVE"))
+        when(couponService.getUserCoupons(TEST_USER_ID, "UNUSED"))
                 .thenReturn(response.getUserCoupons());
 
         // When & Then
