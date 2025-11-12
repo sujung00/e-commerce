@@ -3,7 +3,6 @@ package com.hhplus.ecommerce.application.cart;
 import com.hhplus.ecommerce.domain.cart.*;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.infrastructure.persistence.cart.InMemoryCartRepository;
 import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
 import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
 import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
@@ -17,20 +16,22 @@ import java.util.stream.Collectors;
 /**
  * CartService - Application 계층
  * 비즈니스 로직 처리
+ *
+ * 아키텍처:
+ * - Domain 계층의 CartRepository 인터페이스에만 의존 (Port)
+ * - Infrastructure 계층의 구현체는 DI를 통해 주입됨 (Adapter)
+ * - Port-Adapter 패턴 준수로 느슨한 결합 유지
  */
 @Service
 public class CartService {
 
     private final CartRepository cartRepository;
     private final UserRepository userRepository;
-    private final InMemoryCartRepository inMemoryCartRepository;
 
     public CartService(CartRepository cartRepository,
-                       UserRepository userRepository,
-                       InMemoryCartRepository inMemoryCartRepository) {
+                       UserRepository userRepository) {
         this.cartRepository = cartRepository;
         this.userRepository = userRepository;
-        this.inMemoryCartRepository = inMemoryCartRepository;
     }
 
     /**
@@ -42,8 +43,8 @@ public class CartService {
             throw new UserNotFoundException(userId);
         }
 
-        Cart cart = inMemoryCartRepository.findOrCreateByUserId(userId);
-        List<CartItem> cartItems = inMemoryCartRepository.getCartItems(cart.getCartId());
+        Cart cart = cartRepository.findOrCreateByUserId(userId);
+        List<CartItem> cartItems = cartRepository.getCartItems(cart.getCartId());
 
         // CartItem을 Response로 변환
         List<CartItemResponse> itemResponses = cartItems.stream()
@@ -77,7 +78,7 @@ public class CartService {
         validateQuantity(request.getQuantity());
 
         // 장바구니 조회 또는 생성
-        Cart cart = inMemoryCartRepository.findOrCreateByUserId(userId);
+        Cart cart = cartRepository.findOrCreateByUserId(userId);
 
         // CartItem 생성
         CartItem cartItem = CartItem.builder()
@@ -92,7 +93,7 @@ public class CartService {
                 .build();
 
         // CartItem 저장
-        CartItem savedItem = inMemoryCartRepository.saveCartItem(cartItem);
+        CartItem savedItem = cartRepository.saveCartItem(cartItem);
 
         // 장바구니 업데이트
         updateCartTotals(cart);
@@ -115,11 +116,11 @@ public class CartService {
         validateQuantity(request.getQuantity());
 
         // CartItem 조회
-        CartItem cartItem = inMemoryCartRepository.findCartItemById(cartItemId)
+        CartItem cartItem = cartRepository.findCartItemById(cartItemId)
                 .orElseThrow(() -> new CartItemNotFoundException(cartItemId));
 
         // 사용자의 아이템 확인
-        Cart cart = inMemoryCartRepository.findByUserId(userId)
+        Cart cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
         if (!cartItem.getCartId().equals(cart.getCartId())) {
@@ -131,7 +132,7 @@ public class CartService {
         cartItem.setSubtotal((long) request.getQuantity() * cartItem.getUnitPrice());
         cartItem.setUpdatedAt(LocalDateTime.now());
 
-        CartItem savedItem = inMemoryCartRepository.saveCartItem(cartItem);
+        CartItem savedItem = cartRepository.saveCartItem(cartItem);
 
         // 장바구니 업데이트
         updateCartTotals(cart);
@@ -151,11 +152,11 @@ public class CartService {
         }
 
         // CartItem 조회
-        CartItem cartItem = inMemoryCartRepository.findCartItemById(cartItemId)
+        CartItem cartItem = cartRepository.findCartItemById(cartItemId)
                 .orElseThrow(() -> new CartItemNotFoundException(cartItemId));
 
         // 사용자의 아이템 확인
-        Cart cart = inMemoryCartRepository.findByUserId(userId)
+        Cart cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
         if (!cartItem.getCartId().equals(cart.getCartId())) {
@@ -163,7 +164,7 @@ public class CartService {
         }
 
         // 아이템 삭제
-        inMemoryCartRepository.deleteCartItem(cartItemId);
+        cartRepository.deleteCartItem(cartItemId);
 
         // 장바구니 업데이트
         updateCartTotals(cart);
@@ -173,7 +174,7 @@ public class CartService {
      * 장바구니 총액 업데이트
      */
     private void updateCartTotals(Cart cart) {
-        List<CartItem> items = inMemoryCartRepository.getCartItems(cart.getCartId());
+        List<CartItem> items = cartRepository.getCartItems(cart.getCartId());
         int totalItems = items.size();
         long totalPrice = items.stream().mapToLong(CartItem::getSubtotal).sum();
 
@@ -181,7 +182,7 @@ public class CartService {
         cart.setTotalPrice(totalPrice);
         cart.setUpdatedAt(LocalDateTime.now());
 
-        inMemoryCartRepository.saveCart(cart);
+        cartRepository.saveCart(cart);
     }
 
     /**
