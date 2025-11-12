@@ -1,6 +1,7 @@
 package com.hhplus.ecommerce.infrastructure.persistence.order;
 
 import com.hhplus.ecommerce.domain.order.Order;
+import com.hhplus.ecommerce.domain.order.OrderItem;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
@@ -22,17 +23,47 @@ public class InMemoryOrderRepository implements com.hhplus.ecommerce.domain.orde
         // ID가 없으면 새로운 ID 할당
         if (order.getOrderId() == null) {
             synchronized (this) {
-                order.setOrderId(++orderIdSequence);
+                Long newOrderId = ++orderIdSequence;
+
                 // OrderItem들에도 orderId와 orderItemId 할당
+                List<OrderItem> savedItems = new ArrayList<>();
                 long orderItemIdSequence = 5000L;
                 for (var item : order.getOrderItems()) {
-                    if (item.getOrderId() == null) {
-                        item.setOrderId(order.getOrderId());
-                    }
-                    if (item.getOrderItemId() == null) {
-                        item.setOrderItemId(++orderItemIdSequence);
-                    }
+                    Long newOrderItemId = ++orderItemIdSequence;
+
+                    // Builder 패턴을 사용하여 새로운 OrderItem 생성
+                    OrderItem savedItem = OrderItem.builder()
+                            .orderItemId(newOrderItemId)
+                            .orderId(newOrderId)
+                            .productId(item.getProductId())
+                            .optionId(item.getOptionId())
+                            .productName(item.getProductName())
+                            .optionName(item.getOptionName())
+                            .quantity(item.getQuantity())
+                            .unitPrice(item.getUnitPrice())
+                            .subtotal(item.getSubtotal())
+                            .createdAt(item.getCreatedAt())
+                            .build();
+                    savedItems.add(savedItem);
                 }
+
+                // Builder 패턴을 사용하여 새로운 Order 생성 (Setter 사용 안 함)
+                Order savedOrder = Order.builder()
+                        .orderId(newOrderId)
+                        .userId(order.getUserId())
+                        .orderStatus(order.getOrderStatus())
+                        .couponId(order.getCouponId())
+                        .couponDiscount(order.getCouponDiscount())
+                        .subtotal(order.getSubtotal())
+                        .finalAmount(order.getFinalAmount())
+                        .createdAt(order.getCreatedAt())
+                        .updatedAt(order.getUpdatedAt())
+                        .cancelledAt(order.getCancelledAt())
+                        .orderItems(savedItems)
+                        .build();
+
+                orders.put(newOrderId, savedOrder);
+                return savedOrder;
             }
         }
         orders.put(order.getOrderId(), order);

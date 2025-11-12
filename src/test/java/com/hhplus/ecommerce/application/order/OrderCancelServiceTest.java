@@ -8,7 +8,8 @@ import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.presentation.order.response.CancelOrderResponse;
+import com.hhplus.ecommerce.application.order.dto.CancelOrderResponse;
+import com.hhplus.ecommerce.domain.order.OrderStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,12 @@ class OrderCancelServiceTest {
     @Mock
     private OrderCancelTransactionService orderCancelTransactionService;
 
+    @Mock
+    private OrderValidator orderValidator;
+
+    @Mock
+    private OrderCalculator orderCalculator;
+
     private static final Long TEST_USER_ID = 1L;
     private static final Long TEST_ORDER_ID = 100L;
     private static final Long TEST_PRODUCT_ID = 1L;
@@ -67,8 +74,9 @@ class OrderCancelServiceTest {
         MockitoAnnotations.openMocks(this);
         orderService = new OrderService(
                 orderRepository,
-                productRepository,
                 userRepository,
+                orderValidator,
+                orderCalculator,
                 orderTransactionService,
                 orderCancelTransactionService
         );
@@ -83,7 +91,7 @@ class OrderCancelServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(100000L)
                 .couponDiscount(5000L)
                 .couponId(1L)
@@ -95,12 +103,9 @@ class OrderCancelServiceTest {
 
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(TEST_ORDER_ID)
-                .orderStatus("CANCELLED")
-                .subtotal(100000L)
-                .couponDiscount(5000L)
-                .finalAmount(95000L)
-                .restoredAmount(95000L)
-                .cancelledAt(java.time.Instant.now())
+                .orderStatus("COMPLETED")
+                .refundAmount(95000L)  // 환불액 = finalAmount
+                .cancelledAt(LocalDateTime.now())
                 .restoredItems(new ArrayList<>())
                 .build();
 
@@ -114,8 +119,8 @@ class OrderCancelServiceTest {
 
         // Then
         assertNotNull(result);
-        assertEquals("CANCELLED", result.getOrderStatus());
-        assertEquals(95000L, result.getRestoredAmount());
+        assertEquals("COMPLETED", result.getOrderStatus());
+        assertEquals(95000L, result.getRefundAmount());  // 환불액 검증
         verify(orderRepository, times(1)).findById(TEST_ORDER_ID);
         verify(orderCancelTransactionService, times(1)).executeTransactionalCancel(TEST_ORDER_ID, TEST_USER_ID, order);
     }
@@ -127,7 +132,7 @@ class OrderCancelServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(50000L)
                 .couponDiscount(0L)
                 .couponId(null)
@@ -139,12 +144,9 @@ class OrderCancelServiceTest {
 
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(TEST_ORDER_ID)
-                .orderStatus("CANCELLED")
-                .subtotal(50000L)
-                .couponDiscount(0L)
-                .finalAmount(50000L)
-                .restoredAmount(50000L)
-                .cancelledAt(java.time.Instant.now())
+                .orderStatus("COMPLETED")
+                .refundAmount(50000L)  // 환불액 = finalAmount (쿠폰 미적용)
+                .cancelledAt(LocalDateTime.now())
                 .restoredItems(new ArrayList<>())
                 .build();
 
@@ -158,7 +160,7 @@ class OrderCancelServiceTest {
 
         // Then
         assertNotNull(result);
-        assertEquals(0L, result.getCouponDiscount());
+        assertEquals(50000L, result.getRefundAmount());  // 쿠폰 적용 없이 전액 환불
         verify(orderCancelTransactionService, times(1)).executeTransactionalCancel(TEST_ORDER_ID, TEST_USER_ID, order);
     }
 
@@ -186,7 +188,7 @@ class OrderCancelServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)  // 다른 사용자의 주문
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .couponId(null)
@@ -214,7 +216,7 @@ class OrderCancelServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")  // COMPLETED가 아님
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)  // COMPLETED가 아님
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .couponId(null)
@@ -242,7 +244,7 @@ class OrderCancelServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("CANCELLED")  // 이미 취소됨
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.CANCELLED)  // 이미 취소됨
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .couponId(null)
@@ -270,7 +272,7 @@ class OrderCancelServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(100000L)
                 .couponDiscount(5000L)
                 .couponId(1L)
@@ -282,12 +284,9 @@ class OrderCancelServiceTest {
 
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(TEST_ORDER_ID)
-                .orderStatus("CANCELLED")
-                .subtotal(100000L)
-                .couponDiscount(5000L)
-                .finalAmount(95000L)
-                .restoredAmount(95000L)
-                .cancelledAt(java.time.Instant.now())
+                .orderStatus("COMPLETED")
+                .refundAmount(95000L)  // 환불액 = finalAmount
+                .cancelledAt(LocalDateTime.now())
                 .restoredItems(new ArrayList<>())
                 .build();
 

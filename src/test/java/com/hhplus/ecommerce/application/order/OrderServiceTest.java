@@ -10,11 +10,11 @@ import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.presentation.order.request.CreateOrderRequest;
-import com.hhplus.ecommerce.presentation.order.request.OrderItemRequest;
-import com.hhplus.ecommerce.presentation.order.response.CreateOrderResponse;
-import com.hhplus.ecommerce.presentation.order.response.OrderDetailResponse;
-import com.hhplus.ecommerce.presentation.order.response.OrderListResponse;
+import com.hhplus.ecommerce.application.order.dto.CreateOrderCommand;
+import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
+import com.hhplus.ecommerce.application.order.dto.CreateOrderResponse;
+import com.hhplus.ecommerce.application.order.dto.OrderDetailResponse;
+import com.hhplus.ecommerce.application.order.dto.OrderListResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -65,6 +65,15 @@ class OrderServiceTest {
     @Mock
     private OrderTransactionService orderTransactionService;
 
+    @Mock
+    private OrderCancelTransactionService orderCancelTransactionService;
+
+    @Mock
+    private com.hhplus.ecommerce.application.order.OrderValidator orderValidator;
+
+    @Mock
+    private com.hhplus.ecommerce.application.order.OrderCalculator orderCalculator;
+
     private static final Long TEST_USER_ID = 1L;
     private static final Long TEST_ORDER_ID = 100L;
     private static final Long TEST_PRODUCT_ID = 1L;
@@ -74,10 +83,8 @@ class OrderServiceTest {
     void setup() {
         MockitoAnnotations.openMocks(this);
 
-        // Mock OrderCancelTransactionService
-        OrderCancelTransactionService orderCancelTransactionService = mock(OrderCancelTransactionService.class);
-
-        orderService = new OrderService(orderRepository, productRepository, userRepository, orderTransactionService, orderCancelTransactionService);
+        // OrderService 생성자: OrderRepository, UserRepository, OrderValidator, OrderCalculator, OrderTransactionService, OrderCancelTransactionService
+        orderService = new OrderService(orderRepository, userRepository, orderValidator, orderCalculator, orderTransactionService, orderCancelTransactionService);
 
         // Lenient mode for tests - mocks won't complain about unused stubs
         // This is needed because productRepository is called multiple times during order creation
@@ -118,9 +125,9 @@ class OrderServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(TEST_PRODUCT_ID)
                                 .optionId(TEST_OPTION_ID)
                                 .quantity(1)
@@ -132,7 +139,7 @@ class OrderServiceTest {
         Order savedOrder = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .finalAmount(100000L)
@@ -142,13 +149,12 @@ class OrderServiceTest {
                 .build();
 
         lenient().when(userRepository.findById(TEST_USER_ID)).thenReturn(Optional.of(user));
-        lenient().when(productRepository.findById(TEST_PRODUCT_ID)).thenReturn(Optional.of(product));
         lenient().when(orderTransactionService.executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(100000L), eq(100000L)
         )).thenReturn(savedOrder);
 
         // When
-        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, request);
+        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
 
         // Then
         assertNotNull(result);
@@ -197,9 +203,9 @@ class OrderServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(TEST_PRODUCT_ID)
                                 .optionId(TEST_OPTION_ID)
                                 .quantity(1)
@@ -211,7 +217,7 @@ class OrderServiceTest {
         Order savedOrder = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
                 .subtotal(100000L)
                 .couponDiscount(5000L)
                 .finalAmount(95000L)
@@ -227,7 +233,7 @@ class OrderServiceTest {
         )).thenReturn(savedOrder);
 
         // When
-        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, request);
+        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
 
         // Then
         assertNotNull(result);
@@ -244,9 +250,9 @@ class OrderServiceTest {
     @DisplayName("주문 생성 - 실패 (사용자 없음)")
     void testCreateOrder_Failed_UserNotFound() {
         // Given
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(TEST_PRODUCT_ID)
                                 .optionId(TEST_OPTION_ID)
                                 .quantity(1)
@@ -259,7 +265,7 @@ class OrderServiceTest {
 
         // When & Then
         assertThrows(UserNotFoundException.class, () -> {
-            orderService.createOrder(TEST_USER_ID, request);
+            orderService.createOrder(TEST_USER_ID, command);
         });
 
         verify(userRepository, times(1)).findById(TEST_USER_ID);
@@ -281,9 +287,9 @@ class OrderServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(TEST_PRODUCT_ID)
                                 .optionId(TEST_OPTION_ID)
                                 .quantity(1)
@@ -297,7 +303,7 @@ class OrderServiceTest {
 
         // When & Then
         assertThrows(ProductNotFoundException.class, () -> {
-            orderService.createOrder(TEST_USER_ID, request);
+            orderService.createOrder(TEST_USER_ID, command);
         });
     }
 
@@ -314,7 +320,7 @@ class OrderServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(new ArrayList<>())
                 .couponId(null)
                 .build();
@@ -322,7 +328,7 @@ class OrderServiceTest {
         Order savedOrder = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
                 .subtotal(0L)
                 .couponDiscount(0L)
                 .finalAmount(0L)
@@ -337,7 +343,7 @@ class OrderServiceTest {
         )).thenReturn(savedOrder);
 
         // When
-        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, request);
+        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
 
         // Then
         assertNotNull(result);
@@ -359,7 +365,7 @@ class OrderServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("CONFIRMED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(150000L)
                 .couponDiscount(10000L)
                 .finalAmount(140000L)
@@ -376,7 +382,7 @@ class OrderServiceTest {
         assertNotNull(result);
         assertEquals(TEST_ORDER_ID, result.getOrderId());
         assertEquals(TEST_USER_ID, result.getUserId());
-        assertEquals("CONFIRMED", result.getOrderStatus());
+        assertEquals("COMPLETED", result.getOrderStatus());
         assertEquals(150000L, result.getSubtotal());
         assertEquals(10000L, result.getCouponDiscount());
         assertEquals(140000L, result.getFinalAmount());
@@ -406,7 +412,7 @@ class OrderServiceTest {
                 Order.builder()
                         .orderId(100L)
                         .userId(TEST_USER_ID)
-                        .orderStatus("CONFIRMED")
+                        .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                         .subtotal(100000L)
                         .couponDiscount(5000L)
                         .finalAmount(95000L)
@@ -416,7 +422,7 @@ class OrderServiceTest {
                 Order.builder()
                         .orderId(101L)
                         .userId(TEST_USER_ID)
-                        .orderStatus("PENDING")
+                        .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
                         .subtotal(50000L)
                         .couponDiscount(0L)
                         .finalAmount(50000L)
@@ -447,7 +453,7 @@ class OrderServiceTest {
                 Order.builder()
                         .orderId(100L)
                         .userId(TEST_USER_ID)
-                        .orderStatus("CONFIRMED")
+                        .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                         .subtotal(100000L)
                         .couponDiscount(5000L)
                         .finalAmount(95000L)
@@ -467,7 +473,7 @@ class OrderServiceTest {
         // Then
         assertNotNull(result);
         assertEquals(1, result.getContent().size());
-        assertEquals("CONFIRMED", result.getContent().get(0).getOrderStatus());
+        assertEquals("COMPLETED", result.getContent().get(0).getOrderStatus());
 
         verify(orderRepository, times(1)).findByUserId(TEST_USER_ID, 0, 10);
     }
@@ -505,9 +511,9 @@ class OrderServiceTest {
 
         Product product = createProductWithOption(TEST_PRODUCT_ID, "상품1", 50000L);
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(TEST_PRODUCT_ID)
                                 .optionId(TEST_OPTION_ID)
                                 .quantity(1)
@@ -519,7 +525,7 @@ class OrderServiceTest {
         Order savedOrder = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
                 .subtotal(50000L)
                 .couponDiscount(0L)
                 .finalAmount(50000L)
@@ -535,7 +541,7 @@ class OrderServiceTest {
         )).thenReturn(savedOrder);
 
         // When
-        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, request);
+        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
 
         // Then
         assertEquals(50000L, result.getSubtotal());
@@ -565,14 +571,14 @@ class OrderServiceTest {
 
         Product product2 = createProductWithOption(2L, "상품2", 70000L, 201L);
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(1L)
                                 .optionId(101L)
                                 .quantity(1)
                                 .build(),
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(2L)
                                 .optionId(201L)
                                 .quantity(1)
@@ -584,7 +590,7 @@ class OrderServiceTest {
         Order savedOrder = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .finalAmount(100000L)
@@ -601,7 +607,7 @@ class OrderServiceTest {
         )).thenReturn(savedOrder);
 
         // When
-        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, request);
+        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
 
         // Then
         assertEquals(100000L, result.getSubtotal());
@@ -632,9 +638,9 @@ class OrderServiceTest {
 
         Product product = createProductWithOption(TEST_PRODUCT_ID, "상품1", 100000L);
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(
-                        OrderItemRequest.builder()
+                        OrderItemCommand.builder()
                                 .productId(TEST_PRODUCT_ID)
                                 .optionId(TEST_OPTION_ID)
                                 .quantity(1)
@@ -646,7 +652,7 @@ class OrderServiceTest {
         Order savedOrder = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .finalAmount(100000L)
@@ -662,7 +668,7 @@ class OrderServiceTest {
         )).thenReturn(savedOrder);
 
         // When
-        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, request);
+        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
 
         // Then
         // Verify that OrderTransactionService.executeTransactionalOrder was called exactly once

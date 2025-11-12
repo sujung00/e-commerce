@@ -140,62 +140,64 @@ class ProductOptionTest {
     // ========== 재고 관리 ==========
 
     @Test
-    @DisplayName("재고 관리 - 재고 변경")
+    @DisplayName("재고 관리 - 재고 변경 (도메인 메서드 사용)")
     void testStockManagement_Update() {
         // Given
         ProductOption option = ProductOption.builder()
                 .stock(50)
                 .build();
 
-        // When
-        option.setStock(40);
+        // When: 재고 10개 차감
+        option.deductStock(10);
 
         // Then
         assertEquals(40, option.getStock());
     }
 
     @Test
-    @DisplayName("재고 관리 - 재고 감소")
+    @DisplayName("재고 관리 - 재고 감소 (도메인 메서드 사용)")
     void testStockManagement_Decrease() {
         // Given
         ProductOption option = ProductOption.builder()
                 .stock(50)
+                .version(1L)
                 .build();
 
-        // When
-        Integer newStock = option.getStock() - 1;
-        option.setStock(newStock);
+        // When: 재고 1개 차감
+        option.deductStock(1);
 
         // Then
         assertEquals(49, option.getStock());
+        assertEquals(2L, option.getVersion()); // version 증가 확인
     }
 
     @Test
-    @DisplayName("재고 관리 - 재고 증가")
+    @DisplayName("재고 관리 - 재고 증가 (복구 메서드 사용)")
     void testStockManagement_Increase() {
         // Given
         ProductOption option = ProductOption.builder()
                 .stock(50)
+                .version(1L)
                 .build();
 
-        // When
-        Integer newStock = option.getStock() + 10;
-        option.setStock(newStock);
+        // When: 재고 10개 복구
+        option.restoreStock(10);
 
         // Then
         assertEquals(60, option.getStock());
+        assertEquals(2L, option.getVersion()); // version 증가 확인
     }
 
     @Test
-    @DisplayName("재고 관리 - 재고 0으로 설정")
+    @DisplayName("재고 관리 - 재고 0으로 설정 (전량 차감)")
     void testStockManagement_SetToZero() {
         // Given
         ProductOption option = ProductOption.builder()
                 .stock(50)
                 .build();
 
-        // When
-        option.setStock(0);
+        // When: 전량 차감
+        option.deductStock(50);
 
         // Then
         assertEquals(0, option.getStock());
@@ -204,15 +206,16 @@ class ProductOptionTest {
     // ========== 낙관적 락(Version) 관리 ==========
 
     @Test
-    @DisplayName("낙관적 락 - 버전 증가")
+    @DisplayName("낙관적 락 - 버전 증가 (재고 차감 시)")
     void testOptimisticLock_VersionIncrement() {
         // Given
         ProductOption option = ProductOption.builder()
+                .stock(50)
                 .version(1L)
                 .build();
 
-        // When
-        option.setVersion(2L);
+        // When: 재고 차감 시 version 자동 증가
+        option.deductStock(10);
 
         // Then
         assertEquals(2L, option.getVersion());
@@ -231,20 +234,22 @@ class ProductOptionTest {
     }
 
     @Test
-    @DisplayName("낙관적 락 - 연속적인 버전 증가")
+    @DisplayName("낙관적 락 - 연속적인 버전 증가 (다중 재고 차감)")
     void testOptimisticLock_MultipleIncrements() {
         // Given
         ProductOption option = ProductOption.builder()
+                .stock(100)
                 .version(1L)
                 .build();
 
-        // When
+        // When: 5번 재고 차감 -> version 5번 증가
         for (int i = 0; i < 5; i++) {
-            option.setVersion(option.getVersion() + 1);
+            option.deductStock(1);
         }
 
         // Then
         assertEquals(6L, option.getVersion());
+        assertEquals(95, option.getStock());
     }
 
     @Test
@@ -299,13 +304,13 @@ class ProductOptionTest {
                 .updatedAt(originalTime)
                 .build();
 
-        // When
-        LocalDateTime newTime = originalTime.plusHours(1);
-        option.setUpdatedAt(newTime);
+        // When: 재고 차감 시 updatedAt 자동 갱신
+        option.deductStock(10);
 
         // Then
         assertEquals(originalTime, option.getCreatedAt());
-        assertEquals(newTime, option.getUpdatedAt());
+        assertTrue(option.getUpdatedAt().isAfter(originalTime) ||
+                   option.getUpdatedAt().isEqual(originalTime));
     }
 
     // ========== 경계값 테스트 ==========
@@ -475,11 +480,9 @@ class ProductOptionTest {
                 .version(1L)
                 .build();
 
-        // When: 10개 구매
+        // When: 10개 구매 (도메인 메서드 사용)
         int purchaseQuantity = 10;
-        option.setStock(option.getStock() - purchaseQuantity);
-        option.setVersion(option.getVersion() + 1);
-        option.setUpdatedAt(LocalDateTime.now());
+        option.deductStock(purchaseQuantity);
 
         // Then
         assertEquals(90, option.getStock());
@@ -498,11 +501,9 @@ class ProductOptionTest {
                 .version(2L)
                 .build();
 
-        // When: 5개 반품
+        // When: 5개 반품 (도메인 메서드 사용)
         int returnQuantity = 5;
-        option.setStock(option.getStock() + returnQuantity);
-        option.setVersion(option.getVersion() + 1);
-        option.setUpdatedAt(LocalDateTime.now());
+        option.restoreStock(returnQuantity);
 
         // Then
         assertEquals(95, option.getStock());
@@ -521,9 +522,8 @@ class ProductOptionTest {
                 .version(10L)
                 .build();
 
-        // When: 마지막 5개 구매로 품절
-        option.setStock(option.getStock() - 5);
-        option.setVersion(option.getVersion() + 1);
+        // When: 마지막 5개 구매로 품절 (도메인 메서드 사용)
+        option.deductStock(5);
 
         // Then
         assertEquals(0, option.getStock());

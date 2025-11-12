@@ -1,19 +1,28 @@
 package com.hhplus.ecommerce.domain.order;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Order 도메인 엔티티 단위 테스트
- * - 주문 생성 팩토리 메서드
+ * Order 도메인 엔티티 순수 단위 테스트
+ *
+ * 테스트 대상:
+ * - 주문 생성 팩토리 메서드 (비즈니스 규칙 검증)
  * - 주문 항목 추가 기능
- * - 주문 상태 관리
+ * - 주문 상태 관리 및 상태 전환 로직
+ * - 주문 금액 계산 및 조회
+ * - 주문 상태 확인 메서드들
+ *
+ * 특징: Mock 없이 실제 도메인 객체만 사용
  */
-@DisplayName("Order 도메인 엔티티 테스트")
+@DisplayName("Order 도메인 엔티티 순수 단위 테스트")
 class OrderTest {
 
     private static final Long TEST_USER_ID = 1L;
@@ -37,7 +46,7 @@ class OrderTest {
         assertEquals(0L, order.getCouponDiscount());
         assertEquals(TEST_SUBTOTAL, order.getSubtotal());
         assertEquals(TEST_SUBTOTAL, order.getFinalAmount());
-        assertEquals("COMPLETED", order.getOrderStatus());
+        assertEquals(OrderStatus.COMPLETED, order.getOrderStatus());
         assertNotNull(order.getCreatedAt());
         assertNotNull(order.getUpdatedAt());
         assertNotNull(order.getOrderItems());
@@ -63,7 +72,7 @@ class OrderTest {
         assertEquals(TEST_COUPON_DISCOUNT, order.getCouponDiscount());
         assertEquals(TEST_SUBTOTAL, order.getSubtotal());
         assertEquals(TEST_FINAL_AMOUNT, order.getFinalAmount());
-        assertEquals("COMPLETED", order.getOrderStatus());
+        assertEquals(OrderStatus.COMPLETED, order.getOrderStatus());
         assertTrue(order.getFinalAmount() < order.getSubtotal());
     }
 
@@ -195,7 +204,7 @@ class OrderTest {
         Order order = Order.builder()
                 .orderId(1L)
                 .userId(TEST_USER_ID)
-                .orderStatus("PENDING")
+                .orderStatus(OrderStatus.PENDING)
                 .couponId(TEST_COUPON_ID)
                 .couponDiscount(TEST_COUPON_DISCOUNT)
                 .subtotal(TEST_SUBTOTAL)
@@ -207,7 +216,7 @@ class OrderTest {
         // Then
         assertEquals(1L, order.getOrderId());
         assertEquals(TEST_USER_ID, order.getUserId());
-        assertEquals("PENDING", order.getOrderStatus());
+        assertEquals(OrderStatus.PENDING, order.getOrderStatus());
         assertEquals(TEST_COUPON_ID, order.getCouponId());
     }
 
@@ -228,17 +237,27 @@ class OrderTest {
     // ========== Order 속성 변경 ==========
 
     @Test
-    @DisplayName("주문 상태 변경 - Setter를 통한 상태 변경")
+    @DisplayName("주문 상태 변경 - Builder로 상태 변경된 객체 생성")
     void testOrderStatusChange() {
         // Given
         Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
-        assertEquals("COMPLETED", order.getOrderStatus());
+        assertEquals(OrderStatus.COMPLETED, order.getOrderStatus());
 
-        // When
-        order.setOrderStatus("CANCELLED");
+        // When - 상태를 변경하려면 새 객체를 Builder로 생성
+        Order updatedOrder = Order.builder()
+                .orderId(order.getOrderId())
+                .userId(order.getUserId())
+                .orderStatus(OrderStatus.CANCELLED)
+                .couponId(order.getCouponId())
+                .couponDiscount(order.getCouponDiscount())
+                .subtotal(order.getSubtotal())
+                .finalAmount(order.getFinalAmount())
+                .createdAt(order.getCreatedAt())
+                .updatedAt(LocalDateTime.now())
+                .build();
 
         // Then
-        assertEquals("CANCELLED", order.getOrderStatus());
+        assertEquals(OrderStatus.CANCELLED, updatedOrder.getOrderStatus());
     }
 
     @Test
@@ -333,5 +352,360 @@ class OrderTest {
         assertNull(order.getUserId());
         assertNull(order.getOrderStatus());
         assertNotNull(order.getOrderItems());  // Builder.Default 설정
+    }
+
+    // ========== 새로운 비즈니스 로직: 주문 취소 ==========
+
+    @Nested
+    @DisplayName("주문 취소 로직")
+    class OrderCancellationTests {
+
+        @Test
+        @DisplayName("주문 취소 - 성공 (COMPLETED 상태)")
+        void testCancel_Success() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, TEST_COUPON_DISCOUNT,
+                                           TEST_SUBTOTAL, TEST_FINAL_AMOUNT);
+            assertTrue(order.isCancellable());
+
+            // When
+            order.cancel();
+
+            // Then
+            assertTrue(order.isCancelled());
+            assertFalse(order.isCancellable());
+            assertNotNull(order.getCancelledAt());
+            assertTrue(order.getCancelledAt().isBefore(LocalDateTime.now().plusSeconds(1)));
+        }
+
+        @Test
+        @DisplayName("주문 취소 - 실패 (이미 취소된 주문)")
+        void testCancel_AlreadyCancelled() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+            order.cancel();  // 첫 취소
+            assertTrue(order.isCancelled());
+
+            // When & Then
+            assertThrows(InvalidOrderStatusException.class, order::cancel);
+        }
+
+        @Test
+        @DisplayName("주문 취소 - 취소 시 상태와 타임스탬프 업데이트")
+        void testCancel_UpdatesTimestamp() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+            LocalDateTime beforeCancel = order.getUpdatedAt();
+
+            // When
+            order.cancel();
+
+            // Then
+            assertTrue(order.getUpdatedAt().isAfter(beforeCancel));
+            assertNotNull(order.getCancelledAt());
+        }
+    }
+
+    // ========== 새로운 비즈니스 로직: 주문 상태 확인 ==========
+
+    @Nested
+    @DisplayName("주문 상태 확인 메서드")
+    class OrderStatusCheckTests {
+
+        @Test
+        @DisplayName("isCancellable - COMPLETED 상태만 취소 가능")
+        void testIsCancellable() {
+            // Given
+            Order completedOrder = Order.createOrder(TEST_USER_ID, null, 0L, 50000L, 50000L);
+
+            // When & Then
+            assertTrue(completedOrder.isCancellable());
+        }
+
+        @Test
+        @DisplayName("isCompleted - COMPLETED 상태 확인")
+        void testIsCompleted() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, 50000L, 50000L);
+
+            // When & Then
+            assertTrue(order.isCompleted());
+            assertFalse(order.isCancelled());
+        }
+
+        @Test
+        @DisplayName("hasCoupon - 쿠폰 적용 여부 확인")
+        void testHasCoupon() {
+            // Given
+            Order withCoupon = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, TEST_COUPON_DISCOUNT,
+                                                 TEST_SUBTOTAL, TEST_FINAL_AMOUNT);
+            Order noCoupon = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+
+            // When & Then
+            assertTrue(withCoupon.hasCoupon());
+            assertFalse(noCoupon.hasCoupon());
+        }
+    }
+
+    // ========== 새로운 비즈니스 로직: 금액 계산 및 조회 ==========
+
+    @Nested
+    @DisplayName("금액 계산 및 조회")
+    class OrderAmountCalculationTests {
+
+        @Test
+        @DisplayName("getPaymentAmount - 실제 결제액 조회")
+        void testGetPaymentAmount() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, TEST_COUPON_DISCOUNT,
+                                           TEST_SUBTOTAL, TEST_FINAL_AMOUNT);
+
+            // When
+            Long paymentAmount = order.getPaymentAmount();
+
+            // Then
+            assertEquals(TEST_FINAL_AMOUNT, paymentAmount);
+            assertEquals(95000L, paymentAmount);
+        }
+
+        @Test
+        @DisplayName("getBaseAmount - 쿠폰 제외 원가 합계 조회")
+        void testGetBaseAmount() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, TEST_COUPON_DISCOUNT,
+                                           TEST_SUBTOTAL, TEST_FINAL_AMOUNT);
+
+            // When
+            Long baseAmount = order.getBaseAmount();
+
+            // Then
+            assertEquals(TEST_SUBTOTAL, baseAmount);
+            assertEquals(100000L, baseAmount);
+        }
+
+        @Test
+        @DisplayName("getTotalDiscount - 총 할인액 조회")
+        void testGetTotalDiscount() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, TEST_COUPON_DISCOUNT,
+                                           TEST_SUBTOTAL, TEST_FINAL_AMOUNT);
+
+            // When
+            Long discount = order.getTotalDiscount();
+
+            // Then
+            assertEquals(TEST_COUPON_DISCOUNT, discount);
+            assertEquals(5000L, discount);
+        }
+
+        @Test
+        @DisplayName("getDiscountPercentage - 할인율 계산")
+        void testGetDiscountPercentage() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, 50000L,
+                                           100000L, 50000L);
+
+            // When
+            double discountPercentage = order.getDiscountPercentage();
+
+            // Then
+            assertEquals(50.0, discountPercentage);
+        }
+
+        @Test
+        @DisplayName("getDiscountPercentage - 할인 없는 경우 0%")
+        void testGetDiscountPercentage_NoDiscount() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+
+            // When
+            double discountPercentage = order.getDiscountPercentage();
+
+            // Then
+            assertEquals(0.0, discountPercentage);
+        }
+
+        @Test
+        @DisplayName("getDiscountPercentage - 소계가 0인 경우 0%")
+        void testGetDiscountPercentage_ZeroSubtotal() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, 0L, 0L);
+
+            // When
+            double discountPercentage = order.getDiscountPercentage();
+
+            // Then
+            assertEquals(0.0, discountPercentage);
+        }
+    }
+
+    // ========== 새로운 비즈니스 로직: 주문 항목 관리 ==========
+
+    @Nested
+    @DisplayName("주문 항목 관리")
+    class OrderItemManagementTests {
+
+        @Test
+        @DisplayName("getOrderItemCount - 주문 항목 개수 조회")
+        void testGetOrderItemCount() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+
+            // When & Then
+            assertEquals(0, order.getOrderItemCount());
+
+            // When
+            order.addOrderItem(OrderItem.createOrderItem(100L, 1L, "상품1", "옵션1", 2, 50000L));
+            order.addOrderItem(OrderItem.createOrderItem(200L, 2L, "상품2", "옵션2", 3, 30000L));
+
+            // Then
+            assertEquals(2, order.getOrderItemCount());
+        }
+
+        @Test
+        @DisplayName("getTotalQuantity - 주문 총 수량 계산")
+        void testGetTotalQuantity() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+            order.addOrderItem(OrderItem.createOrderItem(100L, 1L, "상품1", "옵션1", 2, 50000L));
+            order.addOrderItem(OrderItem.createOrderItem(200L, 2L, "상품2", "옵션2", 3, 30000L));
+            order.addOrderItem(OrderItem.createOrderItem(300L, 3L, "상품3", "옵션3", 5, 20000L));
+
+            // When
+            Integer totalQuantity = order.getTotalQuantity();
+
+            // Then
+            assertEquals(10, totalQuantity);  // 2 + 3 + 5
+        }
+
+        @Test
+        @DisplayName("addOrderItem - null 항목 추가 실패")
+        void testAddOrderItem_NullItem() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+
+            // When & Then
+            assertThrows(IllegalArgumentException.class, () -> order.addOrderItem(null));
+        }
+
+        @Test
+        @DisplayName("getTotalQuantity - 빈 주문의 총 수량은 0")
+        void testGetTotalQuantity_EmptyOrder() {
+            // Given
+            Order order = Order.createOrder(TEST_USER_ID, null, 0L, TEST_SUBTOTAL, TEST_SUBTOTAL);
+
+            // When
+            Integer totalQuantity = order.getTotalQuantity();
+
+            // Then
+            assertEquals(0, totalQuantity);
+        }
+    }
+
+    // ========== 비즈니스 규칙 검증 ==========
+
+    @Nested
+    @DisplayName("Order 생성 시 비즈니스 규칙 검증")
+    class OrderCreationValidationTests {
+
+        @Test
+        @DisplayName("Order 생성 - 음수 최종 금액 거절")
+        void testCreateOrder_NegativeFinalAmount() {
+            // When & Then
+            assertThrows(IllegalArgumentException.class, () ->
+                Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, 120000L, 100000L, -20000L)
+            );
+        }
+
+        @Test
+        @DisplayName("Order 생성 - 음수 쿠폰 할인액 거절")
+        void testCreateOrder_NegativeCouponDiscount() {
+            // When & Then
+            assertThrows(IllegalArgumentException.class, () ->
+                Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, -5000L, 100000L, 100000L)
+            );
+        }
+
+        @Test
+        @DisplayName("Order 생성 - 0원 쿠폰 할인액은 허용")
+        void testCreateOrder_ZeroCouponDiscount() {
+            // When
+            Order order = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, 0L, 100000L, 100000L);
+
+            // Then
+            assertEquals(0L, order.getCouponDiscount());
+            assertEquals(100000L, order.getFinalAmount());
+        }
+
+        @Test
+        @DisplayName("Order 생성 - 0원 최종 금액은 허용")
+        void testCreateOrder_ZeroFinalAmount() {
+            // When
+            Order order = Order.createOrder(TEST_USER_ID, TEST_COUPON_ID, 100000L, 100000L, 0L);
+
+            // Then
+            assertEquals(0L, order.getFinalAmount());
+        }
+    }
+
+    // ========== 실제 비즈니스 시나리오 테스트 ==========
+
+    @Nested
+    @DisplayName("실제 비즈니스 시나리오")
+    class RealWorldScenarios {
+
+        @Test
+        @DisplayName("시나리오 1: 쿠폰 적용 주문 생성 및 취소")
+        void scenario1_CreateOrderWithCouponAndCancel() {
+            // Given: 사용자가 100,000원 상품 2개 구매 (쿠폰으로 5,000원 할인)
+            Long userId = 1L;
+            Long subtotal = 200000L;  // 100,000 × 2
+            Long couponDiscount = 5000L;
+            Long finalAmount = 195000L;
+
+            // When: 주문 생성
+            Order order = Order.createOrder(userId, 1L, couponDiscount, subtotal, finalAmount);
+            order.addOrderItem(OrderItem.createOrderItem(1L, 1L, "상품1", "색상-빨강", 2, 100000L));
+
+            // Then: 주문 상태 확인
+            assertTrue(order.isCompleted());
+            assertTrue(order.hasCoupon());
+            assertEquals(195000L, order.getPaymentAmount());
+            assertEquals(2, order.getTotalQuantity());
+
+            // When: 주문 취소
+            order.cancel();
+
+            // Then: 취소 완료
+            assertTrue(order.isCancelled());
+            assertNotNull(order.getCancelledAt());
+        }
+
+        @Test
+        @DisplayName("시나리오 2: 여러 상품 주문 및 총액 검증")
+        void scenario2_MultipleProductsOrderWithTotalValidation() {
+            // Given: 여러 상품 주문
+            Order order = Order.createOrder(1L, null, 0L, 0L, 0L);
+
+            // When: 상품 항목 추가
+            order.addOrderItem(OrderItem.createOrderItem(1L, 1L, "노트북", "검은색", 1, 1500000L));
+            order.addOrderItem(OrderItem.createOrderItem(2L, 2L, "마우스", "회색", 2, 50000L));
+            order.addOrderItem(OrderItem.createOrderItem(3L, 3L, "키보드", "검은색", 1, 150000L));
+
+            // Then: 수량과 항목 수 검증
+            assertEquals(4, order.getTotalQuantity());  // 1 + 2 + 1
+            assertEquals(3, order.getOrderItemCount());
+        }
+
+        @Test
+        @DisplayName("시나리오 3: 전체 할인율 50% 이상인 주문")
+        void scenario3_HighDiscountOrderPercentage() {
+            // Given: 소계 100,000원에 60,000원 할인 (60%)
+            Order order = Order.createOrder(1L, 1L, 60000L, 100000L, 40000L);
+
+            // Then: 할인율 검증
+            assertEquals(60.0, order.getDiscountPercentage());
+            assertEquals(40000L, order.getPaymentAmount());
+        }
     }
 }

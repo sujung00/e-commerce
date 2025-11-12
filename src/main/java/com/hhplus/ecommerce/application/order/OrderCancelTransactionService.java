@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.application.order;
 
+import com.hhplus.ecommerce.application.order.dto.CancelOrderResponse;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.product.Product;
@@ -9,7 +10,6 @@ import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
-import com.hhplus.ecommerce.presentation.order.response.CancelOrderResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,50 +65,41 @@ public class OrderCancelTransactionService {
      */
     @Transactional
     public CancelOrderResponse executeTransactionalCancel(Long orderId, Long userId, Order order) {
-        // 2-1: 주문 상태 변경
-        order.setOrderStatus("CANCELLED");
-        order.setUpdatedAt(java.time.LocalDateTime.now());
+        // 2-1: 주문 상태 변경 (Domain 메서드 활용)
+        // Order.cancel() 메서드가 다음을 처리합니다:
+        // - 주문 상태를 CANCELLED로 변경
+        // - 업데이트 시간 자동 설정
+        order.cancel();
 
-        // 2-2: 재고 복구
+        // 2-2: 재고 복구 (Domain 메서드 활용)
         List<CancelOrderResponse.RestoredItem> restoredItems = new ArrayList<>();
         for (var orderItem : order.getOrderItems()) {
             Product product = productRepository.findById(orderItem.getProductId())
                     .orElseThrow(() -> new ProductNotFoundException(orderItem.getProductId()));
 
+            // Domain 메서드 호출 (Product가 내부적으로 ProductOption 조회 및 재고 복구)
+            // 예외 처리: ProductOptionNotFoundException
+            product.restoreStock(orderItem.getOptionId(), orderItem.getQuantity());
+
+            // 저장소에 반영
+            productRepository.save(product);
+
+            // 복구된 항목 정보 추가
+            // restoreStock() 호출 후 ProductOption의 재고를 조회해서 추가
             ProductOption option = product.getOptions().stream()
                     .filter(o -> o.getOptionId().equals(orderItem.getOptionId()))
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("옵션을 찾을 수 없습니다"));
 
-            // 낙관적 락: version 확인
-            Long currentVersion = option.getVersion();
-
-            // 재고 복구 (동시성 제어를 위한 synchronized 블록)
-            synchronized (option) {
-                // version 재확인
-                if (!option.getVersion().equals(currentVersion)) {
-                    throw new IllegalStateException("ERR-005: 주문 취소에 실패했습니다 (동시 수정으로 인한 재고 변경). 다시 시도하세요.");
-                }
-
-                // 재고 복구
-                int newStock = option.getStock() + orderItem.getQuantity();
-                option.setStock(newStock);
-                option.setVersion(currentVersion + 1);
-
-                // 저장소에 반영
-                productRepository.saveOption(option);
-
-                // 복구된 항목 정보 추가
-                restoredItems.add(CancelOrderResponse.RestoredItem.builder()
-                        .orderItemId(orderItem.getOrderItemId())
-                        .productId(orderItem.getProductId())
-                        .productName(orderItem.getProductName())
-                        .optionId(orderItem.getOptionId())
-                        .optionName(orderItem.getOptionName())
-                        .quantity(orderItem.getQuantity())
-                        .restoredStock(newStock)
-                        .build());
-            }
+            restoredItems.add(CancelOrderResponse.RestoredItem.builder()
+                    .orderItemId(orderItem.getOrderItemId())
+                    .productId(orderItem.getProductId())
+                    .productName(orderItem.getProductName())
+                    .optionId(orderItem.getOptionId())
+                    .optionName(orderItem.getOptionName())
+                    .quantity(orderItem.getQuantity())
+                    .restoredStock(option.getStock())
+                    .build());
         }
 
         // 2-3: 사용자 잔액 복구
@@ -122,23 +113,26 @@ public class OrderCancelTransactionService {
         // 2-5: 주문 저장 (상태 변경 반영)
         Order savedOrder = orderRepository.save(order);
 
-        // 2-6: 응답 반환
-        return CancelOrderResponse.fromOrder(savedOrder, restoredItems);
+        // 2-6: 응답 반환 (Application layer DTO로 변환)
+        return CancelOrderResponse.fromOrder(savedOrder);
     }
 
     /**
-     * 사용자 잔액 복구
+     * 사용자 잔액 복구 (Domain 메서드 활용)
      *
-     * 실제 DB 환경에서는:
-     * UPDATE users SET balance = balance + final_amount WHERE user_id = ?
+     * User.refundBalance() 메서드가 다음을 처리합니다:
+     * - 잔액 복구 (추가)
+     * - 업데이트된 사용자 반환
      */
     private void restoreUserBalance(Long userId, Long finalAmount) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
-        long newBalance = user.getBalance() + finalAmount;
-        user.setBalance(newBalance);
-        // 저장소에 반영 (InMemory이므로 직접 수정)
+        // Domain 메서드 호출 (User가 잔액 환불/복구)
+        user.refundBalance(finalAmount);
+
+        // 저장소에 반영
+        userRepository.save(user);
     }
 
     /**

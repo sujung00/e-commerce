@@ -12,9 +12,9 @@ import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.presentation.inventory.response.InventoryResponse;
-import com.hhplus.ecommerce.presentation.order.request.CreateOrderRequest;
-import com.hhplus.ecommerce.presentation.order.request.OrderItemRequest;
-import com.hhplus.ecommerce.presentation.order.response.CreateOrderResponse;
+import com.hhplus.ecommerce.application.order.dto.CreateOrderCommand;
+import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
+import com.hhplus.ecommerce.application.order.dto.CreateOrderResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -252,19 +252,19 @@ class IntegrationTest {
     @DisplayName("주문 생성 - 성공 (쿠폰 미적용)")
     void testOrderCreation_Success_NoCoupon() {
         // Given
-        OrderItemRequest item = OrderItemRequest.builder()
+        OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
                 .optionId(2001L)
                 .quantity(2)
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(item))
                 .couponId(null)
                 .build();
 
         // When
-        CreateOrderResponse response = orderService.createOrder(testUser.getUserId(), request);
+        CreateOrderResponse response = orderService.createOrder(testUser.getUserId(), command);
 
         // Then
         assertNotNull(response);
@@ -277,19 +277,19 @@ class IntegrationTest {
         // Given - 먼저 쿠폰 발급
         couponService.issueCoupon(testUser.getUserId(), testCoupon.getCouponId());
 
-        OrderItemRequest item = OrderItemRequest.builder()
+        OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
                 .optionId(2001L)
                 .quantity(1)
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(item))
                 .couponId(testCoupon.getCouponId())
                 .build();
 
         // When
-        CreateOrderResponse response = orderService.createOrder(testUser.getUserId(), request);
+        CreateOrderResponse response = orderService.createOrder(testUser.getUserId(), command);
 
         // Then
         assertNotNull(response);
@@ -301,20 +301,20 @@ class IntegrationTest {
     @DisplayName("주문 생성 - 실패 (재고 부족)")
     void testOrderCreation_Failed_InsufficientStock() {
         // Given - 재고보다 많은 수량 주문
-        OrderItemRequest item = OrderItemRequest.builder()
+        OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
                 .optionId(2001L)
                 .quantity(100)  // 재고는 10개
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(item))
                 .couponId(null)
                 .build();
 
         // When & Then
         assertThrows(Exception.class,
-                () -> orderService.createOrder(testUser.getUserId(), request),
+                () -> orderService.createOrder(testUser.getUserId(), command),
                 "재고가 부족하면 주문할 수 없습니다");
     }
 
@@ -332,20 +332,20 @@ class IntegrationTest {
                 .build();
         userRepository.save(poorUser);
 
-        OrderItemRequest item = OrderItemRequest.builder()
+        OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
                 .optionId(2001L)
                 .quantity(1)
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(item))
                 .couponId(null)
                 .build();
 
         // When & Then
         assertThrows(Exception.class,
-                () -> orderService.createOrder(poorUser.getUserId(), request),
+                () -> orderService.createOrder(poorUser.getUserId(), command),
                 "잔액이 부족하면 주문할 수 없습니다");
     }
 
@@ -363,18 +363,18 @@ class IntegrationTest {
         assertNotNull(coupon.getUserCouponId(), "쿠폰이 발급되어야 합니다");
 
         // Step 3: 주문 생성
-        OrderItemRequest item = OrderItemRequest.builder()
+        OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
                 .optionId(2001L)
                 .quantity(2)
                 .build();
 
-        CreateOrderRequest request = CreateOrderRequest.builder()
+        CreateOrderCommand command = CreateOrderCommand.builder()
                 .orderItems(List.of(item))
                 .couponId(testCoupon.getCouponId())
                 .build();
 
-        CreateOrderResponse order = orderService.createOrder(testUser.getUserId(), request);
+        CreateOrderResponse order = orderService.createOrder(testUser.getUserId(), command);
 
         // Then - 모든 단계가 성공해야 함
         assertNotNull(order.getOrderId(), "주문이 생성되어야 합니다");

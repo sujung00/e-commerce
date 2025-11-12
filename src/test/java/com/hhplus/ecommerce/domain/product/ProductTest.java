@@ -161,11 +161,13 @@ class ProductTest {
                 .productName("기존 상품명")
                 .build();
 
-        // When
-        product.setProductName("변경된 상품명");
+        // When - Builder로 변경된 객체 생성
+        Product updatedProduct = Product.builder()
+                .productName("변경된 상품명")
+                .build();
 
         // Then
-        assertEquals("변경된 상품명", product.getProductName());
+        assertEquals("변경된 상품명", updatedProduct.getProductName());
     }
 
     @Test
@@ -176,11 +178,13 @@ class ProductTest {
                 .price(50000L)
                 .build();
 
-        // When
-        product.setPrice(60000L);
+        // When - Builder로 변경된 객체 생성
+        Product updatedProduct = Product.builder()
+                .price(60000L)
+                .build();
 
         // Then
-        assertEquals(60000L, product.getPrice());
+        assertEquals(60000L, updatedProduct.getPrice());
     }
 
     @Test
@@ -191,11 +195,13 @@ class ProductTest {
                 .totalStock(100)
                 .build();
 
-        // When
-        product.setTotalStock(150);
+        // When - Builder로 변경된 객체 생성
+        Product updatedProduct = Product.builder()
+                .totalStock(150)
+                .build();
 
         // Then
-        assertEquals(150, product.getTotalStock());
+        assertEquals(150, updatedProduct.getTotalStock());
     }
 
     @Test
@@ -206,11 +212,13 @@ class ProductTest {
                 .status("판매중")
                 .build();
 
-        // When
-        product.setStatus("품절");
+        // When - Builder로 변경된 객체 생성
+        Product updatedProduct = Product.builder()
+                .status("품절")
+                .build();
 
         // Then
-        assertEquals("품절", product.getStatus());
+        assertEquals("품절", updatedProduct.getStatus());
     }
 
     @Test
@@ -334,13 +342,16 @@ class ProductTest {
                 .updatedAt(originalTime)
                 .build();
 
-        // When
+        // When - Builder로 변경된 객체 생성
         LocalDateTime newTime = originalTime.plusHours(1);
-        product.setUpdatedAt(newTime);
+        Product updatedProduct = Product.builder()
+                .createdAt(originalTime)
+                .updatedAt(newTime)
+                .build();
 
         // Then
-        assertEquals(originalTime, product.getCreatedAt());
-        assertEquals(newTime, product.getUpdatedAt());
+        assertEquals(originalTime, updatedProduct.getCreatedAt());
+        assertEquals(newTime, updatedProduct.getUpdatedAt());
     }
 
     // ========== 경계값 테스트 ==========
@@ -554,14 +565,18 @@ class ProductTest {
                 .totalStock(100)
                 .build();
 
-        // When
-        product.setStatus("품절");
-        product.setTotalStock(0);
-        product.setUpdatedAt(LocalDateTime.now());
+        // When - Builder로 변경된 객체 생성
+        Product updatedProduct = Product.builder()
+                .productId(product.getProductId())
+                .productName(product.getProductName())
+                .status("품절")
+                .totalStock(0)
+                .updatedAt(LocalDateTime.now())
+                .build();
 
         // Then
-        assertEquals("품절", product.getStatus());
-        assertEquals(0, product.getTotalStock());
+        assertEquals("품절", updatedProduct.getStatus());
+        assertEquals(0, updatedProduct.getTotalStock());
     }
 
     @Test
@@ -577,15 +592,20 @@ class ProductTest {
                 .status("판매중")
                 .build();
 
-        // When
-        product.setProductName("새로운 상품명");
-        product.setDescription("새로운 설명");
-        product.setPrice(60000L);
-        product.setUpdatedAt(LocalDateTime.now());
+        // When - Builder로 변경된 객체 생성
+        Product updatedProduct = Product.builder()
+                .productId(product.getProductId())
+                .productName("새로운 상품명")
+                .description("새로운 설명")
+                .price(60000L)
+                .totalStock(product.getTotalStock())
+                .status(product.getStatus())
+                .updatedAt(LocalDateTime.now())
+                .build();
 
         // Then
-        assertEquals("새로운 상품명", product.getProductName());
-        assertEquals("새로운 설명", product.getDescription());
-        assertEquals(60000L, product.getPrice());
+        assertEquals("새로운 상품명", updatedProduct.getProductName());
+        assertEquals("새로운 설명", updatedProduct.getDescription());
+        assertEquals(60000L, updatedProduct.getPrice());
     }
 }

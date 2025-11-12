@@ -8,7 +8,7 @@ import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.presentation.order.response.CancelOrderResponse;
+import com.hhplus.ecommerce.application.order.dto.CancelOrderResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -114,7 +114,7 @@ class OrderCancelTransactionServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .couponId(null)
@@ -148,7 +148,7 @@ class OrderCancelTransactionServiceTest {
         // Then
         assertNotNull(result);
         assertEquals("CANCELLED", result.getOrderStatus());
-        assertEquals(100000L, result.getRestoredAmount());
+        assertEquals(100000L, result.getRefundAmount());
         assertEquals(1, result.getRestoredItems().size());
         assertEquals(2, result.getRestoredItems().get(0).getQuantity());
         assertEquals(10, result.getRestoredItems().get(0).getRestoredStock());  // 8 + 2
@@ -232,7 +232,7 @@ class OrderCancelTransactionServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(190000L)
                 .couponDiscount(10000L)
                 .couponId(1L)
@@ -264,7 +264,7 @@ class OrderCancelTransactionServiceTest {
         // Then
         assertNotNull(result);
         assertEquals("CANCELLED", result.getOrderStatus());
-        assertEquals(180000L, result.getRestoredAmount());
+        assertEquals(180000L, result.getRefundAmount());
         assertEquals(2, result.getRestoredItems().size());
 
         // 첫 번째 항목 검증
@@ -318,7 +318,7 @@ class OrderCancelTransactionServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .couponId(null)
@@ -358,12 +358,13 @@ class OrderCancelTransactionServiceTest {
         // Given - 테스트하기 위해 버전 충돌 시나리오를 직접 생성
         // 메모리 저장소이므로 실제 동시성 테스트는 Integration Test에서 수행
         // 여기서는 버전 체크 로직의 경로를 검증하기 위한 테스트
-        ProductOption option = new ProductOption();
-        option.setOptionId(TEST_OPTION_ID);
-        option.setProductId(TEST_PRODUCT_ID);
-        option.setName("기본옵션");
-        option.setStock(8);
-        option.setVersion(2L);
+        ProductOption option = ProductOption.builder()
+                .optionId(TEST_OPTION_ID)
+                .productId(TEST_PRODUCT_ID)
+                .name("기본옵션")
+                .stock(8)
+                .version(2L)
+                .build();
 
         Product product = Product.builder()
                 .productId(TEST_PRODUCT_ID)
@@ -391,7 +392,7 @@ class OrderCancelTransactionServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(100000L)
                 .couponDiscount(0L)
                 .couponId(null)
@@ -426,7 +427,7 @@ class OrderCancelTransactionServiceTest {
         // Then - 정상 처리 검증
         assertNotNull(result);
         assertEquals("CANCELLED", result.getOrderStatus());
-        assertEquals(100000L, result.getRestoredAmount());
+        assertEquals(100000L, result.getRefundAmount());
     }
 
     @Test
@@ -462,7 +463,7 @@ class OrderCancelTransactionServiceTest {
         Order order = Order.builder()
                 .orderId(TEST_ORDER_ID)
                 .userId(TEST_USER_ID)
-                .orderStatus("COMPLETED")
+                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.COMPLETED)
                 .subtotal(250000L)
                 .couponDiscount(5000L)
                 .couponId(1L)
@@ -493,10 +494,7 @@ class OrderCancelTransactionServiceTest {
         assertNotNull(result.getCancelledAt());
         assertEquals(TEST_ORDER_ID, result.getOrderId());
         assertEquals("CANCELLED", result.getOrderStatus());
-        assertEquals(250000L, result.getSubtotal());
-        assertEquals(5000L, result.getCouponDiscount());
-        assertEquals(245000L, result.getFinalAmount());
-        assertEquals(245000L, result.getRestoredAmount());
+        assertEquals(245000L, result.getRefundAmount());
         assertEquals(1, result.getRestoredItems().size());
     }
 }

@@ -195,9 +195,17 @@ class IntegrationConcurrencyTest {
                     if (option.getStock() >= 1) {
                         synchronized (option) {
                             if (option.getStock() >= 1) {
-                                option.setStock(option.getStock() - 1);
-                                option.setVersion(option.getVersion() + 1);
-                                productRepository.saveOption(option);
+                                // Builder로 재고 차감된 객체 생성
+                                ProductOption updatedOption = ProductOption.builder()
+                                        .optionId(option.getOptionId())
+                                        .productId(option.getProductId())
+                                        .name(option.getName())
+                                        .stock(option.getStock() - 1)
+                                        .version(option.getVersion() + 1)
+                                        .createdAt(option.getCreatedAt())
+                                        .updatedAt(LocalDateTime.now())
+                                        .build();
+                                productRepository.saveOption(updatedOption);
                                 successCount.incrementAndGet();
                             } else {
                                 failureCount.incrementAndGet();
@@ -294,9 +302,17 @@ class IntegrationConcurrencyTest {
                     if (option.getStock() >= 1) {
                         synchronized (option) {
                             if (option.getStock() >= 1) {
-                                option.setStock(option.getStock() - 1);
-                                option.setVersion(option.getVersion() + 1);
-                                productRepository.saveOption(option);
+                                // Builder로 재고 차감된 객체 생성
+                                ProductOption updatedOption = ProductOption.builder()
+                                        .optionId(option.getOptionId())
+                                        .productId(option.getProductId())
+                                        .name(option.getName())
+                                        .stock(option.getStock() - 1)
+                                        .version(option.getVersion() + 1)
+                                        .createdAt(option.getCreatedAt())
+                                        .updatedAt(LocalDateTime.now())
+                                        .build();
+                                productRepository.saveOption(updatedOption);
                                 orderSuccessCount.incrementAndGet();
                             } else {
                                 orderFailureCount.incrementAndGet();

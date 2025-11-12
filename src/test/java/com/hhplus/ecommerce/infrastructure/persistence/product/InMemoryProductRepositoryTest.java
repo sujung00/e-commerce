@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -200,10 +201,19 @@ class InMemoryProductRepositoryTest {
         assertTrue(existing.isPresent());
         Product product = existing.get();
 
-        // When
-        product.setProductName("변경된 상품명");
-        product.setPrice(39900L);
-        productRepository.save(product);
+        // When - Builder로 변경된 객체 생성
+        Product updatedProduct = Product.builder()
+                .productId(product.getProductId())
+                .productName("변경된 상품명")
+                .description(product.getDescription())
+                .price(39900L)
+                .totalStock(product.getTotalStock())
+                .status(product.getStatus())
+                .createdAt(product.getCreatedAt())
+                .updatedAt(LocalDateTime.now())
+                .options(product.getOptions())
+                .build();
+        productRepository.save(updatedProduct);
 
         // Then
         Optional<Product> updated = productRepository.findById(1L);
@@ -242,10 +252,17 @@ class InMemoryProductRepositoryTest {
         assertTrue(existing.isPresent());
         ProductOption option = existing.get();
 
-        // When
-        option.setStock(100);
-        option.setVersion(2L);
-        productRepository.saveOption(option);
+        // When - Builder로 변경된 객체 생성
+        ProductOption updatedOption = ProductOption.builder()
+                .optionId(option.getOptionId())
+                .productId(option.getProductId())
+                .name(option.getName())
+                .stock(100)
+                .version(2L)
+                .createdAt(option.getCreatedAt())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        productRepository.saveOption(updatedOption);
 
         // Then
         Optional<ProductOption> updated = productRepository.findOptionById(101L);

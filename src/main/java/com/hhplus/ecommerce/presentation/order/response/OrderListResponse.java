@@ -11,7 +11,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 주문 목록 조회 응답 DTO (페이지네이션)
+ * 주문 목록 조회 응답 DTO (Presentation layer)
+ * 페이지네이션을 포함한 주문 목록 응답
+ *
+ * 책임:
+ * - HTTP API 응답 직렬화 (@JsonProperty)
+ * - Application layer와 독립적 (변환은 OrderMapper에서 처리)
  */
 @Getter
 @Builder
@@ -19,8 +24,11 @@ import java.util.List;
 @AllArgsConstructor
 public class OrderListResponse {
     private List<OrderSummary> content;
+    @JsonProperty("total_elements")
     private long totalElements;
+    @JsonProperty("total_pages")
     private int totalPages;
+    @JsonProperty("current_page")
     private int currentPage;
     private int size;
 
@@ -35,13 +43,11 @@ public class OrderListResponse {
         @JsonProperty("order_id")
         private Long orderId;
 
+        @JsonProperty("user_id")
+        private Long userId;
+
         @JsonProperty("order_status")
         private String orderStatus;
-
-        private Long subtotal;
-
-        @JsonProperty("coupon_discount")
-        private Long couponDiscount;
 
         @JsonProperty("final_amount")
         private Long finalAmount;
@@ -49,12 +55,17 @@ public class OrderListResponse {
         @JsonProperty("created_at")
         private LocalDateTime createdAt;
 
+        /**
+         * Domain Order 엔티티에서 Presentation DTO로 변환
+         *
+         * @param order Domain Order 엔티티
+         * @return Presentation layer OrderSummary
+         */
         public static OrderSummary fromOrder(Order order) {
             return OrderSummary.builder()
                     .orderId(order.getOrderId())
-                    .orderStatus(order.getOrderStatus())
-                    .subtotal(order.getSubtotal())
-                    .couponDiscount(order.getCouponDiscount())
+                    .userId(order.getUserId())
+                    .orderStatus(order.getOrderStatus().name())
                     .finalAmount(order.getFinalAmount())
                     .createdAt(order.getCreatedAt())
                     .build();
