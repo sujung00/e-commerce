@@ -1,5 +1,9 @@
 # E-Commerce 데이터 모델
 
+> **Updated to match current domain entities as of 2025-11-12**
+>
+> This document reflects the actual domain model source code from `/src/main/java/com/hhplus/ecommerce/domain`. All entities, enums, and field definitions are synced with the current implementation.
+
 ## 개요
 
 데이터 모델은 옵션 기반 재고를 갖춘 상품 카탈로그 관리, 쇼핑 카트 기능, 원자적 거래가 있는 주문 처리, 쿠폰 기반 할인을 지원합니다.
@@ -19,11 +23,11 @@
 | **products** | 상품 카탈로그 | 1, 2, 3 |
 | **product_options** | 독립적인 재고가 있는 상품 변형 (낙관적 락) | 1, 2, 3, 4 |
 | **carts** | 사용자별 쇼핑 카트 (1:1) | 2 |
-| **cart_items** | 카트 라인 항목 (옵션 필수) | 2 |
-| **orders** | 주문 (COMPLETED/PENDING/FAILED) | 3, 6, 7 |
+| **cart_items** | 카트 라인 항목 (옵션 필수 + 스냅샷) | 2 |
+| **orders** | 주문 (COMPLETED/CANCELLED) | 3, 6, 7 |
 | **order_items** | 주문 라인 항목 (스냅샷 포함) | 3, 6, 7 |
 | **coupons** | 할인 쿠폰 (FIXED_AMOUNT or PERCENTAGE) | 3, 5, 7 |
-| **user_coupons** | 쿠폰 발급 및 사용 (ACTIVE/USED/EXPIRED) | 5, 7 |
+| **user_coupons** | 쿠폰 발급 및 사용 (UNUSED/USED/EXPIRED/CANCELLED) | 5, 7 |
 | **outbox** | 외부 시스템 전송 메시지 큐 (비동기) | 3, 8 |
 
 ---
@@ -31,132 +35,285 @@
 ## 엔티티 정의
 
 ### users
-```
-user_id         : Long (PK)
-email           : String (UNIQUE)
-password_hash   : String
-name            : String
-phone           : String
-balance         : Long
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| user_id | Long | NO | Primary Key (자동 증가) |
+| email | String | NO | 이메일 (UNIQUE) |
+| password_hash | String | YES | 비밀번호 해시 |
+| name | String | YES | 사용자 이름 |
+| phone | String | YES | 전화번호 |
+| balance | Long | NO | 잔액 (기본값: 0) |
+| created_at | Timestamp | NO | 계정 생성 시각 |
+| updated_at | Timestamp | NO | 마지막 업데이트 시각 |
+
+**핵심 규칙**:
+- balance >= 0 (음수 불허)
+- 신규 사용자는 초기 잔액 0으로 시작
+- 이메일은 필수 (UNIQUE 제약)
+
+---
 
 ### products
-```
-product_id      : Long (PK)
-product_name    : String
-description     : Text
-price           : Long
-total_stock     : Integer (calculated: SUM of option stocks)
-status          : String (판매 중 | 품절)
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| product_id | Long | NO | Primary Key |
+| product_name | String | NO | 상품명 |
+| description | String | YES | 상품 설명 |
+| price | Long | NO | 상품 가격 (단위: 원) |
+| total_stock | Integer | NO | 총 재고 (계산 필드: SUM of option stocks) |
+| status | ProductStatus | NO | 상품 상태 Enum (기본값: IN_STOCK) |
+| created_at | Timestamp | NO | 생성 시각 |
+| updated_at | Timestamp | NO | 마지막 업데이트 시각 |
+
+**ProductStatus Enum**:
+- IN_STOCK: 판매 중
+- SOLD_OUT: 품절
+
+**핵심 규칙**:
+- 모든 옵션의 재고가 0이면 자동으로 SOLD_OUT 상태로 변경
+- price > 0 (양수 필수)
+- total_stock은 product_options의 재고 합계로 계산됨
+
+**관계**:
+- 1:N with product_options (옵션 관리)
+- 1:N with cart_items (카트 항목)
+- 1:N with order_items (주문 항목)
+
+---
 
 ### product_options
-```
-option_id       : Long (PK)
-product_id      : Long (FK → products)
-name            : String (e.g., "Black/M")
-stock           : Integer
-version         : Long (optimistic lock)
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| option_id | Long | NO | Primary Key |
+| product_id | Long | NO | Foreign Key → products |
+| name | String | NO | 옵션명 (예: "Black/M", "Red/L") |
+| stock | Integer | NO | 재고 수량 (기본값: 0) |
+| version | Long | NO | 낙관적 락 버전 (기본값: 1) |
+| created_at | Timestamp | NO | 생성 시각 |
+| updated_at | Timestamp | NO | 마지막 업데이트 시각 |
+
+**핵심 규칙**:
+- stock >= 0 (음수 불허)
+- 옵션명은 필수
+- 주문 또는 재고 차감 시 version +1 증가 (낙관적 락)
+- UNIQUE(product_id, name) - 같은 상품 내에서 옵션명 중복 불가
+
+**관계**:
+- N:1 with products (상품)
+- 1:N with cart_items (카트 항목)
+- 1:N with order_items (주문 항목)
+
+---
 
 ### carts
-```
-cart_id         : Long (PK)
-user_id         : Long (FK → users, UNIQUE)
-total_items     : Integer
-total_price     : Long
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| cart_id | Long | NO | Primary Key |
+| user_id | Long | NO | Foreign Key → users (UNIQUE) |
+| total_items | Integer | NO | 총 항목 수 (계산 필드) |
+| total_price | Long | NO | 총 금액 (계산 필드) |
+| created_at | Timestamp | NO | 생성 시각 |
+| updated_at | Timestamp | NO | 마지막 업데이트 시각 |
+
+**핵심 규칙**:
+- 사용자당 하나의 카트만 존재 (UNIQUE(user_id))
+- total_items, total_price는 cart_items에서 계산되는 계산 필드
+- 카트는 주문 시 재고에 영향을 주지 않음
+
+**관계**:
+- 1:1 with users (사용자)
+- 1:N with cart_items (카트 항목)
+
+---
 
 ### cart_items
-```
-cart_item_id    : Long (PK)
-cart_id         : Long (FK → carts)
-product_id      : Long (FK → products)
-option_id       : Long (FK → product_options, REQUIRED)
-quantity        : Integer
-unit_price      : Long
-subtotal        : Long (unit_price * quantity)
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| cart_item_id | Long | NO | Primary Key |
+| cart_id | Long | NO | Foreign Key → carts |
+| product_id | Long | NO | Foreign Key → products |
+| option_id | Long | NO | Foreign Key → product_options (REQUIRED) |
+| product_name | String | NO | 스냅샷: 현재 상품명 |
+| option_name | String | NO | 스냅샷: 현재 옵션명 |
+| quantity | Integer | NO | 수량 (>= 1) |
+| unit_price | Long | NO | 단가 |
+| subtotal | Long | NO | 소계 (계산 필드: unit_price * quantity) |
+| created_at | Timestamp | NO | 생성 시각 |
+| updated_at | Timestamp | NO | 마지막 업데이트 시각 |
+
+**핵심 규칙**:
+- option_id는 NOT NULL (옵션 선택 필수)
+- product_name, option_name은 현재 값의 스냅샷 (상품 정보 변경 시에도 카트는 영향 X)
+- quantity >= 1
+- subtotal = unit_price * quantity
+
+**관계**:
+- N:1 with carts (카트)
+- N:1 with products (상품)
+- N:1 with product_options (옵션)
+
+---
 
 ### orders
-```
-order_id        : Long (PK)
-user_id         : Long (FK → users)
-order_status    : String (COMPLETED | PENDING | FAILED)
-coupon_id       : Long (FK → coupons, nullable)
-coupon_discount : Long
-subtotal        : Long
-final_amount    : Long
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| order_id | Long | NO | Primary Key |
+| user_id | Long | NO | Foreign Key → users |
+| order_status | OrderStatus | NO | 주문 상태 Enum (기본값: COMPLETED) |
+| coupon_id | Long | YES | Foreign Key → coupons (선택) |
+| coupon_discount | Long | NO | 쿠폰 할인액 |
+| subtotal | Long | NO | 소계 (할인 전) |
+| final_amount | Long | NO | 최종 결제액 (subtotal - coupon_discount) |
+| created_at | Timestamp | NO | 생성 시각 |
+| updated_at | Timestamp | NO | 마지막 업데이트 시각 |
+| cancelled_at | Timestamp | YES | 취소 시각 (취소 시에만 설정) |
+
+**OrderStatus Enum**:
+- COMPLETED: 주문 완료
+- CANCELLED: 주문 취소
+
+**핵심 규칙**:
+- 주문은 COMPLETED 상태로 생성됨
+- COMPLETED → CANCELLED 전환만 가능 (역방향 불가)
+- final_amount >= 0
+- coupon_discount >= 0
+- cancelled_at는 취소 시에만 설정됨
+
+**관계**:
+- N:1 with users (사용자)
+- N:1 with coupons (쿠폰, 선택)
+- 1:N with order_items (주문 항목)
+- 1:N with user_coupons (쿠폰 사용 기록)
+- 1:N with outbox (외부 전송 메시지)
+
+---
 
 ### order_items
-```
-order_item_id   : Long (PK)
-order_id        : Long (FK → orders)
-product_id      : Long (FK → products)
-option_id       : Long (FK → product_options)
-product_name    : String (snapshot - 상품명 감사 추적)
-option_name     : String (snapshot - 옵션명 감사 추적)
-quantity        : Integer
-unit_price      : Long
-subtotal        : Long (unit_price * quantity)
-created_at      : Timestamp
-```
 
-### outbox
-```
-message_id      : Long (PK)
-order_id        : Long (FK → orders, NOT NULL)
-message_type    : String (SHIPPING_REQUEST | PAYMENT_NOTIFICATION | ...)
-status          : String (PENDING | SENT | FAILED)
-payload         : JSON (전송할 데이터)
-retry_count     : Integer (재시도 횟수)
-last_attempt    : Timestamp (nullable - 마지막 시도 시간)
-sent_at         : Timestamp (nullable - 전송 완료 시간)
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| order_item_id | Long | NO | Primary Key |
+| order_id | Long | NO | Foreign Key → orders |
+| product_id | Long | NO | Foreign Key → products |
+| option_id | Long | NO | Foreign Key → product_options |
+| product_name | String | NO | 스냅샷: 주문 시점의 상품명 |
+| option_name | String | NO | 스냅샷: 주문 시점의 옵션명 |
+| quantity | Integer | NO | 주문 수량 (>= 1) |
+| unit_price | Long | NO | 주문 시점의 단가 |
+| subtotal | Long | NO | 소계 (계산 필드: unit_price * quantity) |
+| created_at | Timestamp | NO | 생성 시각 |
+
+**핵심 규칙**:
+- product_name, option_name은 주문 시점의 스냅샷 (추후 상품 정보 변경 시에도 원래 가격 유지)
+- quantity >= 1
+- unit_price > 0
+- subtotal = unit_price * quantity
+- updatedAt 필드 없음 (생성 후 수정 불가)
+
+**관계**:
+- N:1 with orders (주문)
+- N:1 with products (상품, 감사 추적용)
+- N:1 with product_options (옵션, 감사 추적용)
+
+---
 
 ### coupons
-```
-coupon_id       : Long (PK)
-coupon_name     : String
-description     : Text
-discount_type   : String (FIXED_AMOUNT | PERCENTAGE)
-discount_amount : Long
-discount_rate   : Decimal
-total_quantity  : Integer
-remaining_qty   : Integer (atomic decrement)
-valid_from      : Timestamp
-valid_until     : Timestamp
-is_active       : Boolean
-version         : Long (optimistic lock)
-created_at      : Timestamp
-updated_at      : Timestamp
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| coupon_id | Long | NO | Primary Key |
+| coupon_name | String | NO | 쿠폰명 |
+| description | String | YES | 쿠폰 설명 |
+| discount_type | String | NO | 할인 유형 (FIXED_AMOUNT \| PERCENTAGE) |
+| discount_amount | Long | NO | 정액 할인액 (기본값: 0) |
+| discount_rate | BigDecimal | NO | 할인율 (기본값: 0.0) |
+| total_quantity | Integer | YES | 총 발급 수량 |
+| remaining_qty | Integer | YES | 남은 발급 수량 (원자적 감소) |
+| valid_from | Timestamp | YES | 유효 기간 시작 |
+| valid_until | Timestamp | YES | 유효 기간 종료 |
+| is_active | Boolean | NO | 활성화 여부 (기본값: true) |
+| version | Long | NO | 낙관적 락 버전 (기본값: 1) |
+| created_at | Timestamp | NO | 생성 시각 |
+| updated_at | Timestamp | NO | 마지막 업데이트 시각 |
+
+**핵심 규칙**:
+- discount_type이 FIXED_AMOUNT인 경우: discount_amount > 0
+- discount_type이 PERCENTAGE인 경우: 0.0 <= discount_rate <= 1.0
+- remaining_qty는 원자적으로 감소 (race condition 방지)
+- version은 쿠폰 발급 시 +1 증가 (낙관적 락)
+- is_active = false인 쿠폰은 발급 불가능
+
+**관계**:
+- 1:N with user_coupons (사용자 쿠폰)
+- 0:N with orders (주문)
+
+---
 
 ### user_coupons
-```
-user_coupon_id  : Long (PK)
-user_id         : Long (FK → users)
-coupon_id       : Long (FK → coupons)
-status          : String (ACTIVE | USED | EXPIRED)
-issued_at       : Timestamp
-used_at         : Timestamp (nullable)
-order_id        : Long (FK → orders, nullable)
-```
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| user_coupon_id | Long | NO | Primary Key |
+| user_id | Long | NO | Foreign Key → users |
+| coupon_id | Long | NO | Foreign Key → coupons |
+| status | UserCouponStatus | NO | 쿠폰 상태 Enum (기본값: UNUSED) |
+| issued_at | Timestamp | NO | 발급 시각 |
+| used_at | Timestamp | YES | 사용 시각 (사용 시에만 설정) |
+| order_id | Long | YES | Foreign Key → orders (사용 시 설정) |
+
+**UserCouponStatus Enum**:
+- UNUSED: 미사용
+- USED: 사용됨
+- EXPIRED: 만료됨
+- CANCELLED: 취소됨
+
+**핵심 규칙**:
+- UNIQUE(user_id, coupon_id) - 사용자당 동일 쿠폰 중복 발급 방지
+- status: UNUSED → USED (주문 시)
+- used_at는 사용 시에만 설정됨
+- order_id는 사용 시에만 설정됨
+
+**관계**:
+- N:1 with users (사용자)
+- N:1 with coupons (쿠폰)
+- N:1 with orders (주문, 선택)
+
+---
+
+### outbox
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| message_id | Long | NO | Primary Key |
+| order_id | Long | NO | Foreign Key → orders (NOT NULL) |
+| user_id | Long | NO | 사용자 ID (이벤트 추적용) |
+| message_type | String | NO | 메시지 유형 (ORDER_COMPLETED 등) |
+| status | String | NO | 상태 (PENDING \| SENT \| FAILED, 기본값: PENDING) |
+| retry_count | Integer | NO | 재시도 횟수 (기본값: 0) |
+| last_attempt | Timestamp | YES | 마지막 시도 시각 |
+| sent_at | Timestamp | YES | 전송 완료 시각 |
+| created_at | Timestamp | NO | 생성 시각 |
+
+**Outbox 패턴**:
+- 주문 생성 시 status='PENDING'으로 메시지 저장
+- 배치 프로세스가 PENDING 메시지를 외부 시스템으로 전송
+- 성공 → status='SENT', 실패 → status='FAILED' (최대 5회 재시도)
+- 트랜잭션 2단계 내에서 저장되므로 원자성 보장
+
+**핵심 규칙**:
+- order_id는 NOT NULL (주문과의 관계 필수)
+- message_type은 이벤트 유형 (ORDER_COMPLETED, SHIPPING_REQUEST 등)
+- status는 PENDING, SENT, FAILED 중 하나
+- retry_count로 재시도 횟수 추적
+
+**관계**:
+- N:1 with orders (주문)
 
 ---
 
@@ -186,6 +343,8 @@ erDiagram
         long user_id PK
         string email UK
         long balance
+        timestamp created_at
+        timestamp updated_at
     }
 
     PRODUCTS {
@@ -194,6 +353,8 @@ erDiagram
         long price
         int total_stock
         string status
+        timestamp created_at
+        timestamp updated_at
     }
 
     PRODUCT_OPTIONS {
@@ -202,11 +363,17 @@ erDiagram
         string name
         int stock
         long version
+        timestamp created_at
+        timestamp updated_at
     }
 
     CARTS {
         long cart_id PK
         long user_id FK "UK"
+        int total_items
+        long total_price
+        timestamp created_at
+        timestamp updated_at
     }
 
     CART_ITEMS {
@@ -214,7 +381,13 @@ erDiagram
         long cart_id FK
         long product_id FK
         long option_id FK "REQUIRED"
+        string product_name
+        string option_name
         int quantity
+        long unit_price
+        long subtotal
+        timestamp created_at
+        timestamp updated_at
     }
 
     ORDERS {
@@ -222,7 +395,12 @@ erDiagram
         long user_id FK
         string order_status
         long coupon_id FK
+        long coupon_discount
+        long subtotal
         long final_amount
+        timestamp created_at
+        timestamp updated_at
+        timestamp cancelled_at
     }
 
     ORDER_ITEMS {
@@ -230,15 +408,28 @@ erDiagram
         long order_id FK
         long product_id FK
         long option_id FK
+        string product_name
+        string option_name
         int quantity
+        long unit_price
+        long subtotal
+        timestamp created_at
     }
 
     COUPONS {
         long coupon_id PK
         string coupon_name
+        string discount_type
+        long discount_amount
+        decimal discount_rate
+        int total_quantity
         int remaining_qty
+        timestamp valid_from
         timestamp valid_until
+        boolean is_active
         long version
+        timestamp created_at
+        timestamp updated_at
     }
 
     USER_COUPONS {
@@ -246,6 +437,21 @@ erDiagram
         long user_id FK
         long coupon_id FK
         string status
+        timestamp issued_at
+        timestamp used_at
+        long order_id FK
+    }
+
+    OUTBOX {
+        long message_id PK
+        long order_id FK
+        long user_id
+        string message_type
+        string status
+        int retry_count
+        timestamp last_attempt
+        timestamp sent_at
+        timestamp created_at
     }
 ```
 
@@ -260,7 +466,7 @@ erDiagram
 | users → user_coupons | 1:N | FK user_id | 사용자는 여러 쿠폰 보유 가능 |
 | carts → cart_items | 1:N | FK cart_id | 카트는 여러 항목 포함 |
 | products → product_options | 1:N | FK product_id | 상품은 여러 옵션 보유 |
-| product_options → cart_items | 1:N | FK option_id, REQUIRED | 옵션은 필수 (NOT NULL) |
+| product_options → cart_items | 1:N | FK option_id, NOT NULL | 옵션은 필수 |
 | product_options → order_items | 1:N | FK option_id | 옵션별 주문 항목 추적 |
 | orders → order_items | 1:N | FK order_id | 주문은 여러 항목 포함 |
 | orders → coupons | N:1 | FK coupon_id (nullable) | 주문은 쿠폰 선택적 적용 |
@@ -275,7 +481,7 @@ erDiagram
 | 제약 조건 | 엔티티 | 상세 정보 | 목적 |
 |-----------|--------|---------|------|
 | 재고 음수 금지 | product_options | stock >= 0 | 음수 재고 방지 |
-| 옵션 필수 | cart_items | option_id NOT NULL | 옵션 선택 강제 |
+| 옵션 필수 | cart_items, order_items | option_id NOT NULL | 옵션 선택 강제 |
 | 상품별 고유 옵션 | product_options | UNIQUE(product_id, name) | 중복 옵션 방지 |
 | 사용자별 고유 쿠폰 | user_coupons | UNIQUE(user_id, coupon_id) | 중복 발급 방지 (1인 1매) |
 | 사용자당 하나의 카트 | carts | UNIQUE(user_id) | 사용자마다 단일 카트 |
@@ -283,6 +489,137 @@ erDiagram
 | 낙관적 락 | product_options, coupons | version 필드 사용 | 동시성 제어 (Race Condition 방지) |
 | Outbox 패턴 | outbox, orders | FK order_id NOT NULL | 외부 전송 신뢰성 보장 |
 | 재시도 전략 | outbox | retry_count, last_attempt, status | 외부 전송 실패 시 자동 재시도 |
+
+---
+
+## 시퀀스 다이어그램과의 동기화
+
+본 데이터 모델은 sequence-diagrams.md의 10가지 비즈니스 흐름과 완벽하게 동기화되어 있습니다:
+
+| 시퀀스 | 설명 | 관련 엔티티 | 핵심 로직 |
+|--------|------|-----------|---------|
+| **1. 상품 조회** | 사용자가 상품과 옵션 조회 | products, product_options | 옵션별 재고 조회, 캐싱 고려 |
+| **2. 장바구니** | 옵션과 수량 선택해 카트에 추가 | carts, cart_items, product_options | 옵션 검증, 재고 영향 X |
+| **3. 주문 생성** | 재고 확인 → 원자적 거래 → Outbox | orders, order_items, product_options, users, coupons, outbox | 3단계: 검증 → 원자적 거래 → 비동기 전송 |
+| **4. 동시 주문** | 2개 주문이 1개 재고를 놓고 경합 | product_options (version field) | 낙관적 락으로 race condition 방지 |
+| **5. 쿠폰 발급** | 선착순 발급, 중복 방지 | coupons, user_coupons | 비관적 락, 원자적 감소, UNIQUE 제약 |
+| **6. 주문 조회** | 사용자가 과거 주문 조회 | orders, order_items, products | 스냅샷으로 과거 상품명 조회 가능 |
+| **7. 쿠폰 적용 주문** | 할인액 계산 후 결제 | orders, order_items, user_coupons, coupons | 할인액 = discount_type에 따라 계산 |
+| **8. 외부 전송** | 주문 후 배송 시스템 호출 (비동기) | outbox, orders | 재시도 전략: 지수 백오프, 최대 5회 |
+| **9. 데이터 일관성** | 일일 배치로 재고 검증 | products, product_options | total_stock = SUM(option.stock) 검증 |
+| **10. 에러 처리** | ERR-001~004 상황별 대응 | orders, product_options, users, coupons | 트랜잭션 ROLLBACK으로 모든 변경 취소 |
+
+---
+
+## 상태(Status) 필드 정의
+
+| 엔티티 | 필드 | 가능한 값 | 상태 전이 |
+|--------|------|----------|---------|
+| **orders** | order_status | COMPLETED, CANCELLED | COMPLETED (기본값) → CANCELLED (취소 시만 가능) |
+| **user_coupons** | status | UNUSED, USED, EXPIRED, CANCELLED | UNUSED (기본값) → USED (주문 사용 시) / → EXPIRED (만료 시) / → CANCELLED |
+| **outbox** | status | PENDING, SENT, FAILED | PENDING (기본값) → SENT (전송 성공) / → FAILED (5회 재시도 후) → PENDING (재시도) |
+| **products** | status | IN_STOCK, SOLD_OUT | IN_STOCK (기본값) → SOLD_OUT (모든 옵션 stock=0) / SOLD_OUT → IN_STOCK (재입고 시) |
+
+---
+
+## 버전 필드 (동시성 제어)
+
+| 엔티티 | 필드 | 용도 | 증가 시점 |
+|--------|------|------|---------|
+| **product_options** | version | Optimistic Lock | 주문 시 재고 차감 시 +1 |
+| **coupons** | version | Optimistic Lock | 쿠폰 발급 시 remaining_qty 감소 시 +1 |
+
+---
+
+## 계산 필드 (Derived/Computed)
+
+| 엔티티 | 필드 | 계산식 | 관리 방식 |
+|--------|------|--------|---------|
+| **products** | total_stock | SUM(product_options.stock) | 일일 배치로 검증, 불일치 시 자동 수정 |
+| **carts** | total_items | COUNT(cart_items) | 카트에 아이템 추가/제거 시 갱신 |
+| **carts** | total_price | SUM(cart_items.subtotal) | 카트에 아이템 추가/제거 시 갱신 |
+| **cart_items** | subtotal | quantity * unit_price | 추가 시 계산 |
+| **orders** | final_amount | subtotal - coupon_discount | 주문 생성 시 계산 |
+| **order_items** | subtotal | quantity * unit_price | 주문 생성 시 계산 |
+
+---
+
+## 스냅샷 필드 (Snapshot Fields)
+
+주문 생성 시점의 정보를 보존하여 추후 상품 정보 변경에도 원래 가격과 이름으로 청구됨:
+
+| 엔티티 | 필드 | 용도 | 설정 시점 |
+|--------|------|------|---------|
+| **cart_items** | product_name | 현재 상품명 표시 | 카트에 추가할 때 |
+| **cart_items** | option_name | 현재 옵션명 표시 | 카트에 추가할 때 |
+| **order_items** | product_name | 주문 시점의 상품명 감사 추적 | 주문 생성 시 |
+| **order_items** | option_name | 주문 시점의 옵션명 감사 추적 | 주문 생성 시 |
+
+---
+
+## Enum 정의
+
+### ProductStatus
+```java
+enum ProductStatus {
+    IN_STOCK("판매 중"),      // 판매 가능
+    SOLD_OUT("품절")          // 재고 없음
+}
+```
+
+### OrderStatus
+```java
+enum OrderStatus {
+    COMPLETED("주문 완료"),    // 주문 완료 (기본값)
+    CANCELLED("주문 취소")     // 주문 취소
+}
+```
+
+### UserCouponStatus
+```java
+enum UserCouponStatus {
+    UNUSED("미사용"),         // 미사용 (기본값)
+    USED("사용됨"),           // 사용됨
+    EXPIRED("만료됨"),        // 만료됨
+    CANCELLED("취소됨")       // 취소됨
+}
+```
+
+---
+
+## 감사 추적 (Audit Fields)
+
+모든 엔티티는 다음 감사 필드를 포함합니다:
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| created_at | Timestamp | 레코드 생성 시각 (자동 설정) |
+| updated_at | Timestamp | 레코드 마지막 수정 시각 (자동 갱신) |
+| cancelled_at | Timestamp | 취소 시각 (orders에만, 취소 시에만 설정) |
+
+---
+
+## 주의사항 및 설계 원칙
+
+### 1. 낙관적 락 (Optimistic Locking)
+- **목적**: 동시성 제어로 race condition 방지
+- **적용 엔티티**: product_options, coupons
+- **동작**: version 필드를 사용하여 수정 감지
+
+### 2. Outbox 패턴 (신뢰성 보장)
+- **목적**: 주문 생성과 외부 시스템 전송의 원자성 보장
+- **동작**: 주문 생성 시 outbox에 메시지 저장 → 별도 배치가 비동기 전송
+- **재시도**: 최대 5회, 지수 백오프 적용
+
+### 3. 계산 필드의 관리
+- **products.total_stock**: 옵션별 재고 변경 시 자동 재계산
+- **carts.total_items, total_price**: 카트 항목 변경 시 갱신
+- **order_items.subtotal**: 주문 생성 시 계산 후 고정
+
+### 4. 스냅샷의 중요성
+- cart_items의 product_name, option_name은 현재 값 (유연성)
+- order_items의 product_name, option_name은 주문 시점 값 (감사 추적)
+- 이를 통해 주문 생성 후 상품 정보 변경에도 원래 금액 유지 가능
 
 ---
 
@@ -393,7 +730,7 @@ CREATE INDEX idx_orders_created ON orders(created_at DESC);
 #### 5. **user_coupons** 테이블
 
 **핵심 쿼리**:
-- 사용자 쿠폰 조회: `SELECT * FROM user_coupons WHERE user_id = ? AND status = 'ACTIVE'`
+- 사용자 쿠폰 조회: `SELECT * FROM user_coupons WHERE user_id = ? AND status = 'UNUSED'`
 - 쿠폰 발급 가능 확인: `SELECT COUNT(*) FROM user_coupons WHERE user_id = ? AND coupon_id = ?`
 
 | 인덱스명 | 컬럼 조합 | 용도 | 우선순위 |
@@ -520,49 +857,3 @@ ORDER BY order_count DESC LIMIT 5;
 3. **데이터 증가에 따른 재검토**:
    - 월 100만+ 주문 발생 시 파티셔닝 재검토 필요
    - 6개월마다 인덱스 효율성 분석 권장
-
----
-
-## 시퀀스 다이어그램과의 동기화
-
-본 데이터 모델은 sequence-diagrams.md의 10가지 비즈니스 흐름과 완벽하게 동기화되어 있습니다:
-
-| 시퀀스 | 설명 | 관련 엔티티 | 핵심 로직 |
-|--------|------|-----------|---------|
-| **1. 상품 조회** | 사용자가 상품과 옵션 조회 | products, product_options | 옵션별 재고 조회, 캐싱 고려 |
-| **2. 장바구니** | 옵션과 수량 선택해 카트에 추가 | carts, cart_items, product_options | 옵션 검증, 재고 영향 X |
-| **3. 주문 생성** | 재고 확인 → 원자적 거래 → Outbox | orders, order_items, product_options, users, coupons, outbox | 3단계: 검증 → 원자적 거래 → 비동기 전송 |
-| **4. 동시 주문** | 2개 주문이 1개 재고를 놓고 경합 | product_options (version field) | 낙관적 락으로 race condition 방지 |
-| **5. 쿠폰 발급** | 선착순 발급, 중복 방지 | coupons, user_coupons | 비관적 락, 원자적 감소, UNIQUE 제약 |
-| **6. 주문 조회** | 사용자가 과거 주문 조회 | orders, order_items, products | 스냅샷으로 과거 상품명 조회 가능 |
-| **7. 쿠폰 적용 주문** | 할인액 계산 후 결제 | orders, order_items, user_coupons, coupons | 할인액 = discount_type에 따라 계산 |
-| **8. 외부 전송** | 주문 후 배송 시스템 호출 (비동기) | outbox, orders | 재시도 전략: 지수 백오프, 최대 5회 |
-| **9. 데이터 일관성** | 일일 배치로 재고 검증 | products, product_options | total_stock = SUM(option.stock) 검증 |
-| **10. 에러 처리** | ERR-001~004 상황별 대응 | orders, product_options, users, coupons | 트랜잭션 ROLLBACK으로 모든 변경 취소 |
-
-### 상태(Status) 필드 정의
-
-| 엔티티 | 필드 | 가능한 값 | 상태 전이 |
-|--------|------|----------|---------|
-| **orders** | order_status | COMPLETED, PENDING, FAILED | - → PENDING → COMPLETED (or FAILED on rollback) |
-| **user_coupons** | status | ACTIVE, USED, EXPIRED | ACTIVE → USED (사용 시) / ACTIVE → EXPIRED (만료 시) |
-| **outbox** | status | PENDING, SENT, FAILED | PENDING → SENT (전송 성공) / PENDING → FAILED (5회 재시도 후) |
-| **products** | status | 판매 중, 품절 | 판매 중 → 품절 (모든 옵션 stock=0) / 품절 → 판매 중 (재입고 시) |
-
-### 버전 필드 (동시성 제어)
-
-| 엔티티 | 필드 | 용도 | 증가 시점 |
-|--------|------|------|---------|
-| **product_options** | version | Optimistic Lock | 주문 시 재고 차감 시 +1 |
-| **coupons** | version | Optimistic Lock | 쿠폰 발급 시 remaining_qty 감소 시 +1 |
-
-### 계산 필드 (Derived/Computed)
-
-| 엔티티 | 필드 | 계산식 | 관리 방식 |
-|--------|------|--------|---------|
-| **products** | total_stock | SUM(product_options.stock) | 일일 배치로 검증, 불일치 시 자동 수정 |
-| **carts** | total_items | COUNT(cart_items) | 카트에 아이템 추가/제거 시 갱신 |
-| **carts** | total_price | SUM(cart_items.subtotal) | 카트에 아이템 추가/제거 시 갱신 |
-| **cart_items** | subtotal | quantity * unit_price | 추가 시 계산 |
-| **orders** | final_amount | subtotal - coupon_discount | 주문 생성 시 계산 |
-| **order_items** | subtotal | quantity * unit_price | 주문 생성 시 계산 |
