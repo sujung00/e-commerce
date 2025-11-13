@@ -97,6 +97,7 @@ CREATE TABLE `cart_items` (
                               `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정 시각',
                               PRIMARY KEY (`cart_item_id`),
                               UNIQUE KEY `uk_cart_product_option` (`cart_id`,`product_id`,`option_id`),
+                              KEY `idx_cart_id` (`cart_id`) COMMENT '장바구니별 항목 조회',
                               CONSTRAINT `cart_items_ibfk_1` FOREIGN KEY (`cart_id`) REFERENCES `carts` (`cart_id`) ON DELETE CASCADE,
                               CONSTRAINT `cart_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE CASCADE,
                               CONSTRAINT `cart_items_ibfk_3` FOREIGN KEY (`option_id`) REFERENCES `product_options` (`option_id`) ON DELETE CASCADE
@@ -115,6 +116,8 @@ CREATE TABLE `orders` (
                           `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정 시각',
                           `cancelled_at` timestamp NULL DEFAULT NULL COMMENT '취소 시각 (취소된 경우)',
                           PRIMARY KEY (`order_id`),
+                          KEY `idx_user_id_created_at` (`user_id`, `created_at` DESC) COMMENT '사용자별 주문 조회 최적화',
+                          KEY `idx_order_status` (`order_status`) COMMENT '주문 상태 필터링',
                           CONSTRAINT `orders_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
                           CONSTRAINT `orders_ibfk_2` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`coupon_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='주문';
@@ -132,6 +135,7 @@ CREATE TABLE `order_items` (
                                `subtotal` bigint NOT NULL COMMENT '소계 (단가 × 수량)',
                                `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 시각',
                                PRIMARY KEY (`order_item_id`),
+                               KEY `idx_order_id` (`order_id`) COMMENT '주문별 항목 조회',
                                CONSTRAINT `order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='주문 항목 (라인 아이템)';
 
@@ -146,6 +150,8 @@ CREATE TABLE `user_coupons` (
                                 `order_id` bigint DEFAULT NULL COMMENT '사용된 주문 ID (nullable)',
                                 PRIMARY KEY (`user_coupon_id`),
                                 UNIQUE KEY `uk_user_coupon` (`user_id`,`coupon_id`),
+                                KEY `idx_user_id_status` (`user_id`, `status`) COMMENT '사용자별 쿠폰 상태 조회',
+                                KEY `idx_coupon_id` (`coupon_id`) COMMENT '쿠폰별 발급 현황',
                                 CONSTRAINT `user_coupons_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
                                 CONSTRAINT `user_coupons_ibfk_2` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`coupon_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='사용자 발급 쿠폰';
@@ -162,6 +168,8 @@ CREATE TABLE `outbox` (
                           `sent_at` timestamp NULL DEFAULT NULL COMMENT '전송 완료 시각',
                           `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 시각',
                           PRIMARY KEY (`message_id`),
+                          KEY `idx_status_created_at` (`status`, `created_at`) COMMENT '미전송 메시지 조회',
+                          KEY `idx_order_id` (`order_id`) COMMENT '주문별 메시지 추적',
                           CONSTRAINT `outbox_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
                           CONSTRAINT `outbox_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Outbox 메시지 테이블';
