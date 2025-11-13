@@ -35,3 +35,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Spring Boot configuration files (security-sensitive) ###
+application.properties
+application.yml
+application-*.yml
+application-*.properties
