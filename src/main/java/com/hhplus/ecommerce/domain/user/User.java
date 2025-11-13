@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
     @UniqueConstraint(columnNames = "email")
 })
 @Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -46,6 +47,10 @@ public class User {
 
     @Column(name = "balance", nullable = false)
     private Long balance;
+
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

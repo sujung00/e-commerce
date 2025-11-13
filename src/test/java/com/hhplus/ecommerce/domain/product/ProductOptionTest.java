@@ -145,6 +145,7 @@ class ProductOptionTest {
         // Given
         ProductOption option = ProductOption.builder()
                 .stock(50)
+                .version(1L)
                 .build();
 
         // When: 재고 10개 차감
@@ -194,6 +195,7 @@ class ProductOptionTest {
         // Given
         ProductOption option = ProductOption.builder()
                 .stock(50)
+                .version(1L)
                 .build();
 
         // When: 전량 차감
@@ -300,6 +302,8 @@ class ProductOptionTest {
         // Given
         LocalDateTime originalTime = LocalDateTime.now();
         ProductOption option = ProductOption.builder()
+                .stock(50)
+                .version(1L)
                 .createdAt(originalTime)
                 .updatedAt(originalTime)
                 .build();

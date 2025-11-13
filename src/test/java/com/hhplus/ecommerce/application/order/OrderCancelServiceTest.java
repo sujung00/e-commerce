@@ -80,6 +80,9 @@ class OrderCancelServiceTest {
                 orderTransactionService,
                 orderCancelTransactionService
         );
+
+        // 기본 mock 설정
+        lenient().doNothing().when(orderValidator).validateOrderStatus(any(Order.class));
     }
 
     // ========== 주문 취소 (cancelOrder) ==========
@@ -228,6 +231,8 @@ class OrderCancelServiceTest {
 
         when(orderRepository.findById(TEST_ORDER_ID))
                 .thenReturn(Optional.of(order));
+        doThrow(new com.hhplus.ecommerce.domain.order.InvalidOrderStatusException("주문 상태가 유효하지 않습니다"))
+                .when(orderValidator).validateOrderStatus(order);
 
         // When & Then
         assertThrows(com.hhplus.ecommerce.domain.order.InvalidOrderStatusException.class, () -> {
@@ -256,6 +261,8 @@ class OrderCancelServiceTest {
 
         when(orderRepository.findById(TEST_ORDER_ID))
                 .thenReturn(Optional.of(order));
+        doThrow(new com.hhplus.ecommerce.domain.order.InvalidOrderStatusException("주문 상태가 유효하지 않습니다"))
+                .when(orderValidator).validateOrderStatus(order);
 
         // When & Then
         assertThrows(com.hhplus.ecommerce.domain.order.InvalidOrderStatusException.class, () -> {

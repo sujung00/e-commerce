@@ -155,7 +155,7 @@ class OrderCancelTransactionServiceTest {
         assertNotNull(result.getCancelledAt());
 
         // 저장소 호출 확인
-        verify(productRepository, times(1)).saveOption(option);
+        verify(productRepository, times(1)).save(product);
         verify(orderRepository, times(1)).save(any(Order.class));
     }
 
@@ -280,7 +280,7 @@ class OrderCancelTransactionServiceTest {
         assertEquals(10, result.getRestoredItems().get(1).getRestoredStock());  // 7 + 3
 
         // 저장소 호출 확인
-        verify(productRepository, times(2)).saveOption(any(ProductOption.class));
+        verify(productRepository, times(2)).save(any(Product.class));
         verify(orderRepository, times(1)).save(any(Order.class));
     }
 

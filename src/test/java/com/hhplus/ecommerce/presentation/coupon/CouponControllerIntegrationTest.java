@@ -1,11 +1,9 @@
 package com.hhplus.ecommerce.presentation.coupon;
 
-import com.hhplus.ecommerce.config.TestRepositoryConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -17,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * CouponController 통합 테스트
- * WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
+ * MySQL 기반 테스트 환경에서 WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
  *
  * 테스트 대상: CouponController
  * - POST /coupons/issue - 쿠폰 발급 (X-USER-ID 헤더)
@@ -25,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * - GET /coupons - 사용 가능한 쿠폰 조회
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestRepositoryConfiguration.class)
 @Transactional
 @DisplayName("CouponController 통합 테스트")
 class CouponControllerIntegrationTest {

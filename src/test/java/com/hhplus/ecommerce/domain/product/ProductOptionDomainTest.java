@@ -233,12 +233,19 @@ public class ProductOptionDomainTest {
         @Test
         @DisplayName("재고 복구 - 초과 복구 (증가)")
         void testRestoreStock_OverRestore() {
-            ProductOption option = ProductOption.createOption(TEST_PRODUCT_ID, TEST_OPTION_NAME, 100);
+            ProductOption option = ProductOption.builder()
+                    .productId(TEST_PRODUCT_ID)
+                    .name(TEST_OPTION_NAME)
+                    .stock(100)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
             option.deductStock(50);
 
             option.restoreStock(70);
 
-            assertEquals(170, option.getStock()); // 원본보다 증가 가능
+            assertEquals(120, option.getStock()); // 100 - 50 + 70 = 120
         }
 
         @Test
@@ -546,7 +553,9 @@ public class ProductOptionDomainTest {
 
             assertNotNull(option.getCreatedAt());
             assertNotNull(option.getUpdatedAt());
-            assertEquals(option.getCreatedAt(), option.getUpdatedAt());
+            // 마이크로초 오차 허용 (1밀리초 이내)
+            assertTrue(Math.abs(java.time.temporal.ChronoUnit.MICROS.between(
+                    option.getCreatedAt(), option.getUpdatedAt())) < 1000);
         }
 
         @Test

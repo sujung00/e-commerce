@@ -114,7 +114,13 @@ public class OrderCancelTransactionService {
         Order savedOrder = orderRepository.save(order);
 
         // 2-6: 응답 반환 (Application layer DTO로 변환)
-        return CancelOrderResponse.fromOrder(savedOrder);
+        return CancelOrderResponse.builder()
+                .orderId(savedOrder.getOrderId())
+                .orderStatus(savedOrder.getOrderStatus().name())
+                .refundAmount(savedOrder.getFinalAmount())
+                .cancelledAt(savedOrder.getCancelledAt())
+                .restoredItems(restoredItems)
+                .build();
     }
 
     /**

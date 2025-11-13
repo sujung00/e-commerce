@@ -61,8 +61,7 @@ public class Coupon {
 
     @Version
     @Column(name = "version")
-    @Builder.Default
-    private Long version = 1L;
+    private Long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

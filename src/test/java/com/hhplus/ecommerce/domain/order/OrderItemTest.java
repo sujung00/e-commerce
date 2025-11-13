@@ -154,18 +154,17 @@ class OrderItemTest {
     @Test
     @DisplayName("소계 계산 - 0원 상품")
     void testSubtotalCalculation_FreeProduct() {
-        // When
-        OrderItem orderItem = OrderItem.createOrderItem(
+        // 0원 상품은 유효하지 않으므로 예외 발생 확인
+        assertThrows(IllegalArgumentException.class, () ->
+            OrderItem.createOrderItem(
                 TEST_PRODUCT_ID,
                 TEST_OPTION_ID,
                 TEST_PRODUCT_NAME,
                 TEST_OPTION_NAME,
                 5,
                 0L
+            )
         );
-
-        // Then
-        assertEquals(0L, orderItem.getSubtotal());
     }
 
     @Test

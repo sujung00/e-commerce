@@ -436,6 +436,7 @@ class CouponServiceTest {
     @DisplayName("사용자 쿠폰 조회 - 성공 (빈 결과)")
     void testGetUserCoupons_Success_EmptyResult() {
         // Given
+        when(userRepository.existsById(TEST_USER_ID)).thenReturn(true);
         when(userCouponRepository.findByUserIdAndStatus(TEST_USER_ID, "USED"))
                 .thenReturn(Collections.emptyList());
 

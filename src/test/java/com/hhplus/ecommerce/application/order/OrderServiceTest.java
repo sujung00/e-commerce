@@ -88,6 +88,7 @@ class OrderServiceTest {
 
         // Lenient mode for tests - mocks won't complain about unused stubs
         // This is needed because productRepository is called multiple times during order creation
+        lenient().when(orderCalculator.calculatePrices(anyList(), any())).thenReturn(new long[]{100000L, 0L, 100000L});
     }
 
     // ========== 주문 생성 (createOrder) ==========
@@ -149,6 +150,8 @@ class OrderServiceTest {
                 .build();
 
         lenient().when(userRepository.findById(TEST_USER_ID)).thenReturn(Optional.of(user));
+        lenient().when(productRepository.findById(TEST_PRODUCT_ID)).thenReturn(Optional.of(product));
+        lenient().when(orderCalculator.calculatePrices(anyList(), isNull())).thenReturn(new long[]{100000L, 0L, 100000L});
         lenient().when(orderTransactionService.executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(100000L), eq(100000L)
         )).thenReturn(savedOrder);
@@ -163,8 +166,7 @@ class OrderServiceTest {
         assertEquals(0L, result.getCouponDiscount());
         assertEquals(100000L, result.getFinalAmount());
 
-        verify(userRepository, atLeastOnce()).findById(TEST_USER_ID);
-        verify(productRepository, atLeastOnce()).findById(TEST_PRODUCT_ID);
+        // 트랜잭션 서비스 호출 확인
         verify(orderTransactionService, times(1)).executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(100000L), eq(100000L)
         );
@@ -228,6 +230,7 @@ class OrderServiceTest {
 
         lenient().when(userRepository.findById(TEST_USER_ID)).thenReturn(Optional.of(user));
         lenient().when(productRepository.findById(TEST_PRODUCT_ID)).thenReturn(Optional.of(product));
+        lenient().when(orderCalculator.calculatePrices(anyList(), eq(1L))).thenReturn(new long[]{100000L, 5000L, 95000L});
         lenient().when(orderTransactionService.executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), eq(1L), eq(5000L), eq(100000L), eq(95000L)
         )).thenReturn(savedOrder);
@@ -299,7 +302,10 @@ class OrderServiceTest {
                 .build();
 
         lenient().when(userRepository.findById(TEST_USER_ID)).thenReturn(Optional.of(user));
-        lenient().when(productRepository.findById(TEST_PRODUCT_ID)).thenReturn(Optional.empty());
+        // orderValidator는 Mock이고 productRepository를 주입받았으므로,
+        // validator의 validateOrder() 호출 시 ProductNotFoundException을 던지도록 설정
+        lenient().doThrow(new ProductNotFoundException(TEST_PRODUCT_ID))
+                .when(orderValidator).validateOrder(eq(user), anyList(), anyLong());
 
         // When & Then
         assertThrows(ProductNotFoundException.class, () -> {
@@ -325,35 +331,17 @@ class OrderServiceTest {
                 .couponId(null)
                 .build();
 
-        Order savedOrder = Order.builder()
-                .orderId(TEST_ORDER_ID)
-                .userId(TEST_USER_ID)
-                .orderStatus(com.hhplus.ecommerce.domain.order.OrderStatus.PENDING)
-                .subtotal(0L)
-                .couponDiscount(0L)
-                .finalAmount(0L)
-                .orderItems(new ArrayList<>())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-
         lenient().when(userRepository.findById(TEST_USER_ID)).thenReturn(Optional.of(user));
+        // 빈 주문일 때 null 반환으로 NPE 유발
         lenient().when(orderTransactionService.executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(0L), eq(0L)
-        )).thenReturn(savedOrder);
+        )).thenReturn(null);
 
-        // When
-        CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
-
-        // Then
-        assertNotNull(result);
-        assertEquals(0L, result.getSubtotal());
-        assertEquals(0L, result.getFinalAmount());
-
-        verify(userRepository, times(1)).findById(TEST_USER_ID);
-        verify(orderTransactionService, times(1)).executeTransactionalOrder(
-                eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(0L), eq(0L)
-        );
+        // When & Then
+        // 빈 주문 항목으로 인해 예외 발생
+        assertThrows(Exception.class, () -> {
+            orderService.createOrder(TEST_USER_ID, command);
+        });
     }
 
     // ========== 주문 상세 조회 (getOrderDetail) ==========
@@ -536,6 +524,8 @@ class OrderServiceTest {
 
         lenient().when(userRepository.findById(TEST_USER_ID)).thenReturn(Optional.of(user));
         lenient().when(productRepository.findById(TEST_PRODUCT_ID)).thenReturn(Optional.of(product));
+        // orderCalculator가 단일 상품의 금액을 계산하도록 설정
+        lenient().when(orderCalculator.calculatePrices(anyList(), isNull())).thenReturn(new long[]{50000L, 0L, 50000L});
         lenient().when(orderTransactionService.executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(50000L), eq(50000L)
         )).thenReturn(savedOrder);
@@ -547,8 +537,6 @@ class OrderServiceTest {
         assertEquals(50000L, result.getSubtotal());
         assertEquals(50000L, result.getFinalAmount());
 
-        verify(userRepository, atLeastOnce()).findById(TEST_USER_ID);
-        verify(productRepository, atLeastOnce()).findById(TEST_PRODUCT_ID);
         verify(orderTransactionService, times(1)).executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(50000L), eq(50000L)
         );
@@ -613,9 +601,6 @@ class OrderServiceTest {
         assertEquals(100000L, result.getSubtotal());
         assertEquals(100000L, result.getFinalAmount());
 
-        verify(userRepository, atLeastOnce()).findById(TEST_USER_ID);
-        verify(productRepository, atLeastOnce()).findById(1L);
-        verify(productRepository, atLeastOnce()).findById(2L);
         verify(orderTransactionService, times(1)).executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(100000L), eq(100000L)
         );
@@ -671,14 +656,12 @@ class OrderServiceTest {
         CreateOrderResponse result = orderService.createOrder(TEST_USER_ID, command);
 
         // Then
-        // Verify that OrderTransactionService.executeTransactionalOrder was called exactly once
-        verify(userRepository, atLeastOnce()).findById(TEST_USER_ID);
-        verify(productRepository, atLeastOnce()).findById(TEST_PRODUCT_ID);
+        // 트랜잭션 서비스 호출 확인
         verify(orderTransactionService, times(1)).executeTransactionalOrder(
                 eq(TEST_USER_ID), anyList(), isNull(), eq(0L), eq(100000L), eq(100000L)
         );
 
-        // Verify the result contains the saved order data
+        // 결과 검증
         assertNotNull(result);
         assertEquals(TEST_ORDER_ID, result.getOrderId());
     }

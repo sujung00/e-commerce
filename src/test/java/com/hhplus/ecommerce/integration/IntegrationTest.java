@@ -1,9 +1,8 @@
-package com.hhplus.ecommerce;
+package com.hhplus.ecommerce.integration;
 
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.inventory.InventoryService;
 import com.hhplus.ecommerce.application.order.OrderService;
-import com.hhplus.ecommerce.config.TestRepositoryConfiguration;
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.product.Product;
@@ -21,8 +20,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -31,18 +30,24 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * IntegrationTest - 도메인별 통합 테스트
+ * IntegrationTest - MySQL 기반 도메인별 통합 테스트
  *
  * 테스트 목표:
+ * - 실제 MySQL 테스트 DB를 사용한 통합 테스트
  * - 쿠폰 발급, 조회 통합 흐름
  * - 주문 생성, 조회 통합 흐름
  * - 재고 조회, 차감 통합 흐름
  * - 엔드-투-엔드 주문 처리 시나리오
+ *
+ * 설정:
+ * - @SpringBootTest: 전체 Spring 애플리케이션 컨텍스트 로드
+ * - @Transactional: 테스트 후 자동 롤백으로 데이터 격리
+ * - application-test.yml의 MySQL 테스트 DB 사용
+ * - ddl-auto: create-drop으로 스키마 자동 생성/제거
  */
 @SpringBootTest
-@Import(TestRepositoryConfiguration.class)
 @Transactional
-@DisplayName("통합 테스트")
+@DisplayName("MySQL 기반 통합 테스트")
 class IntegrationTest {
 
     @Autowired
@@ -63,16 +68,20 @@ class IntegrationTest {
     @Autowired
     private ProductRepository productRepository;
 
+    @Autowired
+    private EntityManager entityManager;
+
     private User testUser;
     private Product testProduct;
     private Coupon testCoupon;
+    private ProductOption option1;
+    private ProductOption option2;
 
     // ========== 테스트 데이터 설정 ==========
 
     private void createTestData() {
-        // 사용자 생성
+        // 사용자 생성 - ID는 자동 생성되도록 제거
         testUser = User.builder()
-                .userId(1001L)
                 .email("test@test.com")
                 .name("테스트 사용자")
                 .balance(100000L)
@@ -80,48 +89,59 @@ class IntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
         userRepository.save(testUser);
+        entityManager.flush();
 
-        // 상품 및 옵션 생성
-        ProductOption option1 = ProductOption.builder()
-                .optionId(2001L)
-                .productId(3001L)
-                .name("Red")
-                .stock(10)
-                .version(0L)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-
-        ProductOption option2 = ProductOption.builder()
-                .optionId(2002L)
-                .productId(3001L)
-                .name("Blue")
-                .stock(20)
-                .version(0L)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-
+        // 상품 먼저 생성하여 ID 확보
         testProduct = Product.builder()
-                .productId(3001L)
                 .productName("통합 테스트 상품")
                 .description("이것은 통합 테스트용 상품입니다")
                 .price(30000L)
                 .totalStock(30)
                 .status("판매 중")
-                .options(new ArrayList<>(List.of(option1, option2)))
+                .options(new ArrayList<>())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
         productRepository.save(testProduct);
+        entityManager.flush();
 
-        // 옵션 저장 (중요: 옵션을 별도로 저장해야 함)
-        productRepository.saveOption(option1);
-        productRepository.saveOption(option2);
+        // 상품 ID를 사용하여 옵션 생성
+        ProductOption tempOption1 = ProductOption.builder()
+                .productId(testProduct.getProductId())
+                .name("Red")
+                .stock(10)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        productRepository.saveOption(tempOption1);
+        entityManager.flush();
 
-        // 쿠폰 생성
+        // Blue 옵션 추가 생성
+        ProductOption tempOption2 = ProductOption.builder()
+                .productId(testProduct.getProductId())
+                .name("Blue")
+                .stock(20)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        productRepository.saveOption(tempOption2);
+        entityManager.flush();
+
+        // 옵션 ID를 얻기 위해 DB에서 조회
+        List<ProductOption> options = productRepository.findOptionsByProductId(testProduct.getProductId());
+        if (options.size() < 2) {
+            throw new RuntimeException("옵션 저장 실패: 옵션이 2개 이상 필요합니다: " + options.size());
+        }
+
+        option1 = options.get(0);  // Red
+        option2 = options.get(1);  // Blue
+
+        // Product의 options 컬렉션에 옵션 추가 (OrderValidator에서 사용)
+        testProduct.getOptions().clear();
+        testProduct.getOptions().addAll(options);
+
+        // 쿠폰 생성 - ID는 자동 생성되도록 제거
         testCoupon = Coupon.builder()
-                .couponId(4001L)
                 .couponName("통합 테스트 쿠폰")
                 .description("통합 테스트용 할인 쿠폰")
                 .discountType("FIXED_AMOUNT")
@@ -131,7 +151,6 @@ class IntegrationTest {
                 .remainingQty(5)
                 .validFrom(LocalDateTime.now().minusDays(1))
                 .validUntil(LocalDateTime.now().plusDays(30))
-                .version(0L)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -183,8 +202,7 @@ class IntegrationTest {
 
         // 첫 번째 사용자 발급
         User user1 = User.builder()
-                .userId(1002L)
-                .email("user1@test.com")
+                .email("user1_" + System.currentTimeMillis() + "@test.com")
                 .name("사용자1")
                 .balance(10000L)
                 .createdAt(LocalDateTime.now())
@@ -195,8 +213,7 @@ class IntegrationTest {
 
         // 두 번째 사용자 발급 시도
         User user2 = User.builder()
-                .userId(1003L)
-                .email("user2@test.com")
+                .email("user2_" + System.currentTimeMillis() + "@test.com")
                 .name("사용자2")
                 .balance(10000L)
                 .createdAt(LocalDateTime.now())
@@ -257,7 +274,7 @@ class IntegrationTest {
         // Given
         OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
-                .optionId(2001L)
+                .optionId(option1.getOptionId())
                 .quantity(2)
                 .build();
 
@@ -282,7 +299,7 @@ class IntegrationTest {
 
         OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
-                .optionId(2001L)
+                .optionId(option1.getOptionId())
                 .quantity(1)
                 .build();
 
@@ -306,7 +323,7 @@ class IntegrationTest {
         // Given - 재고보다 많은 수량 주문
         OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
-                .optionId(2001L)
+                .optionId(option1.getOptionId())
                 .quantity(100)  // 재고는 10개
                 .build();
 
@@ -326,7 +343,6 @@ class IntegrationTest {
     void testOrderCreation_Failed_InsufficientBalance() {
         // Given - 잔액 부족한 사용자
         User poorUser = User.builder()
-                .userId(1004L)
                 .email("poor@test.com")
                 .name("빈곤한 사용자")
                 .balance(1000L)  // 상품 가격은 30,000원
@@ -337,7 +353,7 @@ class IntegrationTest {
 
         OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
-                .optionId(2001L)
+                .optionId(option1.getOptionId())
                 .quantity(1)
                 .build();
 
@@ -368,7 +384,7 @@ class IntegrationTest {
         // Step 3: 주문 생성
         OrderItemCommand item = OrderItemCommand.builder()
                 .productId(testProduct.getProductId())
-                .optionId(2001L)
+                .optionId(option1.getOptionId())
                 .quantity(2)
                 .build();
 

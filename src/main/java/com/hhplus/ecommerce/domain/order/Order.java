@@ -61,7 +61,7 @@ public class Order {
     private LocalDateTime cancelledAt;
 
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @JoinColumn(name = "order_id", insertable = false, updatable = false)
+    @JoinColumn(name = "order_id")
     @Builder.Default
     private List<OrderItem> orderItems = new ArrayList<>();
 

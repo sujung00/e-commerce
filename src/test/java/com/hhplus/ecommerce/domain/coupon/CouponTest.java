@@ -141,7 +141,12 @@ class CouponTest {
 
         assertThat(coupon.getCouponId()).isNull();
         assertThat(coupon.getCouponName()).isNull();
-        assertThat(coupon.getIsActive()).isNull();
+        // isActive는 @Builder.Default로 true가 기본값
+        assertThat(coupon.getIsActive()).isTrue();
+        // discountAmount는 @Builder.Default로 0L이 기본값
+        assertThat(coupon.getDiscountAmount()).isEqualTo(0L);
+        // discountRate는 @Builder.Default로 BigDecimal.ZERO가 기본값
+        assertThat(coupon.getDiscountRate()).isEqualTo(BigDecimal.ZERO);
     }
 
     // ========== validateDiscount() 메서드 테스트 ==========

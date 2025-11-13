@@ -100,9 +100,11 @@ public class OrderTransactionService {
         deductUserBalance(userId, finalAmount);
 
         // 2-3: 주문 생성 및 저장
+        // 주의: order_items에 order_id를 설정하기 위해, 먼저 Order만 저장하고 OrderItem들을 나중에 연결
         Order order = Order.createOrder(userId, couponId, couponDiscount, subtotal, finalAmount);
+        Order savedOrder = orderRepository.save(order);
 
-        // 2-4: 주문 항목 추가
+        // 2-4: 주문 항목 생성 및 Order ID 설정
         for (OrderItemDto itemRequest : orderItems) {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ProductNotFoundException(itemRequest.getProductId()));
@@ -120,11 +122,12 @@ public class OrderTransactionService {
                     itemRequest.getQuantity(),
                     product.getPrice()
             );
-            order.addOrderItem(orderItem);
+            orderItem.setOrderId(savedOrder.getOrderId());
+            savedOrder.addOrderItem(orderItem);
         }
 
-        // 2-5: 주문 저장
-        Order savedOrder = orderRepository.save(order);
+        // 모든 OrderItem 추가 후 다시 저장 (CascadeType.ALL로 인해 자동 저장됨)
+        savedOrder = orderRepository.save(savedOrder);
 
         // 2-6: 쿠폰 사용 처리 (있는 경우)
         if (couponId != null) {

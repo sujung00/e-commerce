@@ -365,8 +365,24 @@ public class ProductDomainTest {
         @DisplayName("다중 옵션 - 전체 재고 소진 시 SOLD_OUT")
         void testRecalculateTotalStock_AllOptionsEmpty() {
             Product product = Product.createProduct(TEST_PRODUCT_NAME, TEST_DESCRIPTION, TEST_PRICE);
-            ProductOption option1 = ProductOption.createOption(product.getProductId(), "빨강", 30);
-            ProductOption option2 = ProductOption.createOption(product.getProductId(), "파랑", 20);
+            ProductOption option1 = ProductOption.builder()
+                    .optionId(1L)
+                    .productId(product.getProductId())
+                    .name("빨강")
+                    .stock(30)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            ProductOption option2 = ProductOption.builder()
+                    .optionId(2L)
+                    .productId(product.getProductId())
+                    .name("파랑")
+                    .stock(20)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
 
             product.addOption(option1);
             product.addOption(option2);
@@ -456,6 +472,8 @@ public class ProductDomainTest {
         @DisplayName("isSoldOut() - true")
         void testIsSoldOut_True() {
             Product product = Product.createProduct(TEST_PRODUCT_NAME, TEST_DESCRIPTION, TEST_PRICE);
+            // 새로 생성된 상품은 IN_STOCK 상태이므로, SOLD_OUT으로 변경
+            product.recalculateTotalStock();  // 옵션이 없으므로 재고가 0이 되고 SOLD_OUT이 됨
 
             assertTrue(product.isSoldOut());
         }
@@ -598,8 +616,24 @@ public class ProductDomainTest {
         void scenario1_MultiOptionOrderProcessing() {
             // 상품 생성: 셔츠 (빨강/파랑 2가지, 각 50개)
             Product product = Product.createProduct("셔츠", "편한 면 셔츠", 30000L);
-            ProductOption redOption = ProductOption.createOption(product.getProductId(), "빨강", 50);
-            ProductOption blueOption = ProductOption.createOption(product.getProductId(), "파랑", 50);
+            ProductOption redOption = ProductOption.builder()
+                    .optionId(1L)
+                    .productId(product.getProductId())
+                    .name("빨강")
+                    .stock(50)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            ProductOption blueOption = ProductOption.builder()
+                    .optionId(2L)
+                    .productId(product.getProductId())
+                    .name("파랑")
+                    .stock(50)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
 
             product.addOption(redOption);
             product.addOption(blueOption);
@@ -686,9 +720,33 @@ public class ProductDomainTest {
             Product product = Product.createProduct("신발", "운동화", 80000L);
 
             // 다양한 크기별 재고
-            ProductOption size37 = ProductOption.createOption(product.getProductId(), "37사이즈", 5);
-            ProductOption size40 = ProductOption.createOption(product.getProductId(), "40사이즈", 50);
-            ProductOption size43 = ProductOption.createOption(product.getProductId(), "43사이즈", 30);
+            ProductOption size37 = ProductOption.builder()
+                    .optionId(1L)
+                    .productId(product.getProductId())
+                    .name("37사이즈")
+                    .stock(5)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            ProductOption size40 = ProductOption.builder()
+                    .optionId(2L)
+                    .productId(product.getProductId())
+                    .name("40사이즈")
+                    .stock(50)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            ProductOption size43 = ProductOption.builder()
+                    .optionId(3L)
+                    .productId(product.getProductId())
+                    .name("43사이즈")
+                    .stock(30)
+                    .version(1L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
 
             product.addOption(size37);
             product.addOption(size40);

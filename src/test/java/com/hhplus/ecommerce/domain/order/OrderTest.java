@@ -104,8 +104,8 @@ class OrderTest {
         Order order2 = Order.createOrder(TEST_USER_ID, 1L, 5000L, 50000L, 45000L);
 
         // Then
-        assertEquals("COMPLETED", order1.getOrderStatus());
-        assertEquals("COMPLETED", order2.getOrderStatus());
+        assertEquals(OrderStatus.COMPLETED, order1.getOrderStatus());
+        assertEquals(OrderStatus.COMPLETED, order2.getOrderStatus());
     }
 
     // ========== 주문 항목 추가 ==========
@@ -306,16 +306,16 @@ class OrderTest {
         // When: 할인이 소계보다 크면 음수 금액이 될 수 있음
         Long subtotal = 50000L;
         Long discount = 60000L;
-        Order order = Order.createOrder(
-                TEST_USER_ID,
-                TEST_COUPON_ID,
-                discount,
-                subtotal,
-                subtotal - discount  // 음수
+        // 음수 금액은 유효하지 않으므로 예외 발생 확인
+        assertThrows(IllegalArgumentException.class, () ->
+            Order.createOrder(
+                    TEST_USER_ID,
+                    TEST_COUPON_ID,
+                    discount,
+                    subtotal,
+                    subtotal - discount  // 음수
+            )
         );
-
-        // Then: 도메인에서는 검증하지 않음 (Application 계층의 책임)
-        assertEquals(subtotal - discount, order.getFinalAmount());
     }
 
     @Test

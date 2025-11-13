@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "order_items")
 @Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor

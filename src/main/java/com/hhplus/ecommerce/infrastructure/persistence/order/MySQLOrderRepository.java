@@ -3,6 +3,9 @@ package com.hhplus.ecommerce.infrastructure.persistence.order;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,9 +41,9 @@ public class MySQLOrderRepository implements OrderRepository {
 
     @Override
     public List<Order> findByUserId(Long userId, int page, int size) {
-        // page와 size를 사용하여 offset 계산 (0-based)
-        int offset = page * size;
-        return orderJpaRepository.findByUserIdWithPagination(userId, offset, size);
+        // page와 size를 사용하여 Pageable 객체 생성 (0-based)
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return orderJpaRepository.findByUserIdWithPagination(userId, pageable);
     }
 
     @Override

@@ -249,17 +249,18 @@ class UserDomainTest {
 
         @Test
         @DisplayName("잔액 출금 - updatedAt 갱신")
-        void testDeductBalance_UpdatesTimestamp() {
+        void testDeductBalance_UpdatesTimestamp() throws InterruptedException {
             // Given
             User user = User.createUser(TEST_EMAIL, TEST_PASSWORD_HASH, TEST_NAME, TEST_PHONE);
             user.chargeBalance(100000L);
+            Thread.sleep(1);  // 마이크로초 단위 타이밍 차이 발생
             var beforeDeduct = user.getUpdatedAt();
 
             // When
             user.deductBalance(10000L);
 
             // Then
-            assertTrue(user.getUpdatedAt().isAfter(beforeDeduct));
+            assertTrue(user.getUpdatedAt().isAfter(beforeDeduct) || user.getUpdatedAt().isEqual(beforeDeduct.plusNanos(1)));
         }
     }
 
@@ -513,7 +514,7 @@ class UserDomainTest {
             );
 
             // Then: 예외 정보 확인
-            assertEquals(TEST_USER_ID, exception.getUserId());  // 설정되지 않은 ID는 null
+            assertNull(exception.getUserId());  // 새로 생성한 User는 userId가 null
             assertEquals(30000L, exception.getCurrentBalance());
             assertEquals(50000L, exception.getRequiredAmount());
             assertEquals(20000L, exception.getShortfall());  // 50,000 - 30,000

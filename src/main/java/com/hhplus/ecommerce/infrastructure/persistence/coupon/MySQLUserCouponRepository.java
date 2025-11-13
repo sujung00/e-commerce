@@ -2,6 +2,7 @@ package com.hhplus.ecommerce.infrastructure.persistence.coupon;
 
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +40,8 @@ public class MySQLUserCouponRepository implements UserCouponRepository {
     @Override
     public List<UserCoupon> findByUserIdAndStatus(Long userId, String status) {
         // String status를 UserCouponStatus enum으로 변환
-        return userCouponJpaRepository.findByUserIdAndStatusString(userId, status);
+        UserCouponStatus couponStatus = UserCouponStatus.valueOf(status);
+        return userCouponJpaRepository.findByUserIdAndStatusString(userId, couponStatus);
     }
 
     @Override
