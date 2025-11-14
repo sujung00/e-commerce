@@ -7,12 +7,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * ProductController 통합 테스트
- * WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
+ * 실제 MySQL 테스트 DB를 사용하여 WebEnvironment.RANDOM_PORT와 TestRestTemplate을 통한 HTTP 요청 테스트
  *
  * 테스트 대상: ProductController
  * - GET /products - 상품 목록 조회
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - GET /products/popular - 인기 상품 조회
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Transactional
 @DisplayName("ProductController 통합 테스트")
 class ProductControllerIntegrationTest {
 

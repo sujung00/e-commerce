@@ -1,14 +1,17 @@
 package com.hhplus.ecommerce.presentation.order.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.hhplus.ecommerce.domain.order.OrderItem;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 주문 항목 응답 DTO
+ * 주문 항목 응답 DTO (Presentation layer)
+ *
+ * 책임:
+ * - HTTP API 응답 직렬화 (@JsonProperty)
+ * - Application layer와 독립적 (변환은 OrderMapper에서 처리)
  */
 @Getter
 @Builder
@@ -32,21 +35,6 @@ public class OrderItemResponse {
 
     private Integer quantity;
 
-    @JsonProperty("unit_price")
-    private Long unitPrice;
-
-    private Long subtotal;
-
-    public static OrderItemResponse fromOrderItem(OrderItem orderItem) {
-        return OrderItemResponse.builder()
-                .orderItemId(orderItem.getOrderItemId())
-                .productId(orderItem.getProductId())
-                .productName(orderItem.getProductName())
-                .optionId(orderItem.getOptionId())
-                .optionName(orderItem.getOptionName())
-                .quantity(orderItem.getQuantity())
-                .unitPrice(orderItem.getUnitPrice())
-                .subtotal(orderItem.getSubtotal())
-                .build();
-    }
+    @JsonProperty("price")
+    private Long price;
 }

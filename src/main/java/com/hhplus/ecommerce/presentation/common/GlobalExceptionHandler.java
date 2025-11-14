@@ -7,6 +7,8 @@ import com.hhplus.ecommerce.domain.order.OrderNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
 import com.hhplus.ecommerce.presentation.common.response.ErrorResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -34,6 +36,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
      * 상품을 찾을 수 없는 경우 (404)
@@ -149,6 +153,20 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 지원하지 않는 작업 (400)
+     *
+     * API 명세:
+     * - Error Code: INVALID_REQUEST
+     * - HTTP Status: 400 Bad Request
+     * - 상황: 필수 헤더 누락 (X-USER-ID) 등 클라이언트 요청 오류
+     */
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedOperationException(UnsupportedOperationException e) {
+        ErrorResponse errorResponse = ErrorResponse.of("INVALID_REQUEST", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    /**
      * 서버 내부 오류 (500)
      *
      * API 명세:
@@ -158,6 +176,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
+        logger.error("Unhandled exception occurred: ", e);
         ErrorResponse errorResponse = ErrorResponse.of("INTERNAL_SERVER_ERROR", "서버 오류가 발생했습니다");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
     }

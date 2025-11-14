@@ -84,7 +84,7 @@ public class IssueCouponResponse {
                 .discountType(coupon.getDiscountType())
                 .discountAmount(coupon.getDiscountAmount())
                 .discountRate(coupon.getDiscountRate())
-                .status(userCoupon.getStatus())
+                .status(userCoupon.getStatus().name())
                 .issuedAt(userCoupon.getIssuedAt())
                 .validFrom(coupon.getValidFrom())
                 .validUntil(coupon.getValidUntil())

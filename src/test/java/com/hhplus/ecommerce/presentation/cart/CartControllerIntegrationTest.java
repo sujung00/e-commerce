@@ -13,12 +13,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * CartController 통합 테스트
- * WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
+ * 실제 MySQL 테스트 DB를 사용하여 WebEnvironment.RANDOM_PORT와 TestRestTemplate을 통한 HTTP 요청 테스트
  *
  * 테스트 대상: CartController
  * - GET /carts - 장바구니 조회 (X-USER-ID 헤더)
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - DELETE /carts/items/{cart_item_id} - 장바구니 아이템 제거 (X-USER-ID 헤더)
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Transactional
 @DisplayName("CartController 통합 테스트")
 class CartControllerIntegrationTest {
 

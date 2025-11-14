@@ -1,9 +1,7 @@
 package com.hhplus.ecommerce.domain.order;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.Setter;
+import jakarta.persistence.*;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -31,21 +29,44 @@ import java.time.LocalDateTime;
  * - status는 PENDING | SENT | FAILED 중 하나
  * - retry_count는 재시도 횟수 추적
  */
+@Entity
+@Table(name = "outbox")
 @AllArgsConstructor
 @Builder
 @Getter
 @Setter
+@NoArgsConstructor
 public class Outbox {
 
-    private Long messageId;           // PK: 메시지 고유 식별자
-    private Long orderId;             // FK: 주문 ID (NOT NULL)
-    private Long userId;              // 사용자 ID (이벤트 추적용)
-    private String messageType;       // 이벤트 타입: ORDER_COMPLETED, SHIPPING_REQUEST 등
-    private String status;            // PENDING | SENT | FAILED
-    private Integer retryCount;       // 재시도 횟수 (기본값: 0)
-    private LocalDateTime lastAttempt; // 마지막 시도 시간 (nullable)
-    private LocalDateTime sentAt;     // 전송 완료 시간 (nullable)
-    private LocalDateTime createdAt;  // 생성 시각
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "message_id")
+    private Long messageId;
+
+    @Column(name = "order_id", nullable = false)
+    private Long orderId;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    @Column(name = "message_type", nullable = false)
+    private String messageType;
+
+    @Column(name = "status", nullable = false)
+    private String status;
+
+    @Column(name = "retry_count", nullable = false)
+    @Builder.Default
+    private Integer retryCount = 0;
+
+    @Column(name = "last_attempt")
+    private LocalDateTime lastAttempt;
+
+    @Column(name = "sent_at")
+    private LocalDateTime sentAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
     /**
      * Outbox 메시지 생성 (2단계 트랜잭션 내)

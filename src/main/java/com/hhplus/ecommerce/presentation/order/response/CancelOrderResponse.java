@@ -9,12 +9,14 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * 주문 취소 응답 DTO
+ * 주문 취소 응답 DTO (Presentation layer)
  * 3.4 주문 취소 (재고 복구) API 응답
- * API 명세: docs/api/api-specification.md 3.4 섹션 참고
+ *
+ * 책임:
+ * - HTTP API 응답 직렬화 (@JsonProperty)
+ * - Application layer와 독립적 (변환은 OrderMapper에서 처리)
  */
 @Getter
 @Builder
@@ -27,17 +29,8 @@ public class CancelOrderResponse {
     @JsonProperty("order_status")
     private String orderStatus;
 
-    @JsonProperty("subtotal")
-    private Long subtotal;
-
-    @JsonProperty("coupon_discount")
-    private Long couponDiscount;
-
-    @JsonProperty("final_amount")
-    private Long finalAmount;
-
-    @JsonProperty("restored_amount")
-    private Long restoredAmount;
+    @JsonProperty("refund_amount")
+    private Long refundAmount;
 
     @JsonProperty("cancelled_at")
     private Instant cancelledAt;
@@ -46,7 +39,9 @@ public class CancelOrderResponse {
     private List<RestoredItem> restoredItems;
 
     /**
-     * 복구된 주문 항목 정보
+     * RestoredItem - 복구된 주문 항목 정보
+     *
+     * 주문 취소 시 복구된 재고 정보를 포함하는 내부 DTO
      */
     @Getter
     @Builder
@@ -76,16 +71,17 @@ public class CancelOrderResponse {
     }
 
     /**
-     * Order 엔티티에서 CancelOrderResponse로 변환
+     * Domain Order 엔티티에서 Presentation DTO로 변환
+     *
+     * @param order Domain Order 엔티티
+     * @param restoredItems 복구된 항목 리스트
+     * @return Presentation layer CancelOrderResponse
      */
     public static CancelOrderResponse fromOrder(Order order, List<RestoredItem> restoredItems) {
         return CancelOrderResponse.builder()
                 .orderId(order.getOrderId())
-                .orderStatus(order.getOrderStatus())
-                .subtotal(order.getSubtotal())
-                .couponDiscount(order.getCouponDiscount())
-                .finalAmount(order.getFinalAmount())
-                .restoredAmount(order.getFinalAmount())
+                .orderStatus(order.getOrderStatus().name())
+                .refundAmount(order.getFinalAmount())
                 .cancelledAt(Instant.now())
                 .restoredItems(restoredItems)
                 .build();

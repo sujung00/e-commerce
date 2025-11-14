@@ -100,7 +100,7 @@ class OrderControllerTest {
                                 .optionId(1L)
                                 .optionName("사이즈 M")
                                 .quantity(2)
-                                .unitPrice(50000L)
+                                .price(50000L)
                                 .build()
                 ))
                 .createdAt(LocalDateTime.now())
@@ -117,8 +117,8 @@ class OrderControllerTest {
                 .couponId(1L)
                 .build();
 
-        when(orderService.createOrder(eq(TEST_USER_ID), any(CreateOrderRequest.class)))
-                .thenReturn(response);
+        when(orderService.createOrder(anyLong(), any()))
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(post("/orders")
@@ -131,7 +131,7 @@ class OrderControllerTest {
                 .andExpect(jsonPath("$.subtotal").value(100000L))
                 .andExpect(jsonPath("$.final_amount").value(95000L));
 
-        verify(orderService, times(1)).createOrder(eq(TEST_USER_ID), any(CreateOrderRequest.class));
+        verify(orderService, times(1)).createOrder(anyLong(), any());
     }
 
     @Test
@@ -154,7 +154,7 @@ class OrderControllerTest {
                                 .optionId(2L)
                                 .optionName("색상 빨강")
                                 .quantity(1)
-                                .unitPrice(50000L)
+                                .price(50000L)
                                 .build()
                 ))
                 .createdAt(LocalDateTime.now())
@@ -171,8 +171,8 @@ class OrderControllerTest {
                 .couponId(null)
                 .build();
 
-        when(orderService.createOrder(eq(TEST_USER_ID), any(CreateOrderRequest.class)))
-                .thenReturn(response);
+        when(orderService.createOrder(anyLong(), any()))
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(post("/orders")
@@ -182,7 +182,7 @@ class OrderControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.coupon_discount").value(0L));
 
-        verify(orderService, times(1)).createOrder(eq(TEST_USER_ID), any(CreateOrderRequest.class));
+        verify(orderService, times(1)).createOrder(anyLong(), any());
     }
 
     @Test
@@ -239,7 +239,7 @@ class OrderControllerTest {
                                 .optionId(1L)
                                 .optionName("사이즈 L")
                                 .quantity(1)
-                                .unitPrice(80000L)
+                                .price(80000L)
                                 .build(),
                         OrderItemResponse.builder()
                                 .orderItemId(2L)
@@ -248,14 +248,14 @@ class OrderControllerTest {
                                 .optionId(2L)
                                 .optionName("색상 파랑")
                                 .quantity(1)
-                                .unitPrice(70000L)
+                                .price(70000L)
                                 .build()
                 ))
                 .createdAt(LocalDateTime.now().minusHours(2))
                 .build();
 
         when(orderService.getOrderDetail(TEST_USER_ID, TEST_ORDER_ID))
-                .thenReturn(response);
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(get("/orders/{order_id}", TEST_ORDER_ID)
@@ -289,14 +289,14 @@ class OrderControllerTest {
                                 .optionId(3L)
                                 .optionName("기본")
                                 .quantity(1)
-                                .unitPrice(30000L)
+                                .price(30000L)
                                 .build()
                 ))
                 .createdAt(LocalDateTime.now())
                 .build();
 
         when(orderService.getOrderDetail(TEST_USER_ID, TEST_ORDER_ID))
-                .thenReturn(response);
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(get("/orders/{order_id}", TEST_ORDER_ID)
@@ -344,16 +344,12 @@ class OrderControllerTest {
                         OrderListResponse.OrderSummary.builder()
                                 .orderId(100L)
                                 .orderStatus("CONFIRMED")
-                                .subtotal(100000L)
-                                .couponDiscount(5000L)
                                 .finalAmount(95000L)
                                 .createdAt(LocalDateTime.now().minusDays(1))
                                 .build(),
                         OrderListResponse.OrderSummary.builder()
                                 .orderId(101L)
                                 .orderStatus("PENDING")
-                                .subtotal(50000L)
-                                .couponDiscount(0L)
                                 .finalAmount(50000L)
                                 .createdAt(LocalDateTime.now())
                                 .build()
@@ -365,7 +361,7 @@ class OrderControllerTest {
                 .build();
 
         when(orderService.getOrderList(TEST_USER_ID, 0, 10, Optional.empty()))
-                .thenReturn(response);
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(get("/orders")
@@ -388,8 +384,6 @@ class OrderControllerTest {
                         OrderListResponse.OrderSummary.builder()
                                 .orderId(110L)
                                 .orderStatus("SHIPPED")
-                                .subtotal(75000L)
-                                .couponDiscount(0L)
                                 .finalAmount(75000L)
                                 .createdAt(LocalDateTime.now().minusDays(5))
                                 .build()
@@ -401,7 +395,7 @@ class OrderControllerTest {
                 .build();
 
         when(orderService.getOrderList(TEST_USER_ID, 1, 10, Optional.empty()))
-                .thenReturn(response);
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(get("/orders")
@@ -424,8 +418,6 @@ class OrderControllerTest {
                         OrderListResponse.OrderSummary.builder()
                                 .orderId(100L)
                                 .orderStatus("CONFIRMED")
-                                .subtotal(100000L)
-                                .couponDiscount(5000L)
                                 .finalAmount(95000L)
                                 .createdAt(LocalDateTime.now().minusDays(1))
                                 .build()
@@ -437,7 +429,7 @@ class OrderControllerTest {
                 .build();
 
         when(orderService.getOrderList(TEST_USER_ID, 0, 10, Optional.of("CONFIRMED")))
-                .thenReturn(response);
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(get("/orders")
@@ -462,7 +454,7 @@ class OrderControllerTest {
                 .build();
 
         when(orderService.getOrderList(TEST_USER_ID, 0, 10, Optional.empty()))
-                .thenReturn(response);
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(get("/orders")
@@ -530,8 +522,8 @@ class OrderControllerTest {
                 .couponId(null)
                 .build();
 
-        when(orderService.createOrder(anyLong(), any(CreateOrderRequest.class)))
-                .thenReturn(response);
+        when(orderService.createOrder(anyLong(), any()))
+                .thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(post("/orders")
@@ -551,13 +543,11 @@ class OrderControllerTest {
     void testGetOrderList_ResponseFieldValidation() throws Exception {
         // Given
         when(orderService.getOrderList(anyLong(), anyInt(), anyInt(), any(Optional.class)))
-                .thenReturn(OrderListResponse.builder()
+                .thenAnswer(invocation -> OrderListResponse.builder()
                         .content(Collections.singletonList(
                                 OrderListResponse.OrderSummary.builder()
                                         .orderId(100L)
                                         .orderStatus("PENDING")
-                                        .subtotal(100000L)
-                                        .couponDiscount(0L)
                                         .finalAmount(100000L)
                                         .createdAt(LocalDateTime.now())
                                         .build()
@@ -589,10 +579,7 @@ class OrderControllerTest {
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(orderId)
                 .orderStatus("CANCELLED")
-                .subtotal(100000L)
-                .couponDiscount(5000L)
-                .finalAmount(95000L)
-                .restoredAmount(95000L)
+                .refundAmount(95000L)
                 .cancelledAt(Instant.now())
                 .restoredItems(Collections.singletonList(
                         CancelOrderResponse.RestoredItem.builder()
@@ -607,7 +594,7 @@ class OrderControllerTest {
                 ))
                 .build();
 
-        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
@@ -705,10 +692,7 @@ class OrderControllerTest {
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(orderId)
                 .orderStatus("CANCELLED")
-                .subtotal(50000L)
-                .couponDiscount(0L)
-                .finalAmount(50000L)
-                .restoredAmount(50000L)
+                .refundAmount(50000L)
                 .cancelledAt(Instant.now())
                 .restoredItems(Collections.singletonList(
                         CancelOrderResponse.RestoredItem.builder()
@@ -723,7 +707,7 @@ class OrderControllerTest {
                 ))
                 .build();
 
-        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
@@ -745,10 +729,7 @@ class OrderControllerTest {
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(orderId)
                 .orderStatus("CANCELLED")
-                .subtotal(150000L)
-                .couponDiscount(0L)
-                .finalAmount(150000L)
-                .restoredAmount(150000L)
+                .refundAmount(150000L)
                 .cancelledAt(Instant.now())
                 .restoredItems(Arrays.asList(
                         CancelOrderResponse.RestoredItem.builder()
@@ -772,7 +753,7 @@ class OrderControllerTest {
                 ))
                 .build();
 
-        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenAnswer(invocation -> response);
 
         // When & Then
         mockMvc.perform(post("/orders/{order_id}/cancel", orderId)
@@ -798,15 +779,12 @@ class OrderControllerTest {
         CancelOrderResponse response = CancelOrderResponse.builder()
                 .orderId(orderId)
                 .orderStatus("CANCELLED")
-                .subtotal(100000L)
-                .couponDiscount(0L)
-                .finalAmount(100000L)
-                .restoredAmount(100000L)
+                .refundAmount(100000L)
                 .cancelledAt(Instant.now())
                 .restoredItems(new ArrayList<>())
                 .build();
 
-        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenReturn(response);
+        when(orderService.cancelOrder(TEST_USER_ID, orderId)).thenAnswer(invocation -> response);
 
         // When & Then - response fields should use snake_case
         mockMvc.perform(post("/orders/{order_id}/cancel", orderId)

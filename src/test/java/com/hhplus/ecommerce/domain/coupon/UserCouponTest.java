@@ -14,11 +14,12 @@ class UserCouponTest {
     @DisplayName("사용자 쿠폰 생성 - 성공")
     void testUserCouponCreation() {
         LocalDateTime now = LocalDateTime.now();
+        // ✅ 수정: String "ACTIVE" → UserCouponStatus.UNUSED
         UserCoupon userCoupon = UserCoupon.builder()
                 .userCouponId(1L)
                 .userId(100L)
                 .couponId(1L)
-                .status("ACTIVE")
+                .status(UserCouponStatus.UNUSED)
                 .issuedAt(now)
                 .usedAt(null)
                 .orderId(null)
@@ -27,7 +28,7 @@ class UserCouponTest {
         assertThat(userCoupon.getUserCouponId()).isEqualTo(1L);
         assertThat(userCoupon.getUserId()).isEqualTo(100L);
         assertThat(userCoupon.getCouponId()).isEqualTo(1L);
-        assertThat(userCoupon.getStatus()).isEqualTo("ACTIVE");
+        assertThat(userCoupon.getStatus()).isEqualTo(UserCouponStatus.UNUSED);
         assertThat(userCoupon.getIssuedAt()).isEqualTo(now);
     }
 
@@ -35,17 +36,18 @@ class UserCouponTest {
     @DisplayName("사용자 쿠폰 사용 상태")
     void testUserCouponUsedStatus() {
         LocalDateTime now = LocalDateTime.now();
+        // ✅ 수정: String "USED" → UserCouponStatus.USED
         UserCoupon userCoupon = UserCoupon.builder()
                 .userCouponId(1L)
                 .userId(100L)
                 .couponId(1L)
-                .status("USED")
+                .status(UserCouponStatus.USED)
                 .issuedAt(now)
                 .usedAt(now.plusHours(1))
                 .orderId(1L)
                 .build();
 
-        assertThat(userCoupon.getStatus()).isEqualTo("USED");
+        assertThat(userCoupon.getStatus()).isEqualTo(UserCouponStatus.USED);
         assertThat(userCoupon.getUsedAt()).isNotNull();
         assertThat(userCoupon.getOrderId()).isEqualTo(1L);
     }
@@ -54,20 +56,22 @@ class UserCouponTest {
     @DisplayName("사용자 쿠폰 상태 변경")
     void testUserCouponStatusChange() {
         LocalDateTime now = LocalDateTime.now();
+        // ✅ 수정: String "ACTIVE" → UserCouponStatus.UNUSED
         UserCoupon userCoupon = UserCoupon.builder()
                 .userCouponId(1L)
                 .userId(100L)
                 .couponId(1L)
-                .status("ACTIVE")
+                .status(UserCouponStatus.UNUSED)
                 .issuedAt(now)
                 .usedAt(null)
                 .build();
 
-        userCoupon.setStatus("USED");
+        // ✅ 수정: String "USED" → UserCouponStatus.USED
+        userCoupon.setStatus(UserCouponStatus.USED);
         userCoupon.setUsedAt(now.plusHours(1));
         userCoupon.setOrderId(1L);
 
-        assertThat(userCoupon.getStatus()).isEqualTo("USED");
+        assertThat(userCoupon.getStatus()).isEqualTo(UserCouponStatus.USED);
         assertThat(userCoupon.getUsedAt()).isNotNull();
         assertThat(userCoupon.getOrderId()).isEqualTo(1L);
     }
@@ -75,14 +79,15 @@ class UserCouponTest {
     @Test
     @DisplayName("사용자 쿠폰 만료 상태")
     void testUserCouponExpiredStatus() {
+        // ✅ 수정: String "EXPIRED" → UserCouponStatus.EXPIRED
         UserCoupon userCoupon = UserCoupon.builder()
                 .userCouponId(1L)
                 .userId(100L)
                 .couponId(1L)
-                .status("EXPIRED")
+                .status(UserCouponStatus.EXPIRED)
                 .build();
 
-        assertThat(userCoupon.getStatus()).isEqualTo("EXPIRED");
+        assertThat(userCoupon.getStatus()).isEqualTo(UserCouponStatus.EXPIRED);
     }
 
     @Test
@@ -90,25 +95,25 @@ class UserCouponTest {
     void testUserCouponIssueAndUseScenario() {
         LocalDateTime issuedTime = LocalDateTime.now();
 
-        // 발급
+        // 발급 - ✅ 수정: String "ACTIVE" → UserCouponStatus.UNUSED
         UserCoupon userCoupon = UserCoupon.builder()
                 .userCouponId(1L)
                 .userId(100L)
                 .couponId(1L)
-                .status("ACTIVE")
+                .status(UserCouponStatus.UNUSED)
                 .issuedAt(issuedTime)
                 .build();
 
-        assertThat(userCoupon.getStatus()).isEqualTo("ACTIVE");
+        assertThat(userCoupon.getStatus()).isEqualTo(UserCouponStatus.UNUSED);
         assertThat(userCoupon.getUsedAt()).isNull();
 
-        // 사용
+        // 사용 - ✅ 수정: String "USED" → UserCouponStatus.USED
         LocalDateTime usedTime = issuedTime.plusHours(1);
-        userCoupon.setStatus("USED");
+        userCoupon.setStatus(UserCouponStatus.USED);
         userCoupon.setUsedAt(usedTime);
         userCoupon.setOrderId(1L);
 
-        assertThat(userCoupon.getStatus()).isEqualTo("USED");
+        assertThat(userCoupon.getStatus()).isEqualTo(UserCouponStatus.USED);
         assertThat(userCoupon.getUsedAt()).isEqualTo(usedTime);
         assertThat(userCoupon.getOrderId()).isEqualTo(1L);
     }
@@ -121,7 +126,8 @@ class UserCouponTest {
         assertThat(userCoupon.getUserCouponId()).isNull();
         assertThat(userCoupon.getUserId()).isNull();
         assertThat(userCoupon.getCouponId()).isNull();
-        assertThat(userCoupon.getStatus()).isNull();
+        // ✅ 수정: Builder.Default로 인해 null이 아닌 UNUSED가 기본값
+        assertThat(userCoupon.getStatus()).isEqualTo(UserCouponStatus.UNUSED);
     }
 
     @Test

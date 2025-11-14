@@ -13,7 +13,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 주문 생성 응답 DTO
+ * 주문 생성 응답 DTO (Presentation layer)
+ *
+ * 책임:
+ * - HTTP API 응답 직렬화 (@JsonProperty, @JsonFormat)
+ * - Application layer와 독립적 (변환은 OrderMapper에서 처리)
  */
 @Getter
 @Builder
@@ -47,17 +51,31 @@ public class CreateOrderResponse {
     @JsonProperty("created_at")
     private LocalDateTime createdAt;
 
+    /**
+     * Domain Order 엔티티에서 Presentation DTO로 변환
+     *
+     * @param order Domain Order 엔티티
+     * @return Presentation layer CreateOrderResponse
+     */
     public static CreateOrderResponse fromOrder(Order order) {
         return CreateOrderResponse.builder()
                 .orderId(order.getOrderId())
                 .userId(order.getUserId())
-                .orderStatus(order.getOrderStatus())
+                .orderStatus(order.getOrderStatus().name())
                 .subtotal(order.getSubtotal())
                 .couponDiscount(order.getCouponDiscount())
                 .couponId(order.getCouponId())
                 .finalAmount(order.getFinalAmount())
                 .orderItems(order.getOrderItems().stream()
-                        .map(OrderItemResponse::fromOrderItem)
+                        .map(item -> OrderItemResponse.builder()
+                                .orderItemId(item.getOrderItemId())
+                                .productId(item.getProductId())
+                                .productName(item.getProductName())
+                                .optionId(item.getOptionId())
+                                .optionName(item.getOptionName())
+                                .quantity(item.getQuantity())
+                                .price(item.getUnitPrice())
+                                .build())
                         .collect(Collectors.toList()))
                 .createdAt(order.getCreatedAt())
                 .build();

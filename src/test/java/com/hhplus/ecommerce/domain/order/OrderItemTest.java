@@ -154,18 +154,17 @@ class OrderItemTest {
     @Test
     @DisplayName("소계 계산 - 0원 상품")
     void testSubtotalCalculation_FreeProduct() {
-        // When
-        OrderItem orderItem = OrderItem.createOrderItem(
+        // 0원 상품은 유효하지 않으므로 예외 발생 확인
+        assertThrows(IllegalArgumentException.class, () ->
+            OrderItem.createOrderItem(
                 TEST_PRODUCT_ID,
                 TEST_OPTION_ID,
                 TEST_PRODUCT_NAME,
                 TEST_OPTION_NAME,
                 5,
                 0L
+            )
         );
-
-        // Then
-        assertEquals(0L, orderItem.getSubtotal());
     }
 
     @Test
@@ -324,19 +323,17 @@ class OrderItemTest {
     }
 
     @Test
-    @DisplayName("필드 null 안전성 - Setter")
+    @DisplayName("필드 null 안전성 - Builder로 null 설정")
     void testNullSafety_Setter() {
         // When
-        OrderItem orderItem = OrderItem.createOrderItem(
-                TEST_PRODUCT_ID,
-                TEST_OPTION_ID,
-                TEST_PRODUCT_NAME,
-                TEST_OPTION_NAME,
-                TEST_QUANTITY,
-                TEST_UNIT_PRICE
-        );
-        orderItem.setProductName(null);
-        orderItem.setQuantity(null);
+        OrderItem orderItem = OrderItem.builder()
+                .productId(TEST_PRODUCT_ID)
+                .optionId(TEST_OPTION_ID)
+                .productName(null)
+                .optionName(TEST_OPTION_NAME)
+                .quantity(null)
+                .unitPrice(TEST_UNIT_PRICE)
+                .build();
 
         // Then
         assertNull(orderItem.getProductName());

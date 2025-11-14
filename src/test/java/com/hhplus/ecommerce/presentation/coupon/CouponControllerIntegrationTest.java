@@ -9,12 +9,13 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * CouponController 통합 테스트
- * WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
+ * MySQL 기반 테스트 환경에서 WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
  *
  * 테스트 대상: CouponController
  * - POST /coupons/issue - 쿠폰 발급 (X-USER-ID 헤더)
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - GET /coupons - 사용 가능한 쿠폰 조회
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Transactional
 @DisplayName("CouponController 통합 테스트")
 class CouponControllerIntegrationTest {
 

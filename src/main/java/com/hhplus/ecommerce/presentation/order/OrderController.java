@@ -10,6 +10,7 @@ import com.hhplus.ecommerce.presentation.order.response.CancelOrderResponse;
 import com.hhplus.ecommerce.presentation.order.response.CreateOrderResponse;
 import com.hhplus.ecommerce.presentation.order.response.OrderDetailResponse;
 import com.hhplus.ecommerce.presentation.order.response.OrderListResponse;
+import com.hhplus.ecommerce.presentation.order.mapper.OrderMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,9 +25,11 @@ import java.util.Optional;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderMapper orderMapper;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, OrderMapper orderMapper) {
         this.orderService = orderService;
+        this.orderMapper = orderMapper;
     }
 
     /**
@@ -36,7 +39,14 @@ public class OrderController {
     public ResponseEntity<CreateOrderResponse> createOrder(
             @RequestHeader("X-USER-ID") Long userId,
             @RequestBody CreateOrderRequest request) {
-        CreateOrderResponse response = orderService.createOrder(userId, request);
+        // Presentation Request → Application Command로 변환
+        var command = orderMapper.toCreateOrderCommand(request);
+
+        // Application Service 호출
+        var appResponse = orderService.createOrder(userId, command);
+
+        // Application Response → Presentation Response로 변환
+        CreateOrderResponse response = orderMapper.toCreateOrderResponse(appResponse);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -47,7 +57,11 @@ public class OrderController {
     public ResponseEntity<OrderDetailResponse> getOrderDetail(
             @RequestHeader("X-USER-ID") Long userId,
             @PathVariable("order_id") Long orderId) {
-        OrderDetailResponse response = orderService.getOrderDetail(userId, orderId);
+        // Application Service 호출
+        var appResponse = orderService.getOrderDetail(userId, orderId);
+
+        // Application Response → Presentation Response로 변환
+        OrderDetailResponse response = orderMapper.toOrderDetailResponse(appResponse);
         return ResponseEntity.ok(response);
     }
 
@@ -60,7 +74,11 @@ public class OrderController {
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "10") int size,
             @RequestParam(value = "status", required = false) Optional<String> status) {
-        OrderListResponse response = orderService.getOrderList(userId, page, size, status);
+        // Application Service 호출
+        var appResponse = orderService.getOrderList(userId, page, size, status);
+
+        // Application Response → Presentation Response로 변환
+        OrderListResponse response = orderMapper.toOrderListResponse(appResponse);
         return ResponseEntity.ok(response);
     }
 
@@ -90,7 +108,11 @@ public class OrderController {
     public ResponseEntity<CancelOrderResponse> cancelOrder(
             @RequestHeader("X-USER-ID") Long userId,
             @PathVariable("order_id") Long orderId) {
-        CancelOrderResponse response = orderService.cancelOrder(userId, orderId);
+        // Application Service 호출
+        var appResponse = orderService.cancelOrder(userId, orderId);
+
+        // Application Response → Presentation Response로 변환
+        CancelOrderResponse response = orderMapper.toCancelOrderResponse(appResponse);
         return ResponseEntity.ok(response);
     }
 

@@ -2,6 +2,7 @@ package com.hhplus.ecommerce.application.coupon;
 
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import com.hhplus.ecommerce.domain.coupon.CouponNotFoundException;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
@@ -95,7 +96,7 @@ class CouponServiceTest {
                 .userCouponId(TEST_USER_COUPON_ID)
                 .userId(TEST_USER_ID)
                 .couponId(TEST_COUPON_ID)
-                .status("ACTIVE")
+                .status(UserCouponStatus.UNUSED)
                 .issuedAt(LocalDateTime.now())
                 .usedAt(null)
                 .orderId(null)
@@ -116,7 +117,7 @@ class CouponServiceTest {
         assertEquals("신규고객 할인 쿠폰", result.getCouponName());
         assertEquals("FIXED_AMOUNT", result.getDiscountType());
         assertEquals(5000L, result.getDiscountAmount());
-        assertEquals("ACTIVE", result.getStatus());
+        assertEquals("UNUSED", result.getStatus());
 
         verify(userRepository, times(1)).existsById(TEST_USER_ID);
         verify(couponRepository, times(1)).findByIdForUpdate(TEST_COUPON_ID);
@@ -154,7 +155,7 @@ class CouponServiceTest {
                 .userCouponId(TEST_USER_COUPON_ID)
                 .userId(TEST_USER_ID)
                 .couponId(2L)
-                .status("ACTIVE")
+                .status(UserCouponStatus.UNUSED)
                 .issuedAt(LocalDateTime.now())
                 .usedAt(null)
                 .orderId(null)
@@ -344,7 +345,7 @@ class CouponServiceTest {
                 .userCouponId(TEST_USER_COUPON_ID)
                 .userId(TEST_USER_ID)
                 .couponId(TEST_COUPON_ID)
-                .status("ACTIVE")
+                .status(UserCouponStatus.UNUSED)
                 .issuedAt(LocalDateTime.now())
                 .build();
 
@@ -360,7 +361,7 @@ class CouponServiceTest {
     // ========== 사용자 쿠폰 조회 (getUserCoupons) ==========
 
     @Test
-    @DisplayName("사용자 쿠폰 조회 - 성공 (ACTIVE 상태)")
+    @DisplayName("사용자 쿠폰 조회 - 성공 (UNUSED 상태)")
     void testGetUserCoupons_Success_ActiveStatus() {
         // Given
         List<UserCoupon> userCoupons = List.of(
@@ -368,7 +369,7 @@ class CouponServiceTest {
                         .userCouponId(100L)
                         .userId(TEST_USER_ID)
                         .couponId(1L)
-                        .status("ACTIVE")
+                        .status(UserCouponStatus.UNUSED)
                         .issuedAt(LocalDateTime.now().minusDays(5))
                         .usedAt(null)
                         .orderId(null)
@@ -377,7 +378,7 @@ class CouponServiceTest {
                         .userCouponId(101L)
                         .userId(TEST_USER_ID)
                         .couponId(2L)
-                        .status("ACTIVE")
+                        .status(UserCouponStatus.UNUSED)
                         .issuedAt(LocalDateTime.now().minusDays(2))
                         .usedAt(null)
                         .orderId(null)
@@ -413,28 +414,29 @@ class CouponServiceTest {
                 .build();
 
         when(userRepository.existsById(TEST_USER_ID)).thenReturn(true);
-        when(userCouponRepository.findByUserIdAndStatus(TEST_USER_ID, "ACTIVE"))
+        when(userCouponRepository.findByUserIdAndStatus(TEST_USER_ID, "UNUSED"))
                 .thenReturn(userCoupons);
         when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon1));
         when(couponRepository.findById(2L)).thenReturn(Optional.of(coupon2));
 
         // When
-        List<UserCouponResponse> result = couponService.getUserCoupons(TEST_USER_ID, "ACTIVE");
+        List<UserCouponResponse> result = couponService.getUserCoupons(TEST_USER_ID, "UNUSED");
 
         // Then
         assertNotNull(result);
         assertEquals(2, result.size());
         assertEquals("신규고객 할인", result.get(0).getCouponName());
-        assertEquals("ACTIVE", result.get(0).getStatus());
+        assertEquals("UNUSED", result.get(0).getStatus());
 
         verify(userRepository, times(1)).existsById(TEST_USER_ID);
-        verify(userCouponRepository, times(1)).findByUserIdAndStatus(TEST_USER_ID, "ACTIVE");
+        verify(userCouponRepository, times(1)).findByUserIdAndStatus(TEST_USER_ID, "UNUSED");
     }
 
     @Test
     @DisplayName("사용자 쿠폰 조회 - 성공 (빈 결과)")
     void testGetUserCoupons_Success_EmptyResult() {
         // Given
+        when(userRepository.existsById(TEST_USER_ID)).thenReturn(true);
         when(userCouponRepository.findByUserIdAndStatus(TEST_USER_ID, "USED"))
                 .thenReturn(Collections.emptyList());
 
@@ -490,7 +492,7 @@ class CouponServiceTest {
                 .userCouponId(TEST_USER_COUPON_ID)
                 .userId(TEST_USER_ID)
                 .couponId(TEST_COUPON_ID)
-                .status("ACTIVE")
+                .status(UserCouponStatus.UNUSED)
                 .issuedAt(LocalDateTime.now())
                 .build();
 
