@@ -3,6 +3,7 @@ package com.hhplus.ecommerce.integration;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.inventory.InventoryService;
 import com.hhplus.ecommerce.application.order.OrderService;
+import com.hhplus.ecommerce.config.TestContainersInitializer;
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.product.Product;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.EntityManager;
 
@@ -30,10 +32,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * IntegrationTest - MySQL 기반 도메인별 통합 테스트
+ * IntegrationTest - TestContainers MySQL 기반 통합 테스트
  *
  * 테스트 목표:
- * - 실제 MySQL 테스트 DB를 사용한 통합 테스트
+ * - TestContainers를 사용한 격리된 MySQL 테스트 환경
  * - 쿠폰 발급, 조회 통합 흐름
  * - 주문 생성, 조회 통합 흐름
  * - 재고 조회, 차감 통합 흐름
@@ -41,8 +43,8 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * 설정:
  * - @SpringBootTest: 전체 Spring 애플리케이션 컨텍스트 로드
+ * - @ContextConfiguration(initializers = TestContainersInitializer.class): MySQL 컨테이너 자동 설정
  * - @Transactional: 테스트 후 자동 롤백으로 데이터 격리
- * - application-test.yml의 MySQL 테스트 DB 사용
  * - ddl-auto: create-drop으로 스키마 자동 생성/제거
  */
 @SpringBootTest

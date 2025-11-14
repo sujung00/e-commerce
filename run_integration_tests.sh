@@ -207,11 +207,11 @@ verify_test_profile() {
 # 함수: 기본 테스트 실행 (integration 패키지만)
 run_basic_tests() {
     log_info "통합 테스트 실행 중 (integration 패키지만)..."
-    log_info "테스트 필터: com.hhplus.ecommerce.integration.*"
-    log_info "명령: ./gradlew test --warn --tests 'com.hhplus.ecommerce.integration.*'"
+    log_info "테스트 필터: IntegrationTest, IntegrationConcurrencyTest"
+    log_info "명령: ./gradlew test --warn --tests IntegrationTest --tests IntegrationConcurrencyTest"
 
     set +e
-    ./gradlew test --warn --tests 'com.hhplus.ecommerce.integration.*'
+    ./gradlew test --warn --tests IntegrationTest --tests IntegrationConcurrencyTest
     test_exit=$?
     set -e
 
@@ -228,11 +228,11 @@ run_basic_tests() {
 # 함수: 상세 로그와 함께 테스트 실행 (integration 패키지만)
 run_verbose_tests() {
     log_info "통합 테스트 실행 중 (상세 로그, integration 패키지만)..."
-    log_info "테스트 필터: com.hhplus.ecommerce.integration.*"
-    log_info "명령: ./gradlew test --info --tests 'com.hhplus.ecommerce.integration.*'"
+    log_info "테스트 필터: IntegrationTest, IntegrationConcurrencyTest"
+    log_info "명령: ./gradlew test --info --tests IntegrationTest --tests IntegrationConcurrencyTest"
 
     set +e
-    ./gradlew test --info --tests 'com.hhplus.ecommerce.integration.*'
+    ./gradlew test --info --tests IntegrationTest --tests IntegrationConcurrencyTest
     test_exit=$?
     set -e
 
@@ -250,12 +250,12 @@ run_verbose_tests() {
 run_p6spy_tests() {
     log_info "통합 테스트 실행 중 (P6Spy SQL 로깅, integration 패키지만)..."
     log_info "활성 프로필: test,p6spy"
-    log_info "테스트 필터: com.hhplus.ecommerce.integration.*"
+    log_info "테스트 필터: IntegrationTest, IntegrationConcurrencyTest"
 
     export SPRING_PROFILES_ACTIVE="test,p6spy"
 
     set +e
-    ./gradlew test --warn --tests 'com.hhplus.ecommerce.integration.*' 2>&1 | tee /tmp/integration_test.log
+    ./gradlew test --warn --tests IntegrationTest --tests IntegrationConcurrencyTest 2>&1 | tee /tmp/integration_test.log
     test_exit=$?
     set -e
 

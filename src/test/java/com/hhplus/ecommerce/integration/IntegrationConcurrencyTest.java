@@ -1,6 +1,7 @@
 package com.hhplus.ecommerce.integration;
 
 import com.hhplus.ecommerce.application.coupon.CouponService;
+import com.hhplus.ecommerce.config.TestContainersInitializer;
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.product.Product;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -29,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * IntegrationConcurrencyTest - 동시성 제어 통합 테스트
+ * IntegrationConcurrencyTest - TestContainers 동시성 제어 통합 테스트
  *
  * 테스트 목표:
  * - 선착순 쿠폰 발급 시 동시성 제어 검증
@@ -38,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - 성능 테스트
  *
  * 특징:
+ * - TestContainers MySQL 사용으로 격리된 환경에서 테스트
  * - 각 테스트가 UUID 기반 고유한 데이터로 실행 (테스트 간 격리)
  * - 사용자 이메일은 UUID + 타임스탬프로 고유하게 생성
  * - 모든 이메일 중복 오류 없이 정상 작동
