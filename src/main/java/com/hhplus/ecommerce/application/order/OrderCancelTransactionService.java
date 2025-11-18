@@ -144,19 +144,22 @@ public class OrderCancelTransactionService {
     /**
      * 쿠폰 상태 복구
      *
-     * API 명세 (docs/api/api-specification.md 3.4):
-     * - UPDATE user_coupons SET status = 'ACTIVE', used_at = NULL WHERE user_coupon_id = ?
-     * - UPDATE coupons SET remaining_qty = remaining_qty + 1, version = version + 1
+     * 변경 사항 (2025-11-18):
+     * - USER_COUPONS.order_id 삭제됨
+     * - 쿠폰 사용 여부는 ORDERS.coupon_id로만 추적
+     * - USER_COUPONS은 "쿠폰 보유 상태"만 관리
      *
-     * 현재는 In-Memory 저장소이므로 실제 DB 쿼리는 인프라 계층에서 구현됨
+     * 주문 취소 시 처리:
+     * - 쿠폰이 사용된 주문이면: ORDERS의 coupon_id만 제거되므로
+     * - USER_COUPONS.status는 자동으로 "미사용"으로 간주됨
+     * - 별도의 상태 복구 로직 불필요 (orders.coupon_id = null이면 미사용 상태로 취급)
+     *
+     * 현재 구현: 쿠폰 사용 로그만 남김 (실제 복구는 orders 테이블 업데이트로 처리됨)
      */
     private void restoreCouponStatus(Long userId, Long couponId) {
-        // 실제 DB 환경에서는:
-        // UPDATE user_coupons SET status = 'ACTIVE', used_at = NULL
-        // WHERE user_id = ? AND coupon_id = ?
-        //
-        // UPDATE coupons SET remaining_qty = remaining_qty + 1, version = version + 1
-        // WHERE coupon_id = ?
-        System.out.println("[OrderCancelTransactionService] 쿠폰 상태 복구: userId=" + userId + ", couponId=" + couponId);
+        // ✅ order_id 제거 후: USER_COUPONS.status 업데이트 불필요
+        // 쿠폰 사용 여부는 ORDERS.coupon_id의 존재 여부로 판단
+        // - orders.coupon_id = couponId인 활성 주문이 없으면 "미사용" 상태로 간주
+        System.out.println("[OrderCancelTransactionService] 쿠폰 미사용 상태로 전환: userId=" + userId + ", couponId=" + couponId);
     }
 }

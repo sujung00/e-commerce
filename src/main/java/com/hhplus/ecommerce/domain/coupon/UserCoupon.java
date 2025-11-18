@@ -42,7 +42,4 @@ public class UserCoupon {
 
     @Column(name = "used_at")
     private LocalDateTime usedAt;
-
-    @Column(name = "order_id")
-    private Long orderId;
 }

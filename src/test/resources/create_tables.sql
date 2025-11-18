@@ -147,7 +147,6 @@ CREATE TABLE `user_coupons` (
                                 `status` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'UNUSED' COMMENT '상태',
                                 `issued_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '발급 시각',
                                 `used_at` timestamp NULL DEFAULT NULL COMMENT '사용 시각',
-                                `order_id` bigint DEFAULT NULL COMMENT '사용된 주문 ID (nullable)',
                                 PRIMARY KEY (`user_coupon_id`),
                                 UNIQUE KEY `uk_user_coupon` (`user_id`,`coupon_id`),
                                 KEY `idx_user_id_status` (`user_id`, `status`) COMMENT '사용자별 쿠폰 상태 조회',

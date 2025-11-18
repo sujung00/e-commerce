@@ -169,14 +169,14 @@ public class CouponService {
 
             // === 8단계: 발급 기록 저장 ===
             // INSERT user_coupons(user_id, coupon_id, status='UNUSED', issued_at=NOW())
-            // ✅ 수정: String "ACTIVE" → Enum UserCouponStatus.UNUSED
+            // USER_COUPONS은 "쿠폰 보유 상태"만 관리
+            // 쿠폰 사용 여부는 ORDERS.coupon_id로 추적
             UserCoupon userCoupon = UserCoupon.builder()
                     .userId(userId)
                     .couponId(couponId)
                     .status(UserCouponStatus.UNUSED)  // 발급 시 미사용 상태로 설정
                     .issuedAt(LocalDateTime.now())
                     .usedAt(null)
-                    .orderId(null)
                     .build();
             UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
 
