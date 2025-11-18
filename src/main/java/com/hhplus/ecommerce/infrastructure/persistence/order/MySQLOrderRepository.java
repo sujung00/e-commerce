@@ -20,7 +20,6 @@ import java.util.Optional;
  */
 @Repository
 @Primary
-@Transactional
 public class MySQLOrderRepository implements OrderRepository {
 
     private final OrderJpaRepository orderJpaRepository;
@@ -36,7 +35,8 @@ public class MySQLOrderRepository implements OrderRepository {
 
     @Override
     public Optional<Order> findById(Long orderId) {
-        return orderJpaRepository.findById(orderId);
+        // ✅ FetchType.LAZY: orderItems를 함께 로드하기 위해 fetch join 사용
+        return orderJpaRepository.findByIdWithItems(orderId);
     }
 
     @Override
@@ -54,5 +54,20 @@ public class MySQLOrderRepository implements OrderRepository {
     @Override
     public List<Order> findAll() {
         return orderJpaRepository.findAll();
+    }
+
+    @Override
+    public boolean isCouponUsed(Long userId, Long couponId) {
+        return orderJpaRepository.existsByUserIdAndCouponIdAndStatus(userId, couponId);
+    }
+
+    @Override
+    public boolean existsOrderWithCoupon(Long userId, Long couponId) {
+        return orderJpaRepository.existsByUserIdAndCouponIdAndStatus(userId, couponId);
+    }
+
+    @Override
+    public boolean existsActiveByCouponId(Long couponId) {
+        return orderJpaRepository.existsActiveByCouponId(couponId);
     }
 }

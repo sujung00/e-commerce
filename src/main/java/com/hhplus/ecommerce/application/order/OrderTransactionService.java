@@ -18,6 +18,8 @@ import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Set;
@@ -43,6 +45,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class OrderTransactionService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderTransactionService.class);
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -126,7 +130,7 @@ public class OrderTransactionService {
             savedOrder.addOrderItem(orderItem);
         }
 
-        // 모든 OrderItem 추가 후 다시 저장 (CascadeType.ALL로 인해 자동 저장됨)
+        // 모든 OrderItem 추가 후 다시 저장 (CascadeType.PERSIST로 인해 자동 저장됨)
         savedOrder = orderRepository.save(savedOrder);
 
         // 2-6: 쿠폰 사용 처리 (있는 경우)
@@ -157,7 +161,7 @@ public class OrderTransactionService {
     private void saveOrderCompletionEvent(Long orderId, Long userId) {
         Outbox outbox = Outbox.createOutbox(orderId, userId, "ORDER_COMPLETED");
         outboxRepository.save(outbox);
-        System.out.println("[OrderTransactionService] Outbox 메시지 저장: orderId=" + orderId + ", status=PENDING");
+        log.info("[OrderTransactionService] Outbox 메시지 저장: orderId={}, status=PENDING", orderId);
     }
 
     /**
@@ -210,6 +214,8 @@ public class OrderTransactionService {
      * UPDATE user_coupons SET status = 'USED', used_at = NOW() WHERE user_id = ? AND coupon_id = ?
      *
      * ✅ 수정: String "USED" → Enum UserCouponStatus.USED
+     * ✅ orderId 제거: user_coupons는 coupon 보유 상태만 관리하고,
+     *                  쿠폰 사용은 orders.coupon_id로 추적
      */
     private void markCouponAsUsed(Long userId, Long couponId, Long orderId) {
         UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
@@ -218,12 +224,11 @@ public class OrderTransactionService {
         // ✅ 수정: Enum을 사용하여 상태 변경
         userCoupon.setStatus(UserCouponStatus.USED);
         userCoupon.setUsedAt(java.time.LocalDateTime.now());
-        userCoupon.setOrderId(orderId);
 
         userCouponRepository.update(userCoupon);
 
-        System.out.println("[OrderTransactionService] 쿠폰 사용 처리 완료: userId=" + userId +
-                ", couponId=" + couponId + ", orderId=" + orderId);
+        log.info("[OrderTransactionService] 쿠폰 사용 처리 완료: userId={}, couponId={}, orderId={}",
+                userId, couponId, orderId);
     }
 
     /**

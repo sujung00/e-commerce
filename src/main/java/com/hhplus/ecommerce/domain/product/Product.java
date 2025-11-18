@@ -56,7 +56,15 @@ public class Product {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    /**
+     * 상품 옵션 관계
+     * ✅ cascade 제거:
+     * - 옵션은 상품과 독립적인 생명주기를 가짐
+     * - 옵션 추가/제거는 service 계층에서 명시적으로 처리
+     * - 상품 삭제 시 옵션이 자동 삭제되면 안됨 (데이터 무결성)
+     * - @JoinColumn의 insertable=false, updatable=false로 읽기 전용 관계 설정
+     */
+    @OneToMany(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", insertable = false, updatable = false)
     @Builder.Default
     private List<ProductOption> options = new ArrayList<>();

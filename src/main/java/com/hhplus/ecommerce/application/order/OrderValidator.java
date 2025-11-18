@@ -1,11 +1,13 @@
 package com.hhplus.ecommerce.application.order;
 
 import com.hhplus.ecommerce.domain.order.Order;
+import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
 import com.hhplus.ecommerce.domain.user.User;
+import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
 import org.springframework.stereotype.Component;
 
@@ -30,9 +32,15 @@ import java.util.List;
 public class OrderValidator {
 
     private final ProductRepository productRepository;
+    private final UserCouponRepository userCouponRepository;
+    private final OrderRepository orderRepository;
 
-    public OrderValidator(ProductRepository productRepository) {
+    public OrderValidator(ProductRepository productRepository,
+                         UserCouponRepository userCouponRepository,
+                         OrderRepository orderRepository) {
         this.productRepository = productRepository;
+        this.userCouponRepository = userCouponRepository;
+        this.orderRepository = orderRepository;
     }
 
     /**
@@ -129,6 +137,46 @@ public class OrderValidator {
         if (!"COMPLETED".equals(order.getOrderStatus())) {
             throw new IllegalArgumentException(
                     "취소할 수 없는 주문 상태입니다: " + order.getOrderStatus());
+        }
+    }
+
+    /**
+     * 쿠폰 소유 및 사용 가능 여부 검증
+     *
+     * 변경 사항 (2025-11-18):
+     * - USER_COUPONS.order_id 삭제로 인한 새로운 검증 방식
+     * - 쿠폰 사용 여부는 ORDERS.coupon_id로 추적
+     *
+     * 검증 항목:
+     * 1. 사용자가 쿠폰을 보유하고 있는가? (user_coupons에서 확인)
+     * 2. 쿠폰의 상태가 미사용인가? (user_coupons.status = 'UNUSED')
+     * 3. 쿠폰이 이미 다른 주문에 사용 중인가? (orders.coupon_id에서 확인)
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID (null이면 쿠폰 미사용)
+     * @throws IllegalArgumentException 쿠폰을 찾을 수 없거나, 상태가 유효하지 않음
+     */
+    public void validateCouponOwnershipAndUsage(Long userId, Long couponId) {
+        if (couponId == null) {
+            // 쿠폰을 사용하지 않는 경우 검증 스킵
+            return;
+        }
+
+        // 1. 사용자가 쿠폰을 보유하고 있는지 확인
+        var userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "사용자가 쿠폰을 보유하고 있지 않습니다: couponId=" + couponId));
+
+        // 2. 쿠폰 상태가 UNUSED인지 확인 (이미 사용되었으면 실패)
+        if (!"UNUSED".equals(userCoupon.getStatus().name())) {
+            throw new IllegalArgumentException(
+                    "쿠폰을 사용할 수 없습니다: 상태=" + userCoupon.getStatus());
+        }
+
+        // 3. orders 테이블에서 쿠폰이 이미 사용 중인지 확인
+        if (orderRepository.existsOrderWithCoupon(userId, couponId)) {
+            throw new IllegalArgumentException(
+                    "이 쿠폰은 이미 다른 주문에 사용 중입니다");
         }
     }
 }

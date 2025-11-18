@@ -187,10 +187,15 @@
 
 **관계**:
 - N:1 with users (사용자)
-- N:1 with coupons (쿠폰, 선택)
+- N:1 with coupons (쿠폰, 선택) - 변경 사항 (2025-11-18): coupon_id는 쿠폰 사용을 추적하는 Foreign Key
 - 1:N with order_items (주문 항목)
-- 1:N with user_coupons (쿠폰 사용 기록)
 - 1:N with outbox (외부 전송 메시지)
+
+**변경 사항 (2025-11-18): UserCoupon-Order 관계 제거**:
+- 이전: user_coupons.order_id로 쿠폰 사용을 추적
+- 현재: orders.coupon_id로 쿠폰 사용을 추적
+- user_coupons는 "쿠폰 보유 상태"(UNUSED/USED/EXPIRED/CANCELLED)만 관리
+- orders.coupon_id의 존재 여부로 쿠폰 사용을 판단
 
 ---
 
@@ -265,7 +270,6 @@
 | status | UserCouponStatus | NO | 쿠폰 상태 Enum (기본값: UNUSED) |
 | issued_at | Timestamp | NO | 발급 시각 |
 | used_at | Timestamp | YES | 사용 시각 (사용 시에만 설정) |
-| order_id | Long | YES | Foreign Key → orders (사용 시 설정) |
 
 **UserCouponStatus Enum**:
 - UNUSED: 미사용
@@ -273,16 +277,18 @@
 - EXPIRED: 만료됨
 - CANCELLED: 취소됨
 
-**핵심 규칙**:
+**핵심 규칙** (변경: 2025-11-18):
 - UNIQUE(user_id, coupon_id) - 사용자당 동일 쿠폰 중복 발급 방지
-- status: UNUSED → USED (주문 시)
-- used_at는 사용 시에만 설정됨
-- order_id는 사용 시에만 설정됨
+- ✅ **order_id 제거됨**: USER_COUPONS은 "쿠폰 보유 상태"만 관리
+- ✅ **쿠폰 사용 여부는 ORDERS.coupon_id로 추적**:
+  - 사용자가 주문 시 ORDERS.coupon_id에 값을 설정하면 쿠폰 사용
+  - ORDERS에서 해당 coupon_id를 조회하면 사용 내역 확인 가능
+- used_at는 사용 시에만 설정됨 (옵션: 감사 추적용)
 
 **관계**:
 - N:1 with users (사용자)
 - N:1 with coupons (쿠폰)
-- N:1 with orders (주문, 선택)
+- ❌ **N:1 with orders 제거됨** (쿠폰 사용은 ORDERS.coupon_id로만 추적)
 
 ---
 
@@ -334,7 +340,6 @@ erDiagram
 
     ORDERS ||--o{ ORDER_ITEMS : contains
     ORDERS }o--|| COUPONS : applies
-    ORDERS ||--o{ USER_COUPONS : uses
     ORDERS ||--o{ OUTBOX : generates
 
     COUPONS ||--o{ USER_COUPONS : distributes
@@ -439,7 +444,6 @@ erDiagram
         string status
         timestamp issued_at
         timestamp used_at
-        long order_id FK
     }
 
     OUTBOX {
@@ -472,7 +476,6 @@ erDiagram
 | orders → coupons | N:1 | FK coupon_id (nullable) | 주문은 쿠폰 선택적 적용 |
 | orders → outbox | 1:N | FK order_id | 주문당 여러 외부전송 메시지 |
 | coupons → user_coupons | 1:N | FK coupon_id | 쿠폰은 여러 사용자에게 발급 |
-| user_coupons → orders | N:1 | FK order_id (nullable) | 쿠폰 사용 시 주문 기록 |
 
 ---
 

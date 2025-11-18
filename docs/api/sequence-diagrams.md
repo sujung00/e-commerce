@@ -601,3 +601,165 @@ sequenceDiagram
 - **캐싱**: 상품 정보 조회 (TTL: 5분)
 - **인덱싱**: product_id, user_id, option_id, coupon_id에 인덱스 필수
 - **배치 처리**: 외부 전송, 데이터 검증 등 비동기 작업
+
+---
+
+## 11. 주문 취소 및 쿠폰 복구 흐름
+
+**관련 엔티티**: orders, order_items, product_options, users, user_coupons, coupons
+
+**설명**: 사용자가 주문을 취소할 때 모든 자원(주문 상태, 재고, 잔액, 쿠폰)을 원자적으로 복구하는 흐름입니다. 특히 쿠폰 복구는 다른 활성 주문에서 사용 중인지 확인 후 결정됩니다.
+
+```mermaid
+sequenceDiagram
+    participant 사용자
+    participant 프론트엔드
+    participant OrderController
+    participant OrderService
+    participant OrderCancelTransactionService
+    participant OrderRepository
+    participant UserCouponRepository
+    participant 데이터베이스
+
+    사용자->>프론트엔드: 주문 취소 요청
+    프론트엔드->>OrderController: POST /api/orders/{order_id}/cancel
+
+    OrderController->>OrderService: cancelOrder(orderId, userId)
+
+    OrderService->>데이터베이스: SELECT orders WHERE order_id=?
+    데이터베이스-->>OrderService: 주문 정보 반환<br/>(status, coupon_id, final_amount)
+
+    OrderService->>OrderCancelTransactionService: executeTransactionalCancel<br/>(orderId, userId, order)
+
+    OrderCancelTransactionService->>데이터베이스: UPDATE orders<br/>SET order_status='CANCELLED',<br/>cancelled_at=NOW()
+
+    OrderCancelTransactionService->>데이터베이스: SELECT order_items WHERE order_id=?
+    데이터베이스-->>OrderCancelTransactionService: 주문 항목 목록 반환<br/>(product_id, option_id, quantity)
+
+    loop 각 주문 항목별로
+        OrderCancelTransactionService->>데이터베이스: SELECT product_options<br/>WHERE option_id=?
+        데이터베이스-->>OrderCancelTransactionService: 옵션 정보 반환
+
+        OrderCancelTransactionService->>데이터베이스: UPDATE product_options<br/>SET stock+=quantity, version+=1<br/>(낙관적 락)
+    end
+
+    OrderCancelTransactionService->>데이터베이스: SELECT users WHERE user_id=?
+    데이터베이스-->>OrderCancelTransactionService: 사용자 정보 반환
+
+    OrderCancelTransactionService->>데이터베이스: UPDATE users<br/>SET balance+=final_amount
+
+    alt 주문에 쿠폰이 적용된 경우 (coupon_id != null)
+        OrderCancelTransactionService->>OrderRepository: existsActiveByCouponId(couponId)
+        OrderRepository->>데이터베이스: SELECT COUNT(*) FROM orders<br/>WHERE coupon_id=? AND order_status='COMPLETED'
+        데이터베이스-->>OrderRepository: 활성 주문 수 반환
+
+        alt 쿠폰이 다른 활성 주문에서 사용 중이 아닌 경우
+            OrderCancelTransactionService->>UserCouponRepository: findByUserIdAndCouponId<br/>(userId, couponId)
+            UserCouponRepository->>데이터베이스: SELECT user_coupons<br/>WHERE user_id=? AND coupon_id=?
+            데이터베이스-->>UserCouponRepository: UserCoupon 반환
+
+            alt UserCoupon이 존재하는 경우
+                OrderCancelTransactionService->>데이터베이스: UPDATE user_coupons<br/>SET status='UNUSED',<br/>used_at=NULL
+                Note over OrderCancelTransactionService,데이터베이스: 쿠폰 상태를 UNUSED로 복구<br/>(감사 추적: log.info 기록)
+            else UserCoupon이 없는 경우
+                Note over OrderCancelTransactionService,데이터베이스: 경고 로깅만 수행<br/>(이미 삭제되었을 수 있음)
+            end
+        else 쿠폰이 다른 활성 주문에서 사용 중인 경우
+            Note over OrderCancelTransactionService,OrderRepository: 쿠폰 복구 스킵<br/>(다른 주문의 쿠폰이므로)<br/>(log.info 기록)
+        end
+    end
+
+    OrderCancelTransactionService->>데이터베이스: INSERT into outbox<br/>(order_id, message_type='ORDER_CANCELLED',<br/>status='PENDING')
+
+    OrderCancelTransactionService-->>OrderService: 취소 응답<br/>{orderId, status='CANCELLED',<br/>refundAmount, restoredItems[],<br/>cancelledAt}
+
+    OrderService-->>OrderController: 취소 결과
+
+    OrderController-->>프론트엔드: 200 OK
+
+    프론트엔드-->>사용자: 주문 취소 완료 메시지
+```
+
+**비즈니스 로직** (변경: 2025-11-18):
+
+**1단계: 주문 상태 변경**
+- 주문 상태를 COMPLETED → CANCELLED로 변경
+- cancelled_at 필드에 현재 시간 설정
+
+**2단계: 재고 복구**
+- 주문의 모든 항목(order_items)을 조회
+- 각 상품 옵션의 재고를 원래 수량만큼 복구
+- 낙관적 락(version 증가)으로 동시성 제어
+
+**3단계: 사용자 잔액 복구**
+- 최종 결제액(final_amount)을 사용자 잔액에 반환
+
+**4단계: 쿠폰 복구** ⭐ **2025-11-18 신규**
+- **(1) 쿠폰 사용 중 여부 확인**: `OrderRepository.existsActiveByCouponId(couponId)` 호출
+  - 해당 쿠폰이 다른 **활성(COMPLETED) 주문**에서 사용 중인지 확인
+  - SQL: `SELECT COUNT(*) FROM orders WHERE coupon_id=? AND order_status='COMPLETED'`
+
+- **(2) UserCoupon 조회**: 쿠폰이 다른 주문에서 사용 중이 아닐 때만
+  - `UserCouponRepository.findByUserIdAndCouponId(userId, couponId)` 호출
+  - UserCoupon 엔티티 존재 여부 확인
+
+- **(3) 상태 복구**: UserCoupon이 존재할 경우
+  - `UserCoupon.status` = `UNUSED`로 변경
+  - `used_at` 필드를 NULL로 초기화
+  - SLF4J 로깅: `log.info()` (감사 추적)
+
+**변경 사항 (2025-11-18)**:
+- **이전**: 쿠폰 사용 여부를 `user_coupons.order_id` 칼럼으로 추적
+- **현재**: 쿠폰 사용 여부를 `orders.coupon_id` 존재 여부로 추적
+  - `user_coupons` 테이블은 "쿠폰 보유 상태"(UNUSED/USED/EXPIRED/CANCELLED)만 관리
+  - 쿠폰 복구 판단: 다른 활성 주문에서 사용 중인지 확인 후 결정
+
+**5단계: Outbox 메시지 생성**
+- 주문 취소 이벤트를 outbox에 저장
+- 비동기 배치가 외부 시스템에 전송
+
+**에러 처리**:
+- 낙관적 락 실패 → 버전 불일치 → 트랜잭션 롤백
+- UserCoupon 미발견 → 경고 로깅 후 계속 진행 (쿠폰이 이미 삭제되었을 가능성)
+- 모든 작업은 `@Transactional` 범위 내에서 원자적으로 처리
+
+### 요청/응답 예시
+
+**요청**:
+```http
+POST /api/orders/{order_id}/cancel
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{}
+```
+
+**성공 응답 (200 OK)**:
+```json
+{
+  "order_id": 5001,
+  "order_status": "CANCELLED",
+  "refund_amount": 59800,
+  "cancelled_at": "2025-11-18T14:30:00Z",
+  "restored_items": [
+    {
+      "order_item_id": 1,
+      "product_id": 101,
+      "product_name": "나이키 에어맥스",
+      "option_id": 201,
+      "option_name": "Black/M",
+      "quantity": 2,
+      "restored_stock": 15
+    }
+  ]
+}
+```
+
+**에러 응답 (400 Bad Request)**:
+```json
+{
+  "error_code": "CANCEL-001",
+  "error_message": "이미 취소된 주문입니다",
+  "timestamp": "2025-11-18T14:30:00Z"
+}
+```

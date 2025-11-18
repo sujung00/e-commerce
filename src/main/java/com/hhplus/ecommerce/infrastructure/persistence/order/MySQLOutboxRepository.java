@@ -17,7 +17,6 @@ import java.util.Optional;
  */
 @Repository
 @Primary
-@Transactional
 public class MySQLOutboxRepository implements OutboxRepository {
 
     private final OutboxJpaRepository outboxJpaRepository;

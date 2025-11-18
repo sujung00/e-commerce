@@ -60,7 +60,14 @@ public class Order {
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
-    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    /**
+     * 주문 항목 관계
+     * ✅ cascade = CascadeType.PERSIST만 설정:
+     * - 주문 생성 시 OrderItem도 함께 저장되어야 하므로 PERSIST 필요
+     * - 주문 삭제 시 OrderItem이 자동 삭제될 필요는 없음 (감사 추적용)
+     * - REMOVE 전파 제거: 주문 삭제와 항목 삭제는 독립적으로 관리
+     */
+    @OneToMany(cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id")
     @Builder.Default
     private List<OrderItem> orderItems = new ArrayList<>();

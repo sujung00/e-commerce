@@ -18,7 +18,6 @@ import java.util.Optional;
  */
 @Repository
 @Primary
-@Transactional
 public class MySQLUserCouponRepository implements UserCouponRepository {
 
     private final UserCouponJpaRepository userCouponJpaRepository;

@@ -16,6 +16,9 @@ import com.hhplus.ecommerce.application.order.dto.CancelOrderResponse;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
@@ -60,6 +63,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class OrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
@@ -107,6 +112,12 @@ public class OrderService {
         // 1단계: 검증 (읽기 전용, 트랜잭션 없음) (OrderValidator 위임)
         orderValidator.validateOrder(user, command.getOrderItems(), finalAmount);
 
+        // 1-1단계: 쿠폰 소유 및 사용 가능 여부 검증 (새로운 검증)
+        // 변경 사항 (2025-11-18):
+        // - USER_COUPONS.order_id 삭제로 인한 쿠폰 검증 로직 추가
+        // - 사용자가 쿠폰을 소유하고 있으며, 미사용 상태이며, 이미 다른 주문에 사용되지 않았는지 확인
+        orderValidator.validateCouponOwnershipAndUsage(userId, command.getCouponId());
+
         // 2단계: 원자적 거래 (프록시를 통해 호출, @Transactional 적용됨)
         // OrderTransactionService의 executeTransactionalOrder()는
         // Spring AOP 프록시를 통해 호출되므로 @Transactional이 정상 작동합니다
@@ -151,12 +162,16 @@ public class OrderService {
         // 별도 배치 프로세스가 outbox를 처리하여 외부 시스템에 전송
         // (주문 완료 흐름과 독립적으로 동작)
 
-        System.out.println("[OrderService] 주문 처리 완료: " + order.getOrderId());
+        log.info("[OrderService] 주문 처리 완료: {}", order.getOrderId());
     }
 
     /**
      * 주문 상세 조회
+     * ✅ @Transactional(readOnly=true):
+     * - FetchType.LAZY로 인한 LazyInitializationException 방지
+     * - orderItems을 lazy load하기 위해 트랜잭션 필요
      */
+    @Transactional(readOnly = true)
     public OrderDetailResponse getOrderDetail(Long userId, Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
@@ -171,7 +186,11 @@ public class OrderService {
 
     /**
      * 주문 목록 조회 (사용자별, 페이지네이션)
+     * ✅ @Transactional(readOnly=true):
+     * - FetchType.LAZY로 인한 LazyInitializationException 방지
+     * - 각 order의 관련 정보를 lazy load하기 위해 트랜잭션 필요
      */
+    @Transactional(readOnly = true)
     public OrderListResponse getOrderList(Long userId, int page, int size, Optional<String> status) {
         List<Order> orders = orderRepository.findByUserId(userId, page, size);
         long totalElements = orderRepository.countByUserId(userId);
