@@ -10,8 +10,12 @@ import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
+import com.hhplus.ecommerce.domain.coupon.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
+import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -31,19 +35,23 @@ import java.util.List;
  *     ↓ (의존성 주입)
  * OrderCancelTransactionService (2단계, @Transactional 처리)
  */
+@Slf4j
 @Service
 public class OrderCancelTransactionService {
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
+    private final UserCouponRepository userCouponRepository;
 
     public OrderCancelTransactionService(OrderRepository orderRepository,
                                         ProductRepository productRepository,
-                                        UserRepository userRepository) {
+                                        UserRepository userRepository,
+                                        UserCouponRepository userCouponRepository) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
+        this.userCouponRepository = userCouponRepository;
     }
 
     /**
@@ -145,21 +153,46 @@ public class OrderCancelTransactionService {
      * 쿠폰 상태 복구
      *
      * 변경 사항 (2025-11-18):
-     * - USER_COUPONS.order_id 삭제됨
-     * - 쿠폰 사용 여부는 ORDERS.coupon_id로만 추적
-     * - USER_COUPONS은 "쿠폰 보유 상태"만 관리
+     * - USER_COUPONS.order_id 삭제로 인한 새로운 쿠폰 추적 방식
+     * - 쿠폰 사용 여부는 ORDERS.coupon_id의 존재 여부로만 추적
+     * - USER_COUPONS은 "쿠폰 보유 상태"(UNUSED/USED/EXPIRED/CANCELLED)만 관리
      *
-     * 주문 취소 시 처리:
-     * - 쿠폰이 사용된 주문이면: ORDERS의 coupon_id만 제거되므로
-     * - USER_COUPONS.status는 자동으로 "미사용"으로 간주됨
-     * - 별도의 상태 복구 로직 불필요 (orders.coupon_id = null이면 미사용 상태로 취급)
+     * 복구 로직 흐름:
+     * 1. 해당 couponId가 현재 다른 활성 주문에서 사용 중인지 확인
+     *    - 사용 중이면: 현재 주문의 취소로 인해 다른 주문이 영향을 받지 않으므로 복구하지 않음
+     *    - 미사용 상태면: UserCoupon을 UNUSED로 복구
+     * 2. UserCoupon 엔티티 조회
+     *    - 없으면 경고만 로깅 (업데이트하지 않음)
+     *    - 있으면: UserCoupon.status = UNUSED로 설정하고 저장
      *
-     * 현재 구현: 쿠폰 사용 로그만 남김 (실제 복구는 orders 테이블 업데이트로 처리됨)
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
      */
     private void restoreCouponStatus(Long userId, Long couponId) {
-        // ✅ order_id 제거 후: USER_COUPONS.status 업데이트 불필요
-        // 쿠폰 사용 여부는 ORDERS.coupon_id의 존재 여부로 판단
-        // - orders.coupon_id = couponId인 활성 주문이 없으면 "미사용" 상태로 간주
-        System.out.println("[OrderCancelTransactionService] 쿠폰 미사용 상태로 전환: userId=" + userId + ", couponId=" + couponId);
+        // (1) 해당 couponId가 현재 다른 활성 주문에서 사용 중인지 확인
+        if (orderRepository.existsActiveByCouponId(couponId)) {
+            log.info("[OrderCancelTransactionService] 쿠폰이 다른 활성 주문에서 사용 중이므로 복구하지 않음: userId={}, couponId={}",
+                     userId, couponId);
+            return;
+        }
+
+        // (2) UserCoupon 엔티티 조회 및 상태 복구
+        var userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId);
+
+        if (userCoupon.isEmpty()) {
+            log.warn("[OrderCancelTransactionService] UserCoupon을 찾을 수 없음 (이미 삭제되었을 수 있음): userId={}, couponId={}",
+                     userId, couponId);
+            return;
+        }
+
+        // (3) UserCoupon 상태를 UNUSED로 변경
+        UserCoupon coupon = userCoupon.get();
+        coupon.setStatus(UserCouponStatus.UNUSED);
+        coupon.setUsedAt(null);  // 사용 시각 초기화
+
+        userCouponRepository.save(coupon);
+
+        log.info("[OrderCancelTransactionService] 쿠폰 상태를 UNUSED로 복구: userId={}, couponId={}",
+                 userId, couponId);
     }
 }

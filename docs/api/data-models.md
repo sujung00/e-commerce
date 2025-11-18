@@ -187,10 +187,15 @@
 
 **관계**:
 - N:1 with users (사용자)
-- N:1 with coupons (쿠폰, 선택)
+- N:1 with coupons (쿠폰, 선택) - 변경 사항 (2025-11-18): coupon_id는 쿠폰 사용을 추적하는 Foreign Key
 - 1:N with order_items (주문 항목)
-- 1:N with user_coupons (쿠폰 사용 기록)
 - 1:N with outbox (외부 전송 메시지)
+
+**변경 사항 (2025-11-18): UserCoupon-Order 관계 제거**:
+- 이전: user_coupons.order_id로 쿠폰 사용을 추적
+- 현재: orders.coupon_id로 쿠폰 사용을 추적
+- user_coupons는 "쿠폰 보유 상태"(UNUSED/USED/EXPIRED/CANCELLED)만 관리
+- orders.coupon_id의 존재 여부로 쿠폰 사용을 판단
 
 ---
 
@@ -335,7 +340,6 @@ erDiagram
 
     ORDERS ||--o{ ORDER_ITEMS : contains
     ORDERS }o--|| COUPONS : applies
-    ORDERS ||--o{ USER_COUPONS : uses
     ORDERS ||--o{ OUTBOX : generates
 
     COUPONS ||--o{ USER_COUPONS : distributes

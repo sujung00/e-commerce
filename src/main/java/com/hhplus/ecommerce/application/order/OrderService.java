@@ -108,6 +108,12 @@ public class OrderService {
         // 1단계: 검증 (읽기 전용, 트랜잭션 없음) (OrderValidator 위임)
         orderValidator.validateOrder(user, command.getOrderItems(), finalAmount);
 
+        // 1-1단계: 쿠폰 소유 및 사용 가능 여부 검증 (새로운 검증)
+        // 변경 사항 (2025-11-18):
+        // - USER_COUPONS.order_id 삭제로 인한 쿠폰 검증 로직 추가
+        // - 사용자가 쿠폰을 소유하고 있으며, 미사용 상태이며, 이미 다른 주문에 사용되지 않았는지 확인
+        orderValidator.validateCouponOwnershipAndUsage(userId, command.getCouponId());
+
         // 2단계: 원자적 거래 (프록시를 통해 호출, @Transactional 적용됨)
         // OrderTransactionService의 executeTransactionalOrder()는
         // Spring AOP 프록시를 통해 호출되므로 @Transactional이 정상 작동합니다

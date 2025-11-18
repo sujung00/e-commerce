@@ -56,4 +56,19 @@ public class MySQLOrderRepository implements OrderRepository {
     public List<Order> findAll() {
         return orderJpaRepository.findAll();
     }
+
+    @Override
+    public boolean isCouponUsed(Long userId, Long couponId) {
+        return orderJpaRepository.existsByUserIdAndCouponIdAndStatus(userId, couponId);
+    }
+
+    @Override
+    public boolean existsOrderWithCoupon(Long userId, Long couponId) {
+        return orderJpaRepository.existsByUserIdAndCouponIdAndStatus(userId, couponId);
+    }
+
+    @Override
+    public boolean existsActiveByCouponId(Long couponId) {
+        return orderJpaRepository.existsActiveByCouponId(couponId);
+    }
 }
