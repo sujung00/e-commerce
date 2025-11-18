@@ -3,7 +3,7 @@ package com.hhplus.ecommerce.integration;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.inventory.InventoryService;
 import com.hhplus.ecommerce.application.order.OrderService;
-import com.hhplus.ecommerce.config.TestContainersInitializer;
+import com.hhplus.ecommerce.unit.config.TestContainersInitializer;
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.product.Product;

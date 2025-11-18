@@ -50,12 +50,63 @@ tasks.named('test') {
     finalizedBy jacocoTestReport
 }
 
+// ✅ 테스트 종류별 분리된 task들
+// 순수 단위 테스트 (Mocking 기반, Spring Context 없음)
+task testUnit(type: Test) {
+    useJUnitPlatform()
+    description = "Run unit tests (domain, application layer with mocking)"
+
+    // unit 디렉토리의 테스트만 실행
+    include '**/unit/**/*Test.class'
+    exclude '**/integration/**/*Test.class'
+    exclude '**/api/**/*Test.class'
+
+    // 빠른 실행을 위해 병렬 처리 활성화
+    maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
+}
+
+// 통합 테스트 (TestContainers 기반, 실제 DB 사용)
+task testIntegration(type: Test) {
+    useJUnitPlatform()
+    description = "Run integration tests (database-based with TestContainers)"
+
+    // integration 디렉토리의 테스트만 실행
+    include '**/integration/**/*Test.class'
+    exclude '**/unit/**/*Test.class'
+    exclude '**/api/**/*Test.class'
+
+    // 데이터베이스 작업이므로 순차 처리 권장
+    maxParallelForks = 1
+}
+
+// API 테스트 (Controller 계층, MockMvc 기반)
+task testApi(type: Test) {
+    useJUnitPlatform()
+    description = "Run API tests (controller layer with MockMvc)"
+
+    // api 디렉토리의 테스트만 실행
+    include '**/api/**/*Test.class'
+    exclude '**/unit/**/*Test.class'
+    exclude '**/integration/**/*Test.class'
+
+    // API 테스트는 병렬 처리 가능
+    maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
+}
+
+// 모든 테스트 실행 (기본 test task)
+task testAll(type: Test) {
+    dependsOn testUnit, testIntegration, testApi
+    useJUnitPlatform()
+    description = "Run all tests (unit, integration, api)"
+}
+
 jacoco {
     toolVersion = "0.8.8"
 }
 
 jacocoTestReport {
-    dependsOn test
+    // 모든 테스트가 완료된 후 커버리지 리포트 생성
+    dependsOn test, testUnit, testIntegration, testApi
     reports {
         xml.required = true
         html.required = true
