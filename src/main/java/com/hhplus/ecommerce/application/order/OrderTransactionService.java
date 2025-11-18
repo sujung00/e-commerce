@@ -12,7 +12,10 @@ import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.order.OutboxRepository;
-import com.hhplus.ecommerce.presentation.order.request.OrderItemRequest;
+import com.hhplus.ecommerce.domain.coupon.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
+import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
+import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,15 +48,18 @@ public class OrderTransactionService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final OutboxRepository outboxRepository;
+    private final UserCouponRepository userCouponRepository;
 
     public OrderTransactionService(OrderRepository orderRepository,
                                    ProductRepository productRepository,
                                    UserRepository userRepository,
-                                   OutboxRepository outboxRepository) {
+                                   OutboxRepository outboxRepository,
+                                   UserCouponRepository userCouponRepository) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.outboxRepository = outboxRepository;
+        this.userCouponRepository = userCouponRepository;
     }
 
     /**
@@ -61,18 +67,17 @@ public class OrderTransactionService {
      *
      * 프록시를 통해 호출되므로 @Transactional이 정상 작동합니다.
      * 다음 작업이 하나의 트랜잭션으로 처리됩니다:
-     * - 재고 차감 (낙관적 락)
-     * - 사용자 잔액 차감
+     * - 재고 차감 (Domain 메서드 사용)
+     * - 사용자 잔액 차감 (Domain 메서드 사용)
      * - 주문 저장
      * - 주문 항목 저장
      * - 쿠폰 사용 처리
-     * - 상품 상태 업데이트
      * - Outbox 메시지 저장 (3단계: 외부 전송 대기)
      *
      * 실패 시 모든 변경사항 롤백
      *
      * @param userId 사용자 ID
-     * @param orderItems 주문 항목 리스트
+     * @param orderItems 주문 항목 리스트 (Application DTO)
      * @param couponId 쿠폰 ID (nullable)
      * @param couponDiscount 쿠폰 할인액
      * @param subtotal 소계
@@ -82,7 +87,7 @@ public class OrderTransactionService {
     @Transactional
     public Order executeTransactionalOrder(
             Long userId,
-            List<OrderItemRequest> orderItems,
+            List<OrderItemDto> orderItems,
             Long couponId,
             Long couponDiscount,
             Long subtotal,
@@ -95,10 +100,12 @@ public class OrderTransactionService {
         deductUserBalance(userId, finalAmount);
 
         // 2-3: 주문 생성 및 저장
+        // 주의: order_items에 order_id를 설정하기 위해, 먼저 Order만 저장하고 OrderItem들을 나중에 연결
         Order order = Order.createOrder(userId, couponId, couponDiscount, subtotal, finalAmount);
+        Order savedOrder = orderRepository.save(order);
 
-        // 2-4: 주문 항목 추가
-        for (OrderItemRequest itemRequest : orderItems) {
+        // 2-4: 주문 항목 생성 및 Order ID 설정
+        for (OrderItemDto itemRequest : orderItems) {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ProductNotFoundException(itemRequest.getProductId()));
 
@@ -115,11 +122,12 @@ public class OrderTransactionService {
                     itemRequest.getQuantity(),
                     product.getPrice()
             );
-            order.addOrderItem(orderItem);
+            orderItem.setOrderId(savedOrder.getOrderId());
+            savedOrder.addOrderItem(orderItem);
         }
 
-        // 2-5: 주문 저장
-        Order savedOrder = orderRepository.save(order);
+        // 모든 OrderItem 추가 후 다시 저장 (CascadeType.ALL로 인해 자동 저장됨)
+        savedOrder = orderRepository.save(savedOrder);
 
         // 2-6: 쿠폰 사용 처리 (있는 경우)
         if (couponId != null) {
@@ -153,107 +161,98 @@ public class OrderTransactionService {
     }
 
     /**
-     * 재고 차감 (낙관적 락 시뮬레이션)
+     * 재고 차감 (Domain 메서드 활용)
      *
-     * 실제 DB 환경에서는:
-     * UPDATE product_options SET stock = stock - qty, version = version + 1
-     * WHERE option_id = ? AND version = current_version
+     * Product.deductStock() 메서드가 다음을 처리합니다:
+     * - ProductOption 재고 검증 및 차감
+     * - 낙관적 락 (version 증가)
+     * - 상품 상태 자동 업데이트 (모든 옵션 재고가 0인 경우 품절로 변경)
+     * - 동시성 제어 (synchronized 블록)
      *
-     * 버전 불일치 시 race condition 감지 → 예외 발생 → 트랜잭션 롤백
+     * Application 계층은 Domain 메서드를 호출하기만 하면 됩니다.
      */
-    private void deductInventory(List<OrderItemRequest> orderItems) {
-        for (OrderItemRequest itemRequest : orderItems) {
+    private void deductInventory(List<OrderItemDto> orderItems) {
+        for (OrderItemDto itemRequest : orderItems) {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ProductNotFoundException(itemRequest.getProductId()));
 
-            ProductOption option = product.getOptions().stream()
-                    .filter(o -> o.getOptionId().equals(itemRequest.getOptionId()))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("옵션을 찾을 수 없습니다"));
+            // Domain 메서드 호출 (Product가 내부적으로 ProductOption 조회 및 재고 차감)
+            // 예외 처리: InsufficientStockException, ProductOptionNotFoundException
+            product.deductStock(itemRequest.getOptionId(), itemRequest.getQuantity());
 
-            // 낙관적 락: version 확인
-            Long currentVersion = option.getVersion();
-
-            // 재고 차감 (동시성 제어를 위한 synchronized 블록)
-            synchronized (option) {
-                // version 재확인 (race condition 감지)
-                if (!option.getVersion().equals(currentVersion)) {
-                    throw new IllegalStateException(
-                            "ERR-004: 주문 생성에 실패했습니다 (동시 주문으로 인한 재고 변경). 다시 시도하세요."
-                    );
-                }
-
-                // 재고 차감
-                int newStock = option.getStock() - itemRequest.getQuantity();
-                if (newStock < 0) {
-                    throw new IllegalArgumentException(
-                            option.getName() + "의 재고가 부족합니다"
-                    );
-                }
-
-                // 재고 업데이트 및 version 증가
-                option.setStock(newStock);
-                option.setVersion(currentVersion + 1);
-
-                // 저장소에 반영
-                productRepository.saveOption(option);
-            }
+            // 저장소에 반영
+            productRepository.save(product);
         }
     }
 
     /**
-     * 사용자 잔액 차감
+     * 사용자 잔액 차감 (Domain 메서드 활용)
      *
-     * 실제 DB 환경에서는:
-     * UPDATE users SET balance = balance - final_amount WHERE user_id = ?
+     * User.deductBalance() 메서드가 다음을 처리합니다:
+     * - 잔액 검증 (InsufficientBalanceException 발생)
+     * - 잔액 차감
+     * - 업데이트된 사용자 반환
      */
     private void deductUserBalance(Long userId, Long finalAmount) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
-        long newBalance = user.getBalance() - finalAmount;
-        if (newBalance < 0) {
-            throw new IllegalArgumentException("잔액이 부족합니다");
-        }
+        // Domain 메서드 호출 (User가 잔액 검증 및 차감)
+        // 예외 처리: InsufficientBalanceException
+        user.deductBalance(finalAmount);
 
-        user.setBalance(newBalance);
-        // 저장소에 반영 (InMemory이므로 직접 수정)
+        // 저장소에 반영
+        userRepository.save(user);
     }
 
     /**
      * 쿠폰 사용 처리
+     * UPDATE user_coupons SET status = 'USED', used_at = NOW() WHERE user_id = ? AND coupon_id = ?
+     *
+     * ✅ 수정: String "USED" → Enum UserCouponStatus.USED
      */
     private void markCouponAsUsed(Long userId, Long couponId, Long orderId) {
-        // user_coupons 테이블에서 해당 쿠폰을 'USED'로 표시
-        // UPDATE user_coupons SET status = 'USED', used_at = NOW() WHERE user_id = ? AND coupon_id = ?
-        System.out.println("[OrderTransactionService] 쿠폰 사용 처리: userId=" + userId + ", couponId=" + couponId);
+        UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자 쿠폰을 찾을 수 없습니다"));
+
+        // ✅ 수정: Enum을 사용하여 상태 변경
+        userCoupon.setStatus(UserCouponStatus.USED);
+        userCoupon.setUsedAt(java.time.LocalDateTime.now());
+        userCoupon.setOrderId(orderId);
+
+        userCouponRepository.update(userCoupon);
+
+        System.out.println("[OrderTransactionService] 쿠폰 사용 처리 완료: userId=" + userId +
+                ", couponId=" + couponId + ", orderId=" + orderId);
     }
 
     /**
-     * 상품 상태 업데이트
+     * 상품 상태 업데이트 (Domain 메서드 활용)
      *
-     * 모든 옵션의 재고가 0인 경우 상품 상태를 '품절'로 변경
+     * Product.recalculateTotalStock()이 다음을 처리합니다:
+     * - 모든 옵션의 재고 합계 재계산
+     * - 모든 옵션의 재고가 0인 경우 자동으로 상태를 '품절'로 변경
+     * - 그 외의 경우 상태를 '판매중'으로 변경
+     *
+     * Note: deductStock() 호출 시 자동으로 상태가 업데이트되므로,
+     * 이 메서드는 상태 업데이트 재확인 용도로 사용할 수 있습니다.
      */
-    private void updateProductStatus(List<OrderItemRequest> orderItems) {
+    private void updateProductStatus(List<OrderItemDto> orderItems) {
         // 상품별로 집계
         Set<Long> productIds = orderItems.stream()
-                .map(OrderItemRequest::getProductId)
+                .map(OrderItemDto::getProductId)
                 .collect(Collectors.toSet());
 
         for (Long productId : productIds) {
             Product product = productRepository.findById(productId)
                     .orElseThrow(() -> new ProductNotFoundException(productId));
 
-            // 모든 옵션의 재고 합계 확인
-            int totalStock = product.getOptions().stream()
-                    .mapToInt(ProductOption::getStock)
-                    .sum();
+            // Domain 메서드 호출 (Product가 상태 자동 업데이트)
+            // 모든 옵션 재고가 0이면 '품절', 그 외에는 '판매중'으로 변경
+            product.recalculateTotalStock();
 
-            // 재고가 0이면 상태를 '품절'로 변경
-            if (totalStock <= 0) {
-                product.setStatus("품절");
-                productRepository.save(product);
-            }
+            // 저장소에 반영
+            productRepository.save(product);
         }
     }
 }

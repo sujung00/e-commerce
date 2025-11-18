@@ -365,7 +365,8 @@ class OutboxTest {
         assertNull(outbox.getMessageId());
         assertNull(outbox.getOrderId());
         assertNull(outbox.getStatus());
-        assertNull(outbox.getRetryCount());
+        // retryCount는 기본값 0
+        assertEquals(0, outbox.getRetryCount());
     }
 
     @Test

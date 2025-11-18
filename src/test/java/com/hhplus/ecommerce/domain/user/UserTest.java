@@ -76,9 +76,13 @@ class UserTest {
                 .balance(100000L)
                 .build();
 
-        user.setBalance(150000L);
+        // Builder로 업데이트된 객체 생성
+        User updatedUser = User.builder()
+                .userId(user.getUserId())
+                .balance(150000L)
+                .build();
 
-        assertThat(user.getBalance()).isEqualTo(150000L);
+        assertThat(updatedUser.getBalance()).isEqualTo(150000L);
     }
 
     @Test
@@ -92,14 +96,18 @@ class UserTest {
                 .updatedAt(now)
                 .build();
 
-        user.setEmail("new@example.com");
-        user.setName("New Name");
         LocalDateTime updatedTime = now.plusHours(1);
-        user.setUpdatedAt(updatedTime);
+        // Builder로 업데이트된 객체 생성
+        User updatedUser = User.builder()
+                .userId(user.getUserId())
+                .email("new@example.com")
+                .name("New Name")
+                .updatedAt(updatedTime)
+                .build();
 
-        assertThat(user.getEmail()).isEqualTo("new@example.com");
-        assertThat(user.getName()).isEqualTo("New Name");
-        assertThat(user.getUpdatedAt()).isEqualTo(updatedTime);
+        assertThat(updatedUser.getEmail()).isEqualTo("new@example.com");
+        assertThat(updatedUser.getName()).isEqualTo("New Name");
+        assertThat(updatedUser.getUpdatedAt()).isEqualTo(updatedTime);
     }
 
     @Test
@@ -170,9 +178,13 @@ class UserTest {
                 .build();
 
         Long deductedAmount = 30000L;
-        user.setBalance(user.getBalance() - deductedAmount);
+        // Builder로 잔액 감소된 객체 생성
+        User updatedUser = User.builder()
+                .userId(user.getUserId())
+                .balance(user.getBalance() - deductedAmount)
+                .build();
 
-        assertThat(user.getBalance()).isEqualTo(70000L);
+        assertThat(updatedUser.getBalance()).isEqualTo(70000L);
     }
 
     @Test
@@ -184,8 +196,12 @@ class UserTest {
                 .build();
 
         Long chargedAmount = 50000L;
-        user.setBalance(user.getBalance() + chargedAmount);
+        // Builder로 잔액 증가된 객체 생성
+        User updatedUser = User.builder()
+                .userId(user.getUserId())
+                .balance(user.getBalance() + chargedAmount)
+                .build();
 
-        assertThat(user.getBalance()).isEqualTo(150000L);
+        assertThat(updatedUser.getBalance()).isEqualTo(150000L);
     }
 }

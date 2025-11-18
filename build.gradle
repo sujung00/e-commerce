@@ -34,6 +34,15 @@ dependencies {
     runtimeOnly 'com.mysql:mysql-connector-j'
     runtimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // P6Spy - SQL logging
+    implementation 'p6spy:p6spy:3.9.1'
+    testImplementation 'com.github.gavlyukovskiy:p6spy-spring-boot-starter:1.9.1'
+
+    // TestContainers - Docker-based testing
+    testImplementation 'org.testcontainers:testcontainers:1.19.7'
+    testImplementation 'org.testcontainers:junit-jupiter:1.19.7'
+    testImplementation 'org.testcontainers:mysql:1.19.7'
 }
 
 tasks.named('test') {

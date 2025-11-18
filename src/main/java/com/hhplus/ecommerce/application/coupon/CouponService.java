@@ -2,6 +2,7 @@ package com.hhplus.ecommerce.application.coupon;
 
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
+import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import com.hhplus.ecommerce.domain.coupon.CouponNotFoundException;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
@@ -167,11 +168,12 @@ public class CouponService {
             }
 
             // === 8단계: 발급 기록 저장 ===
-            // INSERT user_coupons(user_id, coupon_id, status='ACTIVE', issued_at=NOW())
+            // INSERT user_coupons(user_id, coupon_id, status='UNUSED', issued_at=NOW())
+            // ✅ 수정: String "ACTIVE" → Enum UserCouponStatus.UNUSED
             UserCoupon userCoupon = UserCoupon.builder()
                     .userId(userId)
                     .couponId(couponId)
-                    .status("ACTIVE")
+                    .status(UserCouponStatus.UNUSED)  // 발급 시 미사용 상태로 설정
                     .issuedAt(LocalDateTime.now())
                     .usedAt(null)
                     .orderId(null)
@@ -191,16 +193,16 @@ public class CouponService {
 
     /**
      * 4.2 사용자가 보유한 쿠폰 조회
-     * GET /coupons/issued?status=ACTIVE
+     * GET /coupons/issued?status=UNUSED
      *
      * 비즈니스 로직:
      * 1. 사용자 존재 검증
-     * 2. status별 필터링 (기본값: ACTIVE)
+     * 2. status별 필터링 (기본값: UNUSED)
      * 3. 사용자의 쿠폰 목록 조회
      * 4. UserCoupon + Coupon 정보 결합하여 Response 생성
      *
      * @param userId 사용자 ID
-     * @param status 쿠폰 상태 (ACTIVE | USED | EXPIRED)
+     * @param status 쿠폰 상태 (UNUSED | USED | EXPIRED | CANCELLED)
      * @return 사용자 쿠폰 목록
      * @throws UserNotFoundException 사용자를 찾을 수 없음
      */
@@ -210,11 +212,13 @@ public class CouponService {
             throw new UserNotFoundException(userId);
         }
 
-        // 기본값 설정
-        String filterStatus = status != null && !status.isEmpty() ? status : "ACTIVE";
+        // ✅ 수정: String을 Enum으로 변환
+        // 기본값 설정 (기존 "ACTIVE" → "UNUSED")
+        String statusStr = status != null && !status.isEmpty() ? status : "UNUSED";
+        UserCouponStatus filterStatus = UserCouponStatus.from(statusStr);
 
         // 2-3. status별 필터링하여 조회
-        List<UserCoupon> userCoupons = userCouponRepository.findByUserIdAndStatus(userId, filterStatus);
+        List<UserCoupon> userCoupons = userCouponRepository.findByUserIdAndStatus(userId, filterStatus.name());
 
         // 4. UserCoupon + Coupon 정보 결합
         return userCoupons.stream()

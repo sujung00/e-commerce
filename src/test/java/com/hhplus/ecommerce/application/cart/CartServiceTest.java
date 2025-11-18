@@ -3,7 +3,6 @@ package com.hhplus.ecommerce.application.cart;
 import com.hhplus.ecommerce.domain.cart.*;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.infrastructure.persistence.cart.InMemoryCartRepository;
 import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
 import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
 import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
@@ -37,7 +36,11 @@ import static org.mockito.Mockito.*;
  * 테스트 유형:
  * - 성공 케이스: 정상적인 비즈니스 로직 처리
  * - 예외 케이스: 사용자 검증, 수량 검증, 아이템 검증
- * - 트랜잭션 처리: In-Memory 저장소 동작 검증
+ *
+ * 아키텍처:
+ * - Port(CartRepository) 인터페이스만 Mock으로 주입
+ * - Adapter(InMemoryCartRepository)는 직접 참조하지 않음
+ * - Port-Adapter 패턴 준수
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CartService 단위 테스트")
@@ -51,9 +54,6 @@ class CartServiceTest {
     @Mock
     private UserRepository userRepository;
 
-    @Mock
-    private InMemoryCartRepository inMemoryCartRepository;
-
     private static final Long TEST_USER_ID = 1L;
     private static final Long TEST_CART_ID = 100L;
     private static final Long TEST_PRODUCT_ID = 1L;
@@ -63,7 +63,7 @@ class CartServiceTest {
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
-        cartService = new CartService(cartRepository, userRepository, inMemoryCartRepository);
+        cartService = new CartService(cartRepository, userRepository);
     }
 
     // ========== 장바구니 조회 (getCartByUserId) ==========
@@ -83,7 +83,7 @@ class CartServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(inMemoryCartRepository.findOrCreateByUserId(TEST_USER_ID)).thenReturn(cart);
+        when(cartRepository.findOrCreateByUserId(TEST_USER_ID)).thenReturn(cart);
 
         CartItem item1 = CartItem.builder()
                 .cartItemId(1L)
@@ -110,7 +110,7 @@ class CartServiceTest {
                 .build();
 
         List<CartItem> cartItems = List.of(item1, item2);
-        when(inMemoryCartRepository.getCartItems(TEST_CART_ID)).thenReturn(cartItems);
+        when(cartRepository.getCartItems(TEST_CART_ID)).thenReturn(cartItems);
 
         // When
         CartResponseDto result = cartService.getCartByUserId(TEST_USER_ID);
@@ -124,7 +124,7 @@ class CartServiceTest {
         assertEquals(2, result.getItems().size());
 
         verify(userRepository, times(1)).existsById(TEST_USER_ID);
-        verify(inMemoryCartRepository, times(1)).findOrCreateByUserId(TEST_USER_ID);
+        verify(cartRepository, times(1)).findOrCreateByUserId(TEST_USER_ID);
     }
 
     @Test
@@ -142,8 +142,8 @@ class CartServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(inMemoryCartRepository.findOrCreateByUserId(TEST_USER_ID)).thenReturn(cart);
-        when(inMemoryCartRepository.getCartItems(TEST_CART_ID)).thenReturn(new ArrayList<>());
+        when(cartRepository.findOrCreateByUserId(TEST_USER_ID)).thenReturn(cart);
+        when(cartRepository.getCartItems(TEST_CART_ID)).thenReturn(new ArrayList<>());
 
         // When
         CartResponseDto result = cartService.getCartByUserId(TEST_USER_ID);
@@ -167,7 +167,7 @@ class CartServiceTest {
         });
 
         verify(userRepository, times(1)).existsById(TEST_USER_ID);
-        verify(inMemoryCartRepository, never()).findOrCreateByUserId(anyLong());
+        verify(cartRepository, never()).findOrCreateByUserId(anyLong());
     }
 
     // ========== 아이템 추가 (addItem) ==========
@@ -193,7 +193,7 @@ class CartServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(inMemoryCartRepository.findOrCreateByUserId(TEST_USER_ID)).thenReturn(cart);
+        when(cartRepository.findOrCreateByUserId(TEST_USER_ID)).thenReturn(cart);
 
         CartItem newItem = CartItem.builder()
                 .cartItemId(TEST_CART_ITEM_ID)
@@ -207,9 +207,9 @@ class CartServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(inMemoryCartRepository.saveCartItem(any(CartItem.class))).thenReturn(newItem);
-        when(inMemoryCartRepository.getCartItems(TEST_CART_ID)).thenReturn(List.of(newItem));
-        when(inMemoryCartRepository.saveCart(any(Cart.class))).thenReturn(cart);
+        when(cartRepository.saveCartItem(any(CartItem.class))).thenReturn(newItem);
+        when(cartRepository.getCartItems(TEST_CART_ID)).thenReturn(List.of(newItem));
+        when(cartRepository.saveCart(any(Cart.class))).thenReturn(cart);
 
         // When
         CartItemResponse result = cartService.addItem(TEST_USER_ID, request);
@@ -222,7 +222,7 @@ class CartServiceTest {
         assertEquals(2, result.getQuantity());
 
         verify(userRepository, times(1)).existsById(TEST_USER_ID);
-        verify(inMemoryCartRepository, times(1)).saveCartItem(any(CartItem.class));
+        verify(cartRepository, times(1)).saveCartItem(any(CartItem.class));
     }
 
     @Test
@@ -312,15 +312,15 @@ class CartServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(inMemoryCartRepository.findCartItemById(TEST_CART_ITEM_ID))
+        when(cartRepository.findCartItemById(TEST_CART_ITEM_ID))
                 .thenReturn(Optional.of(cartItem));
-        when(inMemoryCartRepository.findByUserId(TEST_USER_ID))
+        when(cartRepository.findByUserId(TEST_USER_ID))
                 .thenReturn(Optional.of(cart));
-        when(inMemoryCartRepository.saveCartItem(any(CartItem.class)))
+        when(cartRepository.saveCartItem(any(CartItem.class)))
                 .thenReturn(cartItem);
-        when(inMemoryCartRepository.getCartItems(TEST_CART_ID))
+        when(cartRepository.getCartItems(TEST_CART_ID))
                 .thenReturn(List.of(cartItem));
-        when(inMemoryCartRepository.saveCart(any(Cart.class)))
+        when(cartRepository.saveCart(any(Cart.class)))
                 .thenReturn(cart);
 
         // When
@@ -332,8 +332,8 @@ class CartServiceTest {
         assertEquals(5, result.getQuantity());
         assertEquals(250000L, result.getSubtotal());
 
-        verify(inMemoryCartRepository, times(1)).findCartItemById(TEST_CART_ITEM_ID);
-        verify(inMemoryCartRepository, times(1)).saveCartItem(any(CartItem.class));
+        verify(cartRepository, times(1)).findCartItemById(TEST_CART_ITEM_ID);
+        verify(cartRepository, times(1)).saveCartItem(any(CartItem.class));
     }
 
     @Test
@@ -361,7 +361,7 @@ class CartServiceTest {
                 .build();
 
         when(userRepository.existsById(TEST_USER_ID)).thenReturn(true);
-        when(inMemoryCartRepository.findCartItemById(TEST_CART_ITEM_ID))
+        when(cartRepository.findCartItemById(TEST_CART_ITEM_ID))
                 .thenReturn(Optional.empty());
 
         // When & Then
@@ -399,21 +399,21 @@ class CartServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(inMemoryCartRepository.findCartItemById(TEST_CART_ITEM_ID))
+        when(cartRepository.findCartItemById(TEST_CART_ITEM_ID))
                 .thenReturn(Optional.of(cartItem));
-        when(inMemoryCartRepository.findByUserId(TEST_USER_ID))
+        when(cartRepository.findByUserId(TEST_USER_ID))
                 .thenReturn(Optional.of(cart));
-        when(inMemoryCartRepository.getCartItems(TEST_CART_ID))
+        when(cartRepository.getCartItems(TEST_CART_ID))
                 .thenReturn(new ArrayList<>());
-        when(inMemoryCartRepository.saveCart(any(Cart.class)))
+        when(cartRepository.saveCart(any(Cart.class)))
                 .thenReturn(cart);
 
         // When
         cartService.removeItem(TEST_USER_ID, TEST_CART_ITEM_ID);
 
         // Then
-        verify(inMemoryCartRepository, times(1)).deleteCartItem(TEST_CART_ITEM_ID);
-        verify(inMemoryCartRepository, times(1)).saveCart(any(Cart.class));
+        verify(cartRepository, times(1)).deleteCartItem(TEST_CART_ITEM_ID);
+        verify(cartRepository, times(1)).saveCart(any(Cart.class));
     }
 
     @Test
@@ -421,7 +421,7 @@ class CartServiceTest {
     void testRemoveItem_Failed_ItemNotFound() {
         // Given
         when(userRepository.existsById(TEST_USER_ID)).thenReturn(true);
-        when(inMemoryCartRepository.findCartItemById(TEST_CART_ITEM_ID))
+        when(cartRepository.findCartItemById(TEST_CART_ITEM_ID))
                 .thenReturn(Optional.empty());
 
         // When & Then
@@ -457,9 +457,9 @@ class CartServiceTest {
                 .build();
 
         when(userRepository.existsById(TEST_USER_ID)).thenReturn(true);
-        when(inMemoryCartRepository.findCartItemById(TEST_CART_ITEM_ID))
+        when(cartRepository.findCartItemById(TEST_CART_ITEM_ID))
                 .thenReturn(Optional.of(cartItem));
-        when(inMemoryCartRepository.findByUserId(TEST_USER_ID))
+        when(cartRepository.findByUserId(TEST_USER_ID))
                 .thenReturn(Optional.of(wrongCart));
 
         // When & Then
