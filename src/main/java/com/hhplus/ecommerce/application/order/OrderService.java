@@ -16,6 +16,7 @@ import com.hhplus.ecommerce.application.order.dto.CancelOrderResponse;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -156,7 +157,11 @@ public class OrderService {
 
     /**
      * 주문 상세 조회
+     * ✅ @Transactional(readOnly=true):
+     * - FetchType.LAZY로 인한 LazyInitializationException 방지
+     * - orderItems을 lazy load하기 위해 트랜잭션 필요
      */
+    @Transactional(readOnly = true)
     public OrderDetailResponse getOrderDetail(Long userId, Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
@@ -171,7 +176,11 @@ public class OrderService {
 
     /**
      * 주문 목록 조회 (사용자별, 페이지네이션)
+     * ✅ @Transactional(readOnly=true):
+     * - FetchType.LAZY로 인한 LazyInitializationException 방지
+     * - 각 order의 관련 정보를 lazy load하기 위해 트랜잭션 필요
      */
+    @Transactional(readOnly = true)
     public OrderListResponse getOrderList(Long userId, int page, int size, Optional<String> status) {
         List<Order> orders = orderRepository.findByUserId(userId, page, size);
         long totalElements = orderRepository.countByUserId(userId);

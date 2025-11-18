@@ -37,7 +37,8 @@ public class MySQLProductRepository implements ProductRepository {
 
     @Override
     public Optional<Product> findById(Long productId) {
-        return productJpaRepository.findById(productId);
+        // ✅ FetchType.LAZY: options를 함께 로드하기 위해 fetch join 사용
+        return productJpaRepository.findByIdWithOptions(productId);
     }
 
     @Override

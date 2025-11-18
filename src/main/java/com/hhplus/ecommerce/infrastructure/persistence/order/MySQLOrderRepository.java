@@ -36,7 +36,8 @@ public class MySQLOrderRepository implements OrderRepository {
 
     @Override
     public Optional<Order> findById(Long orderId) {
-        return orderJpaRepository.findById(orderId);
+        // ✅ FetchType.LAZY: orderItems를 함께 로드하기 위해 fetch join 사용
+        return orderJpaRepository.findByIdWithItems(orderId);
     }
 
     @Override
