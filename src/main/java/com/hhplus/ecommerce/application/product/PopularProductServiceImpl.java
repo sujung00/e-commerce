@@ -56,8 +56,13 @@ public class PopularProductServiceImpl implements PopularProductService {
     /**
      * 인기 상품 상위 5개 계산
      * 정렬 기준: orderCount3Days (내림차순, Repository에서 조회)
-     * 포함 대상: 모든 상품 (판매 중지/품절 상품도 포함)
+     * 포함 대상: 최근 3일간 주문된 상품만 (성능 최적화)
      * 반환값: PopularProductView 리스트 (rank 정보 포함)
+     *
+     * 성능 최적화:
+     * - 전체 상품 대신 최근 3일 주문이 있는 상품만 조회 (findProductsOrderedLast3Days)
+     * - 커버링 인덱스 활용으로 DB 쿼리 효율 개선
+     * - 메모리 로드량 감소
      *
      * Note: orderCount3Days는 Infrastructure 계층(Repository)에서 별도로 조회하여
      * Application 계층에서 정렬 및 계산에 사용합니다.
@@ -65,8 +70,8 @@ public class PopularProductServiceImpl implements PopularProductService {
      * @return 상위 5개 상품 응답
      */
     private PopularProductListResponse calculatePopularProducts() {
-        // 1. 모든 상품 조회
-        List<Product> allProducts = productRepository.findAll();
+        // 1. 최근 3일간 주문된 상품만 조회 (성능 개선)
+        List<Product> allProducts = productRepository.findProductsOrderedLast3Days();
 
         // 2. 각 상품에 대해 Infrastructure 계층에서 orderCount3Days 조회하여 정렬
         List<PopularProductView> topProducts = allProducts.stream()

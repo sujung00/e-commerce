@@ -1,39 +1,31 @@
 package com.hhplus.ecommerce.api.presentation.cart;
 
-
-import com.hhplus.ecommerce.presentation.cart.CartController;import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hhplus.ecommerce.application.cart.CartService;
+import com.hhplus.ecommerce.presentation.cart.CartController;
 import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
 import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
 import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
 import com.hhplus.ecommerce.presentation.cart.response.CartResponseDto;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.MediaType;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.*;
+import static org.springframework.http.MediaType.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
  * CartControllerTest - Presentation Layer Unit Test
- * Spring Boot 3.4+ Mockito 방식 테스트
+ * @WebMvcTest를 사용한 HTTP 단위 테스트
  *
  * 테스트 대상: CartController
  * - GET /carts - 장바구니 조회
@@ -41,38 +33,29 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * - PUT /carts/items/{cart_item_id} - 장바구니 아이템 수량 수정
  * - DELETE /carts/items/{cart_item_id} - 장바구니 아이템 제거
  *
- * 테스트 유형:
- * - 성공 케이스: 정상적인 요청 및 응답
- * - 실패 케이스: 잘못된 헤더, 유효성 검사 오류
- * - 경계값 테스트: 최소/최대값, 특수한 경우
+ * 테스트 특징:
+ * - MockMvc로 실제 HTTP 요청/응답 검증
+ * - CartService를 @MockitoBean으로 모킹
+ * - 프레젠테이션 계층 단위 테스트 (비즈니스 로직 제외)
  */
-@ExtendWith(MockitoExtension.class)
-@DisplayName("CartController 단위 테스트")
-@Disabled("MockMvc 라우팅 이슈 - @SpringBootTest 기반 통합 테스트(CartControllerIntegrationTest)로 대체됨")
+@WebMvcTest(CartController.class)
+@DisplayName("CartController API 단위 테스트")
 class CartControllerTest {
 
+    @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
     private ObjectMapper objectMapper;
 
-    @Mock
+    @MockitoBean
     private CartService cartService;
-
-    @InjectMocks
-    private CartController cartController;
 
     private static final Long TEST_USER_ID = 1001L;
     private static final Long TEST_CART_ID = 1L;
     private static final Long TEST_PRODUCT_ID = 100L;
     private static final Long TEST_OPTION_ID = 1001L;
     private static final Long TEST_CART_ITEM_ID = 50L;
-
-    @BeforeEach
-    void setup() {
-        MockitoAnnotations.openMocks(this);
-        this.mockMvc = MockMvcBuilders.standaloneSetup(cartController).build();
-        this.objectMapper = new ObjectMapper();
-    }
 
     // ========== 장바구니 조회 (GET /carts) ==========
 
@@ -178,7 +161,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(post("/carts/items")
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.cart_item_id").value(TEST_CART_ITEM_ID))
@@ -212,7 +195,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(post("/carts/items")
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated());
     }
@@ -223,7 +206,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(post("/carts/items")
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON))
+                .contentType(APPLICATION_JSON))
                 .andExpect(status().isBadRequest());
     }
 
@@ -240,7 +223,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(post("/carts/items")
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
@@ -258,7 +241,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(post("/carts/items")
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
@@ -288,7 +271,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(put("/carts/items/{cart_item_id}", TEST_CART_ITEM_ID)
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quantity").value(5));
@@ -320,7 +303,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(put("/carts/items/{cart_item_id}", TEST_CART_ITEM_ID)
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quantity").value(1));
@@ -337,7 +320,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(put("/carts/items/{cart_item_id}", TEST_CART_ITEM_ID)
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
@@ -353,7 +336,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(put("/carts/items/{cart_item_id}", TEST_CART_ITEM_ID)
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
@@ -369,7 +352,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(put("/carts/items/{cart_item_id}", "invalid")
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
@@ -470,7 +453,7 @@ class CartControllerTest {
         // When & Then
         mockMvc.perform(post("/carts/items")
                 .header("X-USER-ID", TEST_USER_ID)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated());
     }

@@ -17,6 +17,8 @@ import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
@@ -61,6 +63,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class OrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
@@ -158,7 +162,7 @@ public class OrderService {
         // 별도 배치 프로세스가 outbox를 처리하여 외부 시스템에 전송
         // (주문 완료 흐름과 독립적으로 동작)
 
-        System.out.println("[OrderService] 주문 처리 완료: " + order.getOrderId());
+        log.info("[OrderService] 주문 처리 완료: {}", order.getOrderId());
     }
 
     /**

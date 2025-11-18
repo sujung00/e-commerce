@@ -18,7 +18,6 @@ import java.util.Optional;
  */
 @Repository
 @Primary
-@Transactional
 public class MySQLProductRepository implements ProductRepository {
 
     private final ProductJpaRepository productJpaRepository;
@@ -56,6 +55,15 @@ public class MySQLProductRepository implements ProductRepository {
         // 최근 3일간의 주문 수는 0으로 초기화 (인기상품 계산용)
         // 실시간 인기상품 계산은 별도의 배치 작업이나 캐시로 처리
         return 0L;
+    }
+
+    @Override
+    public List<Product> findProductsOrderedLast3Days() {
+        // 최근 3일간 주문된 상품만 조회
+        // - 성능 개선: 전체 상품이 아닌 실제 주문이 있는 상품만 로드
+        // - 구현: order_items 테이블에서 최근 3일 주문 찾아서 해당 products 반환
+        // - 현재는 전체 상품 반환 (향후 최적화 필요)
+        return productJpaRepository.findAll();
     }
 
     @Override

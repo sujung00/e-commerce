@@ -16,7 +16,6 @@ import java.util.Optional;
  */
 @Repository
 @Primary
-@Transactional
 public class MySQLUserRepository implements UserRepository {
 
     private final UserJpaRepository userJpaRepository;

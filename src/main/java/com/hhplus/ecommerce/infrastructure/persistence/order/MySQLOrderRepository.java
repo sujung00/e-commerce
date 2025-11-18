@@ -20,7 +20,6 @@ import java.util.Optional;
  */
 @Repository
 @Primary
-@Transactional
 public class MySQLOrderRepository implements OrderRepository {
 
     private final OrderJpaRepository orderJpaRepository;

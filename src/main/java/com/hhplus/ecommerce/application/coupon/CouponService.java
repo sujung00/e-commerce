@@ -12,6 +12,8 @@ import com.hhplus.ecommerce.presentation.coupon.response.AvailableCouponResponse
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.UserCouponResponse;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,6 +45,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 @Service
 public class CouponService {
+
+    private static final Logger log = LoggerFactory.getLogger(CouponService.class);
 
     private final CouponRepository couponRepository;
     private final UserCouponRepository userCouponRepository;
@@ -180,11 +184,8 @@ public class CouponService {
                     .build();
             UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
 
-            System.out.println("[CouponService] 쿠폰 발급 완료: userId=" + userId +
-                    ", couponId=" + couponId +
-                    ", userCouponId=" + savedUserCoupon.getUserCouponId() +
-                    ", remaining_qty=" + coupon.getRemainingQty() +
-                    ", version=" + coupon.getVersion());
+            log.info("[CouponService] 쿠폰 발급 완료: userId={}, couponId={}, userCouponId={}, remaining_qty={}, version={}",
+                    userId, couponId, savedUserCoupon.getUserCouponId(), coupon.getRemainingQty(), coupon.getVersion());
 
             return IssueCouponResponse.from(savedUserCoupon, coupon);
         }

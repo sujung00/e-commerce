@@ -22,7 +22,6 @@ import java.util.Optional;
  */
 @Repository
 @Primary
-@Transactional
 public class MySQLCartRepository implements CartRepository {
 
     private final CartJpaRepository cartJpaRepository;

@@ -18,6 +18,8 @@ import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Set;
@@ -43,6 +45,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class OrderTransactionService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderTransactionService.class);
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -157,7 +161,7 @@ public class OrderTransactionService {
     private void saveOrderCompletionEvent(Long orderId, Long userId) {
         Outbox outbox = Outbox.createOutbox(orderId, userId, "ORDER_COMPLETED");
         outboxRepository.save(outbox);
-        System.out.println("[OrderTransactionService] Outbox 메시지 저장: orderId=" + orderId + ", status=PENDING");
+        log.info("[OrderTransactionService] Outbox 메시지 저장: orderId={}, status=PENDING", orderId);
     }
 
     /**
@@ -223,8 +227,8 @@ public class OrderTransactionService {
 
         userCouponRepository.update(userCoupon);
 
-        System.out.println("[OrderTransactionService] 쿠폰 사용 처리 완료: userId=" + userId +
-                ", couponId=" + couponId + ", orderId=" + orderId);
+        log.info("[OrderTransactionService] 쿠폰 사용 처리 완료: userId={}, couponId={}, orderId={}",
+                userId, couponId, orderId);
     }
 
     /**

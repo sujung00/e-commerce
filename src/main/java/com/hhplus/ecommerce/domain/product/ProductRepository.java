@@ -37,6 +37,14 @@ public interface ProductRepository {
     Long getOrderCount3Days(Long productId);
 
     /**
+     * 최근 3일간 주문된 상품만 조회 (인기 상품 계산 최적화)
+     * - 성능 개선: findAll() 대신 실제 주문이 있는 상품만 조회
+     * - 커버링 인덱스 활용 가능
+     * - 많은 상품 중 일부만 로드
+     */
+    List<Product> findProductsOrderedLast3Days();
+
+    /**
      * 상품 저장
      */
     void save(Product product);

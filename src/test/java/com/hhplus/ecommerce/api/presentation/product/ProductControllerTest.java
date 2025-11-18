@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * ProductControllerTest - Presentation Layer Unit Test
- * @WebMvcTest를 사용한 통합 테스트
+ * @WebMvcTest를 사용한 HTTP 통합 테스트
  *
  * 테스트 대상: ProductController
  * - GET /products - 상품 목록 조회 (페이지네이션, 정렬)
@@ -34,11 +34,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 테스트 유형:
  * - 성공 케이스: 정상적인 페이지네이션, 정렬
  * - 경계값 테스트: 첫 페이지, 마지막 페이지, 최소/최대 size
- * - 실패 케이스: 유효하지 않은 파라미터
+ * - 실패 케이스: 유효하지 않은 파라미터, 존재하지 않는 상품
+ *
+ * 특징:
+ * - MockMvc를 사용한 HTTP 요청/응답 검증
+ * - ProductService를 @MockitoBean으로 모킹
+ * - 프레젠테이션 계층만 단위 테스트 (서비스 로직 제외)
  */
 @WebMvcTest(ProductController.class)
-@DisplayName("ProductController 단위 테스트")
-@Disabled("MockMvc 라우팅 이슈 - @SpringBootTest 기반 통합 테스트(ProductControllerIntegrationTest)로 대체됨")
+@DisplayName("ProductController API 테스트")
 class ProductControllerTest {
 
     @Autowired
