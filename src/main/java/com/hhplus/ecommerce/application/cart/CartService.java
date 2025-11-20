@@ -67,6 +67,15 @@ public class CartService {
 
     /**
      * 장바구니에 아이템 추가
+     *
+     * 로직:
+     * 1. 사용자 존재 검증
+     * 2. 수량 검증
+     * 3. 장바구니 조회 또는 생성
+     * 4. 중복 항목 확인
+     *    - 있으면: 수량 업데이트
+     *    - 없으면: 새 항목 생성
+     * 5. 장바구니 총액 업데이트
      */
     public CartItemResponse addItem(Long userId, AddCartItemRequest request) {
         // 사용자 존재 검증
@@ -80,20 +89,40 @@ public class CartService {
         // 장바구니 조회 또는 생성
         Cart cart = cartRepository.findOrCreateByUserId(userId);
 
-        // CartItem 생성
-        CartItem cartItem = CartItem.builder()
-                .cartId(cart.getCartId())
-                .productId(request.getProductId())
-                .optionId(request.getOptionId())
-                .quantity(request.getQuantity())
-                .unitPrice(getProductPrice(request.getProductId()))
-                .subtotal((long) request.getQuantity() * getProductPrice(request.getProductId()))
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
+        // 중복 항목 확인
+        var existingItem = cartRepository.findCartItem(
+                cart.getCartId(),
+                request.getProductId(),
+                request.getOptionId()
+        );
 
-        // CartItem 저장
-        CartItem savedItem = cartRepository.saveCartItem(cartItem);
+        CartItem savedItem;
+        if (existingItem.isPresent()) {
+            // 이미 있으면 수량을 업데이트
+            CartItem item = existingItem.get();
+            int newQuantity = item.getQuantity() + request.getQuantity();
+            validateQuantity(newQuantity);  // 업데이트 후 수량 검증
+
+            item.setQuantity(newQuantity);
+            item.setSubtotal((long) newQuantity * item.getUnitPrice());
+            item.setUpdatedAt(LocalDateTime.now());
+
+            savedItem = cartRepository.saveCartItem(item);
+        } else {
+            // 중복되지 않는 경우 새로 생성
+            CartItem cartItem = CartItem.builder()
+                    .cartId(cart.getCartId())
+                    .productId(request.getProductId())
+                    .optionId(request.getOptionId())
+                    .quantity(request.getQuantity())
+                    .unitPrice(getProductPrice(request.getProductId()))
+                    .subtotal((long) request.getQuantity() * getProductPrice(request.getProductId()))
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+
+            savedItem = cartRepository.saveCartItem(cartItem);
+        }
 
         // 장바구니 업데이트
         updateCartTotals(cart);
