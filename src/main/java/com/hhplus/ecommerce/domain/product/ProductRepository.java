@@ -31,6 +31,21 @@ public interface ProductRepository {
     Optional<ProductOption> findOptionById(Long optionId);
 
     /**
+     * 비관적 락을 사용하여 옵션 ID로 옵션 조회
+     * SELECT ... FOR UPDATE로 즉시 락 획득
+     *
+     * 용도: 재고 차감 시 동시성 제어
+     * 특징:
+     * - 여러 스레드의 동시 접근 시 순서대로 처리
+     * - 초과 판매 방지
+     * - Race Condition 완벽 차단
+     *
+     * @param optionId 옵션 ID
+     * @return 비관적 락이 적용된 ProductOption
+     */
+    Optional<ProductOption> findOptionByIdForUpdate(Long optionId);
+
+    /**
      * 최근 3일 주문 수량 조회
      * Application 계층에서 인기 상품 계산 시 사용
      */

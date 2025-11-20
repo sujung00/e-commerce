@@ -78,5 +78,10 @@ public class MySQLCartRepository implements CartRepository {
     public List<CartItem> getCartItems(Long cartId) {
         return cartItemJpaRepository.findByCartId(cartId);
     }
+
+    @Override
+    public Optional<CartItem> findCartItem(Long cartId, Long productId, Long optionId) {
+        return cartItemJpaRepository.findByCartIdAndProductIdAndOptionId(cartId, productId, optionId);
+    }
 }
 

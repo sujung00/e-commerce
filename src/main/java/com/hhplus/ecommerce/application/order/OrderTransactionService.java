@@ -18,8 +18,12 @@ import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Recover;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.persistence.OptimisticLockException;
 
 import java.util.List;
 import java.util.Set;
@@ -67,18 +71,32 @@ public class OrderTransactionService {
     }
 
     /**
-     * 2단계: 원자적 거래 처리 (@Transactional)
+     * 2단계: 원자적 거래 처리 (@Transactional + @Retryable)
      *
      * 프록시를 통해 호출되므로 @Transactional이 정상 작동합니다.
      * 다음 작업이 하나의 트랜잭션으로 처리됩니다:
-     * - 재고 차감 (Domain 메서드 사용)
+     * - 재고 차감 (Domain 메서드 사용, 낙관적 락 @Version)
      * - 사용자 잔액 차감 (Domain 메서드 사용)
      * - 주문 저장
      * - 주문 항목 저장
      * - 쿠폰 사용 처리
      * - Outbox 메시지 저장 (3단계: 외부 전송 대기)
      *
+     * 동시성 제어:
+     * - OptimisticLockException 발생 시 @Retryable로 자동 재시도
+     * - maxAttempts=3: 최대 3회 재시도
+     * - backoff: Exponential Backoff with Jitter (Thundering Herd 방지)
+     *   - delay=50ms: 초기 대기 시간
+     *   - multiplier=2: 매 재시도마다 2배 증가 (50ms → 100ms → 200ms)
+     *   - maxDelay=1000ms: 최대 대기 시간 1초
+     *   - random=true: Jitter 추가로 동시 재시도 분산
+     * - maxAttempts 초과 시 handleOptimisticLockException() @Recover 호출
+     *
      * 실패 시 모든 변경사항 롤백
+     *
+     * SCENARIO 16: 낙관적 락 재시도 폭증 (Thundering Herd)
+     * - 문제: 100명이 동시에 같은 상품 구매 → 모두 OptimisticLockException → 500번 이상 재시도
+     * - 해결: maxAttempts=3 제한 + Jitter로 동시 재시도 분산
      *
      * @param userId 사용자 ID
      * @param orderItems 주문 항목 리스트 (Application DTO)
@@ -87,8 +105,19 @@ public class OrderTransactionService {
      * @param subtotal 소계
      * @param finalAmount 최종 결제액
      * @return 저장된 주문
+     * @throws OptimisticLockException 재시도 초과 시 예외 발생
      */
     @Transactional
+    @Retryable(
+        value = OptimisticLockException.class,
+        maxAttempts = 3,
+        backoff = @Backoff(
+            delay = 50,
+            multiplier = 2,
+            maxDelay = 1000,
+            random = true
+        )
+    )
     public Order executeTransactionalOrder(
             Long userId,
             List<OrderItemDto> orderItems,
@@ -210,25 +239,50 @@ public class OrderTransactionService {
     }
 
     /**
-     * 쿠폰 사용 처리
-     * UPDATE user_coupons SET status = 'USED', used_at = NOW() WHERE user_id = ? AND coupon_id = ?
+     * 쿠폰 사용 처리 (Pessimistic Lock 적용)
      *
-     * ✅ 수정: String "USED" → Enum UserCouponStatus.USED
-     * ✅ orderId 제거: user_coupons는 coupon 보유 상태만 관리하고,
-     *                  쿠폰 사용은 orders.coupon_id로 추적
+     * 동시성 제어: TOCTOU 문제 방지
+     * - findByUserIdAndCouponIdForUpdate()를 사용하여 SELECT ... FOR UPDATE 적용
+     * - DB 레벨 비관적 락으로 쿠폰 중복 사용 방지
+     * - 쿠폰 상태 확인 후 USED로 변경
+     * - 이 메서드는 @Transactional executeTransactionalOrder() 내에서 호출되므로
+     *   모든 작업이 원자적으로 처리됨
+     *
+     * 플로우:
+     * 1. 쿠폰을 비관적 락으로 조회 (SELECT ... FOR UPDATE)
+     * 2. 쿠폰 상태 검증 (UNUSED 상태인지 확인)
+     * 3. 쿠폰 상태를 USED로 변경
+     * 4. used_at 타임스탬프 설정
+     * 5. DB에 저장
+     * 6. 트랜잭션 커밋 시 모든 변경사항 원자적 반영
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
+     * @param orderId 주문 ID
+     * @throws IllegalArgumentException 쿠폰을 찾을 수 없거나 이미 사용된 경우
      */
     private void markCouponAsUsed(Long userId, Long couponId, Long orderId) {
-        UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
+        // ✅ 비관적 락 적용: SELECT ... FOR UPDATE로 즉시 락 획득
+        // 다른 트랜잭션이 동시에 이 쿠폰을 사용하려고 하면 대기
+        UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponIdForUpdate(userId, couponId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자 쿠폰을 찾을 수 없습니다"));
 
-        // ✅ 수정: Enum을 사용하여 상태 변경
+        // ✅ 쿠폰 상태 검증: UNUSED 상태인지 확인
+        if (userCoupon.getStatus() != UserCouponStatus.UNUSED) {
+            throw new IllegalArgumentException(
+                    "쿠폰은 UNUSED 상태여야 합니다. 현재 상태: " + userCoupon.getStatus());
+        }
+
+        // ✅ 쿠폰 상태를 USED로 변경
         userCoupon.setStatus(UserCouponStatus.USED);
         userCoupon.setUsedAt(java.time.LocalDateTime.now());
 
+        // ✅ DB에 저장 (executeTransactionalOrder() 메서드의 @Transactional에 의해 원자적 처리)
         userCouponRepository.update(userCoupon);
 
-        log.info("[OrderTransactionService] 쿠폰 사용 처리 완료: userId={}, couponId={}, orderId={}",
-                userId, couponId, orderId);
+        log.info("[OrderTransactionService] 쿠폰 사용 처리 완료 (Pessimistic Lock 적용): " +
+                "userId={}, couponId={}, orderId={}, status={}",
+                userId, couponId, orderId, userCoupon.getStatus());
     }
 
     /**
@@ -259,5 +313,56 @@ public class OrderTransactionService {
             // 저장소에 반영
             productRepository.save(product);
         }
+    }
+
+    /**
+     * OptimisticLockException 복구 메서드 (@Recover)
+     *
+     * 역할:
+     * - @Retryable의 maxAttempts를 초과했을 때 호출됨
+     * - OptimisticLockException 발생 후 3회 재시도 모두 실패한 경우 처리
+     *
+     * SCENARIO 16: 낙관적 락 재시도 폭증 (Thundering Herd)
+     * - 100명이 동시에 같은 상품 구매
+     * - 모두 OptimisticLockException 발생 → 각각 3회 재시도 (총 300회)
+     * - 여전히 실패 시 이 메서드가 호출됨
+     * - 사용자에게 명확한 오류 메시지 반환
+     *
+     * 플로우:
+     * 1. 첫 번째 시도 실패 (OptimisticLockException)
+     * 2. 50ms 대기 후 재시도 (random jitter 추가)
+     * 3. 두 번째 재시도 실패
+     * 4. 100ms 대기 (multiplier=2) 후 재시도 (random jitter 추가)
+     * 5. 세 번째 재시도 실패
+     * 6. maxAttempts 초과 → handleOptimisticLockException() 호출
+     * 7. 최종 예외 발생 (사용자에게 "재고 부족" 메시지 반환)
+     *
+     * @param exception OptimisticLockException
+     * @param userId 사용자 ID
+     * @param orderItems 주문 항목 리스트
+     * @param couponId 쿠폰 ID
+     * @param couponDiscount 쿠폰 할인액
+     * @param subtotal 소계
+     * @param finalAmount 최종 결제액
+     * @return Order (이 메서드는 예외를 던지므로 반환하지 않음)
+     * @throws OptimisticLockException 최종 실패 (3회 재시도 후)
+     */
+    @Recover
+    public Order handleOptimisticLockException(
+            OptimisticLockException exception,
+            Long userId,
+            List<OrderItemDto> orderItems,
+            Long couponId,
+            Long couponDiscount,
+            Long subtotal,
+            Long finalAmount) {
+
+        log.error("[OrderTransactionService] 낙관적 락 재시도 초과 - userId={}, maxAttempts=3 모두 실패", userId);
+
+        throw new OptimisticLockException(
+                "상품 재고가 부족하거나 동시 주문으로 인한 충돌이 발생했습니다. " +
+                "잠시 후 다시 시도해주세요. (재시도 초과)",
+                exception
+        );
     }
 }

@@ -76,9 +76,13 @@ public class Order {
      * 주문 생성 팩토리 메서드 (정적 팩토리)
      *
      * 비즈니스 규칙:
-     * - 주문은 항상 COMPLETED 상태로 생성
+     * - 주문은 항상 PENDING 상태로 생성 (결제 대기)
      * - 쿠폰 할인은 0 이상이어야 함
      * - 최종 금액은 0 이상이어야 함
+     *
+     * 상태 전환:
+     * PENDING (생성) → PAID (결제 성공) → COMPLETED (배송 완료)
+     *              → FAILED (결제 실패) → CANCELLED (보상 처리 완료)
      */
     public static Order createOrder(Long userId, Long couponId, Long couponDiscount, Long subtotal, Long finalAmount) {
         if (finalAmount < 0) {
@@ -94,7 +98,7 @@ public class Order {
                 .couponDiscount(couponDiscount)
                 .subtotal(subtotal)
                 .finalAmount(finalAmount)
-                .orderStatus(OrderStatus.COMPLETED)
+                .orderStatus(OrderStatus.PENDING)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -130,17 +134,48 @@ public class Order {
     }
 
     /**
-     * 상태 전환: COMPLETED → CANCELLED
+     * 상태 전환: 결제 성공 (PENDING → PAID)
      *
      * 비즈니스 규칙:
-     * - COMPLETED 상태인 주문만 취소 가능
+     * - PENDING 상태인 주문만 결제 완료로 변경 가능
+     */
+    public void markAsPaid() {
+        if (this.orderStatus != OrderStatus.PENDING) {
+            throw new InvalidOrderStatusException(this.orderId,
+                    "결제 완료로 변경할 수 없습니다. 현재 상태: " + this.orderStatus.name());
+        }
+        this.orderStatus = OrderStatus.PAID;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 상태 전환: 결제 실패 (PENDING → FAILED)
+     *
+     * 비즈니스 규칙:
+     * - PENDING 상태인 주문만 결제 실패로 변경 가능
+     */
+    public void markAsFailed() {
+        if (this.orderStatus != OrderStatus.PENDING) {
+            throw new InvalidOrderStatusException(this.orderId,
+                    "결제 실패로 변경할 수 없습니다. 현재 상태: " + this.orderStatus.name());
+        }
+        this.orderStatus = OrderStatus.FAILED;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 상태 전환: 취소/보상 처리 완료 (FAILED/COMPLETED → CANCELLED)
+     *
+     * 비즈니스 규칙:
+     * - COMPLETED 또는 FAILED 상태인 주문만 취소 가능
      * - 취소 시 현재 시간을 기록
      *
      * @throws InvalidOrderStatusException 주문이 취소 가능한 상태가 아님
      */
     public void cancel() {
-        if (this.orderStatus != OrderStatus.COMPLETED) {
-            throw new InvalidOrderStatusException(this.orderId, this.orderStatus.name());
+        if (this.orderStatus != OrderStatus.COMPLETED && this.orderStatus != OrderStatus.FAILED) {
+            throw new InvalidOrderStatusException(this.orderId,
+                    "취소할 수 없습니다. 현재 상태: " + this.orderStatus.name());
         }
         this.orderStatus = OrderStatus.CANCELLED;
         this.cancelledAt = LocalDateTime.now();
@@ -151,7 +186,7 @@ public class Order {
      * 주문이 취소 가능한 상태인지 확인
      */
     public boolean isCancellable() {
-        return this.orderStatus == OrderStatus.COMPLETED;
+        return this.orderStatus == OrderStatus.COMPLETED || this.orderStatus == OrderStatus.FAILED;
     }
 
     /**
@@ -166,6 +201,27 @@ public class Order {
      */
     public boolean isCompleted() {
         return this.orderStatus == OrderStatus.COMPLETED;
+    }
+
+    /**
+     * 주문이 결제 대기 상태인지 확인
+     */
+    public boolean isPending() {
+        return this.orderStatus == OrderStatus.PENDING;
+    }
+
+    /**
+     * 주문이 결제 완료 상태인지 확인
+     */
+    public boolean isPaid() {
+        return this.orderStatus == OrderStatus.PAID;
+    }
+
+    /**
+     * 주문이 결제 실패 상태인지 확인
+     */
+    public boolean isFailed() {
+        return this.orderStatus == OrderStatus.FAILED;
     }
 
     /**
