@@ -63,8 +63,12 @@ public class Product {
      * - 옵션 추가/제거는 service 계층에서 명시적으로 처리
      * - 상품 삭제 시 옵션이 자동 삭제되면 안됨 (데이터 무결성)
      * - @JoinColumn의 insertable=false, updatable=false로 읽기 전용 관계 설정
+     *
+     * ✅ FetchType.EAGER로 변경:
+     * - 동시 주문 시 validator에서 lazy loading 오류 방지
+     * - 검증 단계에서 옵션 조회가 필수적이므로 eager 로딩 적합
      */
-    @OneToMany(fetch = FetchType.LAZY)
+    @OneToMany(fetch = FetchType.EAGER)
     @JoinColumn(name = "product_id", insertable = false, updatable = false)
     @Builder.Default
     private List<ProductOption> options = new ArrayList<>();
