@@ -1,97 +1,40 @@
-package com.hhplus.ecommerce.api.presentation.coupon;
+package com.hhplus.ecommerce.presentation.product;
 
 import com.hhplus.ecommerce.integration.BaseIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * CouponController 통합 테스트
- * MySQL 기반 테스트 환경에서 WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
+ * ProductController 통합 테스트
+ * 실제 MySQL 테스트 DB를 사용하여 WebEnvironment.RANDOM_PORT와 TestRestTemplate을 통한 HTTP 요청 테스트
  * Testcontainers를 사용하여 자동으로 MySQL 컨테이너 관리
  *
- * 테스트 대상: CouponController
- * - POST /coupons/issue - 쿠폰 발급 (X-USER-ID 헤더)
- * - GET /coupons/issued - 사용자 쿠폰 조회 (X-USER-ID 헤더)
- * - GET /coupons - 사용 가능한 쿠폰 조회
+ * 테스트 대상: ProductController
+ * - GET /products - 상품 목록 조회
+ * - GET /products/{product_id} - 상품 상세 조회
+ * - GET /products/popular - 인기 상품 조회
  */
-@DisplayName("CouponController 통합 테스트")
-class CouponControllerIntegrationTest extends BaseIntegrationTest {
+@DisplayName("ProductController 통합 테스트")
+class ProductControllerIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
 
-    private static final Long TEST_USER_ID = 1L;
-    private static final Long TEST_COUPON_ID = 1L;
-
-    /**
-     * X-USER-ID 헤더를 포함한 HttpHeaders 생성
-     */
-    private HttpHeaders createHeaders(Long userId) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-USER-ID", String.valueOf(userId));
-        return headers;
-    }
+    private static final Long TEST_PRODUCT_ID = 1L;
+    private static final Long NON_EXISTENT_PRODUCT_ID = 99999L;
 
     @Test
-    @DisplayName("쿠폰 발급 - 요청 처리")
-    void testIssueCoupon_Request() {
-        // Given
-        HttpEntity<Void> entity = new HttpEntity<>(createHeaders(TEST_USER_ID));
-
-        // When
-        ResponseEntity<String> response = restTemplate.exchange(
-                "/coupons/issue?coupon_id=" + TEST_COUPON_ID,
-                org.springframework.http.HttpMethod.POST,
-                entity,
-                String.class
-        );
-
-        // Then
-        assertNotNull(response.getStatusCode(),
-                "응답 상태 코드가 null이 아니어야 합니다");
-        assertTrue(response.getStatusCode().is2xxSuccessful() ||
-                   response.getStatusCode().is4xxClientError() ||
-                   response.getStatusCode().is5xxServerError(),
-                "응답 코드는 2xx, 4xx, 또는 5xx이어야 합니다");
-    }
-
-    @Test
-    @DisplayName("사용자 쿠폰 조회 - 요청 처리")
-    void testGetUserCoupons_Request() {
-        // Given
-        HttpEntity<Void> entity = new HttpEntity<>(createHeaders(TEST_USER_ID));
-
-        // When
-        ResponseEntity<String> response = restTemplate.exchange(
-                "/coupons/issued",
-                org.springframework.http.HttpMethod.GET,
-                entity,
-                String.class
-        );
-
-        // Then
-        assertNotNull(response.getStatusCode(),
-                "응답 상태 코드가 null이 아니어야 합니다");
-        assertTrue(response.getStatusCode().is2xxSuccessful() ||
-                   response.getStatusCode().is4xxClientError() ||
-                   response.getStatusCode().is5xxServerError(),
-                "응답 코드는 2xx, 4xx, 또는 5xx이어야 합니다");
-    }
-
-    @Test
-    @DisplayName("사용 가능한 쿠폰 조회 - 요청 처리")
-    void testGetAvailableCoupons_Request() {
+    @DisplayName("상품 목록 조회 - 성공")
+    void testGetProductList_Success() {
         // When
         ResponseEntity<String> response = restTemplate.getForEntity(
-                "/coupons",
+                "/products",
                 String.class
         );
 
@@ -105,11 +48,63 @@ class CouponControllerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("사용 가능한 쿠폰 조회 - 페이지네이션")
-    void testGetAvailableCoupons_WithPagination() {
+    @DisplayName("상품 목록 조회 - 페이지네이션")
+    void testGetProductList_WithPagination() {
         // When
         ResponseEntity<String> response = restTemplate.getForEntity(
-                "/coupons?page=0&size=5",
+                "/products?page=0&size=10",
+                String.class
+        );
+
+        // Then
+        assertNotNull(response.getStatusCode(),
+                "응답 상태 코드가 null이 아니어야 합니다");
+        assertTrue(response.getStatusCode().is2xxSuccessful() ||
+                   response.getStatusCode().is4xxClientError() ||
+                   response.getStatusCode().is5xxServerError(),
+                "응답 코드는 2xx, 4xx, 또는 5xx이어야 합니다");
+    }
+
+    @Test
+    @DisplayName("상품 상세 조회 - 성공")
+    void testGetProductDetail_Success() {
+        // When
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "/products/" + TEST_PRODUCT_ID,
+                String.class
+        );
+
+        // Then
+        assertNotNull(response.getStatusCode(),
+                "응답 상태 코드가 null이 아니어야 합니다");
+        assertTrue(response.getStatusCode().is2xxSuccessful() ||
+                   response.getStatusCode().is4xxClientError() ||
+                   response.getStatusCode().is5xxServerError(),
+                "응답 코드는 2xx, 4xx, 또는 5xx이어야 합니다");
+    }
+
+    @Test
+    @DisplayName("상품 상세 조회 - 404 Not Found")
+    void testGetProductDetail_NotFound() {
+        // When
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "/products/" + NON_EXISTENT_PRODUCT_ID,
+                String.class
+        );
+
+        // Then
+        assertTrue(response.getStatusCode() == HttpStatus.NOT_FOUND ||
+                   response.getStatusCode().is4xxClientError() ||
+                   response.getStatusCode().is5xxServerError(),
+                "존재하지 않는 상품은 4xx 또는 5xx를 반환해야 합니다");
+    }
+
+    @Test
+    @DisplayName("인기 상품 조회 - 성공")
+    void testGetPopularProducts_Success() {
+        // When
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "/products/popular",
                 String.class
         );
 

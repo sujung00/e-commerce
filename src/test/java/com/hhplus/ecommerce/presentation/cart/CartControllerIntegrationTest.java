@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.api.presentation.cart;
+package com.hhplus.ecommerce.presentation.cart;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hhplus.ecommerce.integration.BaseIntegrationTest;

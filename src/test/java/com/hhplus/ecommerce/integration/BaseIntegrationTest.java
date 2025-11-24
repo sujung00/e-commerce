@@ -35,7 +35,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * - 테스트 간 완벽한 격리
  * - 별도의 bash 스크립트나 설치 필요 없음 (Docker만 필요)
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional
 @Testcontainers
 @ContextConfiguration(initializers = BaseIntegrationTest.TestContainersInitializer.class)
@@ -44,8 +44,9 @@ public abstract class BaseIntegrationTest {
     @Container
     static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("ecommerce_test")
-            .withUsername("root")
-            .withPassword("root");
+            .withUsername("testuser")
+            .withPassword("testpass")
+            .withEnv("MYSQL_ROOT_PASSWORD", "testroot");
 
     /**
      * TestContainers 동적 포트를 Spring 설정에 전달하는 Initializer

@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.api.presentation.coupon;
+package com.hhplus.ecommerce.presentation.coupon;
 
 import com.hhplus.ecommerce.integration.BaseIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
