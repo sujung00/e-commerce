@@ -18,26 +18,25 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * CouponService - Application 계층
  *
  * 역할:
  * - 쿠폰 발급, 조회 비즈니스 로직 처리
- * - 동시성 제어 (선착순 발급)
+ * - DB 레벨 동시성 제어 (선착순 발급)
  * - 도메인 엔티티 검증
  *
- * 특징:
- * - 비관적 락 (SELECT ... FOR UPDATE) 시뮬레이션
- *   - synchronized 블록으로 쿠폰을 잠금
- *   - 다른 요청이 락을 획득할 때까지 대기
+ * 동시성 제어 전략:
+ * - DB 레벨의 비관적 락 (SELECT ... FOR UPDATE)
+ * - findByIdForUpdate()가 트랜잭션 내 exclusive lock 획득
+ * - synchronized 키워드 제거 (단일 인스턴스 전용, 분산 환경 미지원)
  * - 원자적 감소: remaining_qty--, version++
  * - UNIQUE(user_id, coupon_id) 제약으로 중복 발급 방지
  *
  * 흐름 (sequence-diagrams.md 5번 기반):
  * 1. 사용자 존재 검증 (읽기 전용)
- * 2. 비관적 락 획득: SELECT ... FOR UPDATE
+ * 2. 비관적 락 획득: SELECT ... FOR UPDATE (DB 레벨)
  * 3-5. 조건 검증: is_active, valid_from/until, remaining_qty
  * 6. 원자적 감소: remaining_qty--, version++
  * 7. UNIQUE 검증: UNIQUE(user_id, coupon_id)
@@ -125,71 +124,75 @@ public class CouponService {
 
     /**
      * 쿠폰 발급 (락 포함)
-     * 실제 비관적 락과 쿠폰 감소 로직 수행
+     * DB 레벨의 비관적 락(SELECT ... FOR UPDATE)을 사용한 안전한 구현
+     *
+     * 동시성 제어 전략:
+     * - findByIdForUpdate()가 이미 DB 레벨의 SELECT...FOR UPDATE를 수행
+     * - 트랜잭션 내에서 exclusive lock 획득, 다른 요청들은 자동으로 대기
+     * - synchronized 키워드는 단일 인스턴스에서만 작동하므로 제거
+     * - DB 레벨 락이 분산 환경에서의 동시성 제어를 더 안전하게 보장
      */
     private IssueCouponResponse issueCouponWithLock(Long userId, Long couponId) {
-        // === 2단계: 비관적 락 획득 ===
-        // SELECT coupons WHERE coupon_id=? FOR UPDATE (InMemory: synchronized)
+        // === 2단계: DB 레벨 비관적 락 획득 ===
+        // SELECT coupons WHERE coupon_id=? FOR UPDATE
+        // 다른 트랜잭션의 접근을 자동으로 차단함 (synchronized 제거됨)
         Coupon coupon = couponRepository.findByIdForUpdate(couponId)
                 .orElseThrow(() -> new CouponNotFoundException(couponId));
 
-        // synchronized 블록: 다른 요청 차단 (FOR UPDATE 시뮬레이션)
-        synchronized (coupon) {
-            // === 3-5단계: 조건 검증 (락 획득 후) ===
+        // === 3-5단계: 조건 검증 (DB 락 획득 후) ===
 
-            // 3. 쿠폰 활성화 상태 검증
-            if (!Boolean.TRUE.equals(coupon.getIsActive())) {
-                throw new IllegalArgumentException("쿠폰이 비활성화되어 있습니다");
-            }
-
-            // 4. 유효 기간 검증
-            LocalDateTime now = LocalDateTime.now();
-            if (now.isBefore(coupon.getValidFrom())) {
-                throw new IllegalArgumentException("쿠폰이 유효기간을 벗어났습니다");
-            }
-            if (now.isAfter(coupon.getValidUntil())) {
-                throw new IllegalArgumentException("쿠폰이 유효기간을 벗어났습니다");
-            }
-
-            // 5. 재고 검증 (remaining_qty > 0)
-            if (coupon.getRemainingQty() <= 0) {
-                throw new IllegalArgumentException("쿠폰이 모두 소진되었습니다");
-            }
-
-            // === 6단계: 원자적 감소 (UPDATE) ===
-            // UPDATE coupons SET remaining_qty--, version++ WHERE coupon_id=?
-            coupon.setRemainingQty(coupon.getRemainingQty() - 1);
-            coupon.setVersion(coupon.getVersion() + 1);
-            coupon.setUpdatedAt(LocalDateTime.now());
-            couponRepository.update(coupon);
-
-            // === 7단계: UNIQUE 검증 ===
-            // UNIQUE(user_id, coupon_id) 제약 확인
-            boolean alreadyIssued = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
-                    .isPresent();
-            if (alreadyIssued) {
-                throw new IllegalArgumentException("이 쿠폰은 이미 발급받으셨습니다");
-            }
-
-            // === 8단계: 발급 기록 저장 ===
-            // INSERT user_coupons(user_id, coupon_id, status='UNUSED', issued_at=NOW())
-            // USER_COUPONS은 "쿠폰 보유 상태"만 관리
-            // 쿠폰 사용 여부는 ORDERS.coupon_id로 추적
-            UserCoupon userCoupon = UserCoupon.builder()
-                    .userId(userId)
-                    .couponId(couponId)
-                    .status(UserCouponStatus.UNUSED)  // 발급 시 미사용 상태로 설정
-                    .issuedAt(LocalDateTime.now())
-                    .usedAt(null)
-                    .build();
-            UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
-
-            log.info("[CouponService] 쿠폰 발급 완료: userId={}, couponId={}, userCouponId={}, remaining_qty={}, version={}",
-                    userId, couponId, savedUserCoupon.getUserCouponId(), coupon.getRemainingQty(), coupon.getVersion());
-
-            return IssueCouponResponse.from(savedUserCoupon, coupon);
+        // 3. 쿠폰 활성화 상태 검증
+        if (!Boolean.TRUE.equals(coupon.getIsActive())) {
+            throw new IllegalArgumentException("쿠폰이 비활성화되어 있습니다");
         }
-        // synchronized 블록 종료: 락 해제
+
+        // 4. 유효 기간 검증
+        LocalDateTime now = LocalDateTime.now();
+        if (now.isBefore(coupon.getValidFrom())) {
+            throw new IllegalArgumentException("쿠폰이 유효기간을 벗어났습니다");
+        }
+        if (now.isAfter(coupon.getValidUntil())) {
+            throw new IllegalArgumentException("쿠폰이 유효기간을 벗어났습니다");
+        }
+
+        // 5. 재고 검증 (remaining_qty > 0)
+        if (coupon.getRemainingQty() <= 0) {
+            throw new IllegalArgumentException("쿠폰이 모두 소진되었습니다");
+        }
+
+        // === 6단계: 원자적 감소 (UPDATE) ===
+        // UPDATE coupons SET remaining_qty--, version++ WHERE coupon_id=?
+        // DB 래벨 락 내에서 수행되므로 원자성 보장됨
+        coupon.setRemainingQty(coupon.getRemainingQty() - 1);
+        coupon.setVersion(coupon.getVersion() + 1);
+        coupon.setUpdatedAt(LocalDateTime.now());
+        couponRepository.update(coupon);
+
+        // === 7단계: UNIQUE 검증 ===
+        // UNIQUE(user_id, coupon_id) 제약 확인
+        boolean alreadyIssued = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
+                .isPresent();
+        if (alreadyIssued) {
+            throw new IllegalArgumentException("이 쿠폰은 이미 발급받으셨습니다");
+        }
+
+        // === 8단계: 발급 기록 저장 ===
+        // INSERT user_coupons(user_id, coupon_id, status='UNUSED', issued_at=NOW())
+        // USER_COUPONS은 "쿠폰 보유 상태"만 관리
+        // 쿠폰 사용 여부는 ORDERS.coupon_id로 추적
+        UserCoupon userCoupon = UserCoupon.builder()
+                .userId(userId)
+                .couponId(couponId)
+                .status(UserCouponStatus.UNUSED)  // 발급 시 미사용 상태로 설정
+                .issuedAt(LocalDateTime.now())
+                .usedAt(null)
+                .build();
+        UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
+
+        log.info("[CouponService] 쿠폰 발급 완료: userId={}, couponId={}, userCouponId={}, remaining_qty={}, version={}",
+                userId, couponId, savedUserCoupon.getUserCouponId(), coupon.getRemainingQty(), coupon.getVersion());
+
+        return IssueCouponResponse.from(savedUserCoupon, coupon);
     }
 
     /**
