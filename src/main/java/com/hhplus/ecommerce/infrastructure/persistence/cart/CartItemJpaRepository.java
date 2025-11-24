@@ -4,6 +4,7 @@ import com.hhplus.ecommerce.domain.cart.CartItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * CartItem JPA Repository
@@ -11,4 +12,15 @@ import java.util.List;
  */
 public interface CartItemJpaRepository extends JpaRepository<CartItem, Long> {
     List<CartItem> findByCartId(Long cartId);
+
+    /**
+     * 장바구니에서 특정 상품+옵션 조합으로 아이템 조회
+     * 중복 항목 확인 및 수량 누적 처리용
+     *
+     * @param cartId 장바구니 ID
+     * @param productId 상품 ID
+     * @param optionId 옵션 ID
+     * @return 해당 아이템 (있으면), 없으면 empty
+     */
+    Optional<CartItem> findByCartIdAndProductIdAndOptionId(Long cartId, Long productId, Long optionId);
 }
