@@ -48,6 +48,9 @@ dependencies {
     implementation 'org.springframework.retry:spring-retry:2.0.5'
     // Spring Aspects - @Retryable, @Recover 어노테이션 프록시 처리
     implementation 'org.springframework:spring-aspects:6.1.3'
+
+    // Redisson - Redis 분산락 구현
+    implementation 'org.redisson:redisson-spring-boot-starter:3.18.0'
 }
 
 tasks.named('test') {

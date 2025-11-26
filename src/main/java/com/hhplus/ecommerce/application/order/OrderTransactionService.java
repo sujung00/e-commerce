@@ -17,6 +17,8 @@ import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
+import com.hhplus.ecommerce.application.user.UserBalanceService;
+import com.hhplus.ecommerce.infrastructure.lock.DistributedLock;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.retry.annotation.Retryable;
@@ -58,21 +60,24 @@ public class OrderTransactionService {
     private final UserRepository userRepository;
     private final OutboxRepository outboxRepository;
     private final UserCouponRepository userCouponRepository;
+    private final UserBalanceService userBalanceService;
 
     public OrderTransactionService(OrderRepository orderRepository,
                                    ProductRepository productRepository,
                                    UserRepository userRepository,
                                    OutboxRepository outboxRepository,
-                                   UserCouponRepository userCouponRepository) {
+                                   UserCouponRepository userCouponRepository,
+                                   UserBalanceService userBalanceService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.outboxRepository = outboxRepository;
         this.userCouponRepository = userCouponRepository;
+        this.userBalanceService = userBalanceService;
     }
 
     /**
-     * 2단계: 원자적 거래 처리 (@Transactional + @Retryable)
+     * 2단계: 원자적 거래 처리 (@Transactional + @Retryable + @DistributedLock)
      *
      * 프록시를 통해 호출되므로 @Transactional이 정상 작동합니다.
      * 다음 작업이 하나의 트랜잭션으로 처리됩니다:
@@ -84,6 +89,10 @@ public class OrderTransactionService {
      * - Outbox 메시지 저장 (3단계: 외부 전송 대기)
      *
      * 동시성 제어:
+     * - @DistributedLock: Redis 기반 분산락 (key: "order:{orderId}")
+     *   - waitTime=5초: 최대 5초 동안 락 획득 시도
+     *   - leaseTime=2초: 락 유지 시간 2초
+     *   - 락 획득 실패 시 RuntimeException 발생
      * - OptimisticLockException 발생 시 @Retryable로 자동 재시도
      * - maxAttempts=3: 최대 3회 재시도
      * - backoff: Exponential Backoff with Jitter (Thundering Herd 방지)
@@ -107,7 +116,9 @@ public class OrderTransactionService {
      * @param finalAmount 최종 결제액
      * @return 저장된 주문
      * @throws OptimisticLockException 재시도 초과 시 예외 발생
+     * @throws RuntimeException 분산락 획득 실패 시 예외 발생
      */
+    @DistributedLock(key = "order:#p0", waitTime = 5, leaseTime = 2)
     @Transactional
     @Retryable(
         value = OptimisticLockException.class,
@@ -220,35 +231,25 @@ public class OrderTransactionService {
     }
 
     /**
-     * 사용자 잔액 차감 (Domain 메서드 활용 + 비관적 락)
+     * 사용자 잔액 차감 (UserBalanceService 활용)
      *
      * 동시성 제어:
-     * - findByIdForUpdate()로 SELECT ... FOR UPDATE 적용 (비관적 락)
-     * - 동시 충전/결제 시 Lost Update 방지
-     * - 잔액 변경 작업이 완료될 때까지 다른 트랜잭션은 대기
-     *
-     * User.deductBalance() 메서드가 다음을 처리합니다:
-     * - 잔액 검증 (InsufficientBalanceException 발생)
-     * - 잔액 차감
-     * - 업데이트된 사용자 반환
+     * - UserBalanceService.deductBalance()에서 처리:
+     *   1. @DistributedLock: Redis 기반 분산락 (key: "balance:{userId}")
+     *   2. findByIdForUpdate(): DB 레벨 비관적 락 (SELECT ... FOR UPDATE)
+     *   3. User.deductBalance(): 잔액 검증 및 차감
+     * - 분산 환경에서의 동시 접근 완벽 제어
      *
      * @param userId 사용자 ID
      * @param finalAmount 차감할 금액
      * @throws UserNotFoundException 사용자를 찾을 수 없음
      * @throws InsufficientBalanceException 잔액 부족
+     * @throws RuntimeException 분산락 획득 실패
      */
     private void deductUserBalance(Long userId, Long finalAmount) {
-        // ✅ 비관적 락 적용: SELECT ... FOR UPDATE로 잠금 획득
-        // 동시 충전/결제 시 Lost Update 방지
-        User user = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new UserNotFoundException(userId));
-
-        // Domain 메서드 호출 (User가 잔액 검증 및 차감)
-        // 예외 처리: InsufficientBalanceException
-        user.deductBalance(finalAmount);
-
-        // 저장소에 반영
-        userRepository.save(user);
+        // UserBalanceService에서 분산락 + 트랜잭션 처리
+        // 별도 프록시를 통해 호출되므로 @DistributedLock이 정상 작동
+        userBalanceService.deductBalance(userId, finalAmount);
     }
 
     /**
