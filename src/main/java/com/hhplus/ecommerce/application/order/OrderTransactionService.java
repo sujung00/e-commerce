@@ -7,6 +7,7 @@ import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.product.ProductNotFoundException;
+import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
@@ -219,15 +220,27 @@ public class OrderTransactionService {
     }
 
     /**
-     * 사용자 잔액 차감 (Domain 메서드 활용)
+     * 사용자 잔액 차감 (Domain 메서드 활용 + 비관적 락)
+     *
+     * 동시성 제어:
+     * - findByIdForUpdate()로 SELECT ... FOR UPDATE 적용 (비관적 락)
+     * - 동시 충전/결제 시 Lost Update 방지
+     * - 잔액 변경 작업이 완료될 때까지 다른 트랜잭션은 대기
      *
      * User.deductBalance() 메서드가 다음을 처리합니다:
      * - 잔액 검증 (InsufficientBalanceException 발생)
      * - 잔액 차감
      * - 업데이트된 사용자 반환
+     *
+     * @param userId 사용자 ID
+     * @param finalAmount 차감할 금액
+     * @throws UserNotFoundException 사용자를 찾을 수 없음
+     * @throws InsufficientBalanceException 잔액 부족
      */
     private void deductUserBalance(Long userId, Long finalAmount) {
-        User user = userRepository.findById(userId)
+        // ✅ 비관적 락 적용: SELECT ... FOR UPDATE로 잠금 획득
+        // 동시 충전/결제 시 Lost Update 방지
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
         // Domain 메서드 호출 (User가 잔액 검증 및 차감)
