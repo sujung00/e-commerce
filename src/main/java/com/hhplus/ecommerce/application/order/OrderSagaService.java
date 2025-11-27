@@ -9,6 +9,7 @@ import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
+import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
 import com.hhplus.ecommerce.application.alert.AlertService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import org.springframework.stereotype.Service;
@@ -19,34 +20,33 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 /**
- * OrderSagaService - 주문 생성 및 결제 Saga 패턴 구현 (Application 계층)
+ * OrderSagaService - 포인트 기반 주문 결제 시스템 (Application 계층)
  *
  * 역할:
- * - Saga 패턴을 통한 분산 트랜잭션 조율
- * - 주문 생성 → 결제 처리 → 상태 전환
+ * - 포인트 차감을 통한 주문 결제 처리
+ * - 주문 생성과 동시에 포인트 차감 및 결제 완료
  * - 결제 실패 시 보상 트랜잭션 (Compensation) 실행
  *
- * 플로우:
+ * 현재 플로우 (포인트 기반 단순화):
  * Step 1: OrderTransactionService.executeTransactionalOrder()
- *         - 주문 생성, 재고 차감, 잔액 차감 (PENDING 상태)
- * Step 2: 외부 결제 API 호출
- * Step 3a: 결제 성공 → 주문 상태를 PAID로 변경
- * Step 3b: 결제 실패 → compensateOrder() 실행 (재고/잔액 복구, 주문 취소)
+ *         - 주문 생성, 재고 차감, 포인트 차감 (원자적 처리)
+ *         - ✅ @Transactional 메서드
+ *         - ✅ 성공 시 주문 생성 + 포인트 차감 완료 (= 결제 완료)
+ * Step 2: 실패 시 보상 트랜잭션
+ *         - 재고 복구
+ *         - 포인트 환불
+ *         - 주문 취소
  *
  * 동시성 제어:
- * - Step 1: @Transactional + Pessimistic Lock (쿠폰, 재고)
- * - Step 2: 트랜잭션 외부 (외부 API 호출은 원자성 보장 불가)
- * - Step 3: @Transactional (상태 전환 및 보상 트랜잭션)
+ * - @Transactional + Pessimistic Lock (재고) + Redis DistributedLock
+ * - 포인트 차감: UserBalanceService의 분산락 + DB 비관적 락
+ * - 외부 API 호출 없음 (포인트 기반 즉시 결제)
  *
- * SCENARIO 9: 결제 실패 후 재고 불일치
- * - Before: 재고 차감, 잔액 차감, 주문 생성 모두 성공 (PENDING)
- * - Payment API: 타임아웃 또는 실패
- * - After: compensateOrder()를 통해 재고/잔액 복구, 주문 취소 (CANCELLED)
- *
- * SCENARIO 10: 결제 부분 성공 (Void 필요)
- * - 카드 승인: 성공
- * - 3D Secure 인증: 실패
- * - Action: Void API 호출하여 승인 취소
+ * 중요 특징:
+ * - Step 1 실행 = 주문 생성 + 결제 완료 (동일 트랜잭션)
+ * - 외부 API 호출 없음 (더 이상 Step 2 필요 없음)
+ * - 포인트 차감 실패 시만 보상 트랜잭션 실행
+ * - 단순하고 안정적인 포인트 기반 폐쇄형 결제 시스템
  */
 @Service
 public class OrderSagaService {
@@ -72,26 +72,30 @@ public class OrderSagaService {
     }
 
     /**
-     * Step 1 + Step 2 + Step 3: 주문 생성과 결제를 한 번의 Saga로 처리
+     * 포인트 기반 주문 생성 및 자동 결제
      *
-     * 플로우:
-     * 1. 주문 생성 (재고 차감, 잔액 차감) - PENDING 상태
-     * 2. 결제 API 호출
-     * 3-1. 결제 성공 → PAID 상태
-     * 3-2. 결제 실패 → compensateOrder() → CANCELLED 상태
+     * 플로우 (포인트 기반 단순화):
+     * Step 1: OrderTransactionService.executeTransactionalOrder()
+     *         - 주문 생성, 재고 차감, 포인트 차감 (원자적 처리)
+     *         - ✅ @Transactional 메서드
+     *         - ✅ 성공 시 = 주문 생성 + 결제 완료
+     * Step 2: 실패 시 보상 트랜잭션
+     *         - 재고 복구, 포인트 환불, 주문 취소
      *
-     * 주의:
-     * - Step 1과 Step 3는 @Transactional이지만 Step 2는 외부 API 호출이므로 트랜잭션 밖
-     * - Step 2 실패 시 Step 1의 변경사항이 커밋된 상태에서 보상 필요
+     * 특징:
+     * - 포인트 차감 성공 = 즉시 결제 완료 (외부 API 없음)
+     * - 포인트 부족 시 InsufficientBalanceException 발생 → 보상 불필요
+     * - 트랜잭션 중 재고/포인트 차감 실패 시만 보상 필요
+     * - 단순하고 안정적인 폐쇄형 결제 시스템
      *
      * @param userId 사용자 ID
      * @param orderItems 주문 항목 리스트
      * @param couponId 쿠폰 ID (nullable)
-     * @param finalAmount 최종 결제액
-     * @return 생성된 주문 (PAID 상태 또는 보상 처리 후 CANCELLED 상태)
-     * @throws RuntimeException 결제 실패 또는 보상 중 에러 발생 시
+     * @param finalAmount 최종 결제액 (포인트)
+     * @return 생성된 주문 (결제 완료된 상태)
+     * @throws InsufficientBalanceException 포인트 부족
+     * @throws RuntimeException 주문 생성 중 오류
      */
-    @Transactional
     public Order createOrderWithPayment(Long userId,
                                        List<OrderItemDto> orderItems,
                                        Long couponId,
@@ -99,154 +103,176 @@ public class OrderSagaService {
         Order order = null;
 
         try {
-            // Step 1: 주문 생성 (재고 차감, 잔액 차감) - PENDING 상태로 생성됨
-            log.info("[OrderSagaService] Step 1 시작: 주문 생성 - userId={}", userId);
+            // ========== Step 1: 주문 생성 + 포인트 차감 (트랜잭션) ==========
+            // 재고 차감 + 포인트 차감 + 주문 생성을 동일 트랜잭션에서 처리
+            // ✅ 원자적 처리: 모두 성공하거나 모두 실패
+            // ✅ 포인트 차감 성공 = 즉시 결제 완료 (외부 API 없음)
+            log.info("[OrderSagaService] 주문 생성 시작 - userId={}, finalAmount={}", userId, finalAmount);
             order = orderTransactionService.executeTransactionalOrder(
                     userId,
                     orderItems,
                     couponId,
-                    couponId != null ? calculateCouponDiscount(couponId) : 0L, // TODO: 실제 쿠폰 할인액 조회
+                    couponId != null ? calculateCouponDiscount(couponId) : 0L,
                     calculateSubtotal(orderItems),
                     finalAmount
             );
-            log.info("[OrderSagaService] Step 1 완료: 주문 생성 성공 - orderId={}, status=PENDING", order.getOrderId());
+            log.info("[OrderSagaService] 주문 생성 + 포인트 차감 완료 - orderId={}, 결제완료", order.getOrderId());
 
-            // Step 2: 외부 결제 API 호출 (트랜잭션 밖)
-            log.info("[OrderSagaService] Step 2 시작: 결제 처리 - orderId={}, amount={}", order.getOrderId(), finalAmount);
-            PaymentResponse paymentResponse = callPaymentAPI(order.getOrderId(), finalAmount);
+            // ✅ Step 1 성공 = 결제 완료
+            // 외부 API 호출이 없으므로 추가 단계 필요 없음
+            alertService.notifyPaymentSuccess(order.getOrderId(), userId, finalAmount);
 
-            // Step 3a: 결제 성공 시 주문 상태를 PAID로 변경
-            if (paymentResponse.isSuccess()) {
-                log.info("[OrderSagaService] Step 3a: 결제 성공 - orderId={}, status=PAID", order.getOrderId());
-                order.markAsPaid();
-                orderRepository.save(order);
+            return order;
 
-                // 관리자 알림 (선택사항)
-                alertService.notifyPaymentSuccess(order.getOrderId(), userId, finalAmount);
+        } catch (InsufficientBalanceException e) {
+            // 포인트 부족: 보상 불필요 (트랜잭션이 롤백되지 않음)
+            // 사실 이 경우는 Step 1에서 예외 발생 → 트랜잭션 롤백됨
+            log.warn("[OrderSagaService] 포인트 부족으로 주문 생성 실패 - userId={}, 필요포인트={}, error={}",
+                    userId, finalAmount, e.getMessage());
+            throw e;
 
-                return order;
-            }
+        } catch (RuntimeException e) {
+            // Step 1 중 기타 예외 (재고 부족, DB 오류 등): 자동 롤백
+            log.error("[OrderSagaService] 주문 생성 중 오류 - userId={}, error={}",
+                    userId, e.getMessage(), e);
 
-            // Step 3b: 결제 실패 시 보상 트랜잭션 시작
-            log.warn("[OrderSagaService] Step 3b: 결제 실패 - orderId={}, reason={}", order.getOrderId(), paymentResponse.getFailureReason());
-            alertService.notifyPaymentFailure(order.getOrderId(), userId, finalAmount, paymentResponse.getFailureReason());
-
-            // 보상: 재고 복구, 잔액 복구, 주문 취소
-            compensateOrder(order);
-
-            throw new PaymentException("Payment failed: " + paymentResponse.getFailureReason());
-
-        } catch (PaymentException e) {
-            // 결제 실패 시에만 보상 (이미 Step 3b에서 처리했을 가능성)
+            // order가 생성되었지만 트랜잭션 실패한 경우는 드물지만, 보상 처리
             if (order != null && order.isPending()) {
-                log.error("[OrderSagaService] 결제 중 예외 발생, 보상 트랜잭션 시작 - orderId={}, error={}", order.getOrderId(), e.getMessage());
-                compensateOrder(order);
-            }
-            throw new PaymentException("Order saga failed: " + e.getMessage(), e);
-        } catch (Exception e) {
-            // 기타 예외
-            if (order != null && order.isPending()) {
-                log.error("[OrderSagaService] 예상치 못한 예외 발생, 보상 트랜잭션 시작 - orderId={}, error={}", order.getOrderId(), e.getMessage());
                 try {
-                    compensateOrder(order);
+                    log.warn("[OrderSagaService] 보상 트랜잭션 시작 - orderId={}", order.getOrderId());
+                    compensateOrder(order.getOrderId());
+                    log.info("[OrderSagaService] 보상 처리 완료 - orderId={}", order.getOrderId());
                 } catch (Exception compensationError) {
-                    log.error("[OrderSagaService] 보상 트랜잭션 실패! 수동 개입 필요 - orderId={}, error={}", order.getOrderId(), compensationError.getMessage());
+                    log.error("[OrderSagaService] 보상 트랜잭션 실패! 수동 개입 필요 - orderId={}, error={}",
+                            order.getOrderId(), compensationError.getMessage());
                     alertService.notifyCompensationFailure(order.getOrderId(), userId, compensationError.getMessage());
                     throw new CompensationException("Failed to compensate order: " + order.getOrderId(), compensationError);
                 }
             }
+
             throw new RuntimeException("Order creation failed: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 보상 트랜잭션 (Compensation Transaction)
+     * 보상 트랜잭션 (Compensation Transaction - Step 3b)
      *
-     * 결제 실패 후 Step 1에서 차감된 재고와 잔액을 복구합니다.
+     * ✅ CRITICAL: 상태 검증 및 비즈니스 로직 순서 보장
+     * ========================================
+     * 1. findByIdForUpdate() - 비관적 락 획득 (SELECT ... FOR UPDATE)
+     *    - 다른 트랜잭션의 동시 접근 차단
+     * 2. Order 조회 직후 즉시 상태 검증 (PENDING 확인)
+     *    - 상태가 PENDING이 아니면 조기 반환 (이미 보상 처리됨)
+     * 3. 상태 검증 성공 후에야 비즈니스 로직 시작
+     *    - 재고 복구
+     *    - 잔액 복구
+     *    - 주문 상태 변경
+     * 4. 모든 작업이 원자적으로 처리됨 (@Transactional)
+     *
+     * ⚠️ 주의: 상태 검증 전에 재고/잔액 복구 로직 실행 금지
      *
      * 복구 항목:
-     * 1. 재고 복구: 각 주문 항목별로 ProductOption의 stock 복구
-     * 2. 잔액 복구: User의 balance 복구
-     * 3. 주문 상태 변경: PENDING → FAILED → CANCELLED
+     * - 재고 복구: 각 주문 항목별로 ProductOption의 stock 복구
+     * - 잔액 복구: User의 balance 복구
+     * - 주문 상태 변경: PENDING → FAILED → CANCELLED
      *
-     * 원자성:
-     * - 이 메서드는 @Transactional 메서드 내에서 호출되므로 모든 작업이 원자적으로 처리됨
-     * - 복구 중 에러 발생 시 rollback되어 데이터 일관성 보장
+     * ✅ IMPORTANT: 이 메서드는 Step 2 (PG API 호출) 이후에 호출됨
+     * ✅ 독립적인 @Transactional 메서드로 분리
+     * ✅ Step 1과 분리된 트랜잭션에서 실행
      *
-     * @param order 보상할 주문 (PENDING 상태)
-     * @throws Exception 복구 중 데이터베이스 오류 발생
+     * @param orderId 보상할 주문의 ID
+     * @return 보상 처리된 주문 (CANCELLED 상태) 또는 이미 보상된 주문
+     * @throws CompensationException 복구 중 데이터베이스 오류 발생
      */
-    private void compensateOrder(Order order) {
+    @Transactional
+    public Order compensateOrder(Long orderId) {
+        // ==================== STEP 1: Order 조회 + 비관적 락 ====================
+        // findByIdForUpdate()로 SELECT ... FOR UPDATE 적용
+        // 다른 트랜잭션이 이 Order 행을 쓰기/읽기 할 수 없음 (배타적 잠금)
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found for compensation: " + orderId));
+
+        log.debug("[OrderSagaService] Order 조회 완료 (비관적 락 획득) - orderId={}, 현재상태={}",
+                  orderId, order.getOrderStatus());
+
+        // ==================== STEP 2: 상태 검증 (조회 직후 즉시) ====================
+        // ✅ CRITICAL: 상태 검증은 조회 바로 직후에 수행해야 함
+        // ✅ 이전에 다른 비즈니스 로직 없음
+        // ✅ PENDING이 아니면 조기 반환 (이미 보상 처리됨)
         if (!order.isPending()) {
-            log.warn("[OrderSagaService] 보상 대상이 아닌 주문 - orderId={}, status={}", order.getOrderId(), order.getOrderStatus());
-            return;
+            log.warn("[OrderSagaService] 보상 대상이 아닌 주문 (이미 처리됨) - orderId={}, 현재상태={}, " +
+                     "보상을 수행하지 않습니다",
+                    orderId, order.getOrderStatus());
+            return order;
         }
 
-        log.info("[OrderSagaService] 보상 트랜잭션 시작 - orderId={}", order.getOrderId());
+        log.info("[OrderSagaService] Order 상태 검증 성공 - orderId={}, 상태=PENDING (보상 필요)", orderId);
+        log.info("[OrderSagaService] 보상 트랜잭션 시작 - orderId={}", orderId);
 
         try {
-            // 1. 재고 복구
+            // ==================== STEP 3: 재고 복구 (상태 검증 후) ====================
+            // ✅ 상태 검증 성공 후에만 재고 복구 시작
+            log.info("[OrderSagaService] STEP 3-1: 재고 복구 시작 - orderId={}", orderId);
             for (OrderItem item : order.getOrderItems()) {
                 ProductOption option = productRepository.findOptionById(item.getOptionId())
-                        .orElseThrow(() -> new IllegalArgumentException("옵션을 찾을 수 없습니다: " + item.getOptionId()));
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "재고 복구 중 옵션을 찾을 수 없습니다: " + item.getOptionId()));
 
-                log.info("[OrderSagaService] 재고 복구 중 - optionId={}, 복구 수량={}", item.getOptionId(), item.getQuantity());
+                log.info("[OrderSagaService] 재고 복구 중 - optionId={}, 복구 수량={}, 상품명={}",
+                         item.getOptionId(), item.getQuantity(), option.getName());
                 option.restoreStock(item.getQuantity());
                 productRepository.saveOption(option);
             }
+            log.info("[OrderSagaService] STEP 3-1 완료: 재고 복구 완료 - orderId={}", orderId);
 
-            // 2. 잔액 복구
+            // ==================== STEP 4: 잔액 복구 (상태 검증 후) ====================
+            // ✅ 재고 복구 성공 후 잔액 복구
+            log.info("[OrderSagaService] STEP 3-2: 잔액 복구 시작 - orderId={}", orderId);
             User user = userRepository.findById(order.getUserId())
-                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + order.getUserId()));
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "잔액 복구 중 사용자를 찾을 수 없습니다: " + order.getUserId()));
 
-            log.info("[OrderSagaService] 잔액 복구 중 - userId={}, 복구액={}", user.getUserId(), order.getFinalAmount());
-            user.setBalance(user.getBalance() + order.getFinalAmount());
+            Long recoveryAmount = order.getFinalAmount();
+            Long previousBalance = user.getBalance();
+            log.info("[OrderSagaService] 잔액 복구 중 - userId={}, 복구액={}, 기존잔액={}, 복구후잔액={}",
+                     user.getUserId(), recoveryAmount, previousBalance, previousBalance + recoveryAmount);
+            user.setBalance(user.getBalance() + recoveryAmount);
             userRepository.save(user);
+            log.info("[OrderSagaService] STEP 3-2 완료: 잔액 복구 완료 - orderId={}", orderId);
 
-            // 3. 주문 상태 변경: PENDING → FAILED → CANCELLED
-            order.markAsFailed();
-            order.cancel(); // FAILED → CANCELLED
-            orderRepository.save(order);
+            // ==================== STEP 5: 주문 상태 변경 (재고/잔액 복구 후) ====================
+            // ✅ 재고/잔액 복구 성공 후 주문 상태 변경
+            // PENDING → FAILED → CANCELLED
+            log.info("[OrderSagaService] STEP 3-3: 주문 상태 변경 시작 - orderId={}", orderId);
+            try {
+                order.markAsFailed();
+                log.info("[OrderSagaService] 주문 상태 변경 (PENDING→FAILED) - orderId={}", orderId);
 
-            log.info("[OrderSagaService] 보상 트랜잭션 완료 - orderId={}, status=CANCELLED", order.getOrderId());
-            alertService.notifyCompensationComplete(order.getOrderId(), order.getUserId(), order.getFinalAmount());
+                order.cancel(); // FAILED → CANCELLED
+                log.info("[OrderSagaService] 주문 상태 변경 (FAILED→CANCELLED) - orderId={}", orderId);
+            } catch (Exception statusChangeError) {
+                log.error("[OrderSagaService] 주문 상태 변경 중 오류 - orderId={}, error={}",
+                         orderId, statusChangeError.getMessage());
+                throw statusChangeError;
+            }
+
+            // ==================== STEP 6: DB 저장 ====================
+            // ✅ 모든 변경사항을 DB에 저장 (이 @Transactional 내에서 원자적으로 처리)
+            Order cancelledOrder = orderRepository.save(order);
+            log.info("[OrderSagaService] STEP 3-3 완료: 주문 상태 변경 완료 - orderId={}, 최종상태=CANCELLED", orderId);
+
+            // ==================== STEP 7: 완료 알림 ====================
+            log.info("[OrderSagaService] 보상 트랜잭션 완료 - orderId={}, 최종상태=CANCELLED", orderId);
+            alertService.notifyCompensationComplete(orderId, order.getUserId(), order.getFinalAmount());
+
+            return cancelledOrder;
 
         } catch (Exception e) {
-            log.error("[OrderSagaService] 보상 트랜잭션 중 오류 발생! 수동 개입 필요 - orderId={}, error={}", order.getOrderId(), e.getMessage());
-            alertService.notifyCompensationFailure(order.getOrderId(), order.getUserId(), e.getMessage());
-            throw new CompensationException("Compensation failed for order: " + order.getOrderId(), e);
+            log.error("[OrderSagaService] 보상 트랜잭션 중 오류 발생! 수동 개입 필요 - orderId={}, error={}, message={}",
+                    orderId, e.getClass().getSimpleName(), e.getMessage(), e);
+            alertService.notifyCompensationFailure(orderId, order.getUserId(), e.getMessage());
+            throw new CompensationException("Compensation failed for order: " + orderId, e);
         }
-    }
-
-    /**
-     * 외부 결제 API 호출 (실제 구현)
-     *
-     * 현재는 더미 구현입니다. 프로덕션에서는:
-     * - PG사 SDK (Iamport, Toss, KCP 등) 사용
-     * - HTTP 클라이언트 (RestTemplate, WebClient) 사용
-     * - 타임아웃, 재시도, Circuit Breaker 패턴 적용
-     *
-     * @param orderId 주문 ID
-     * @param amount 결제 금액
-     * @return 결제 응답
-     * @throws PaymentException 결제 API 호출 실패
-     */
-    private PaymentResponse callPaymentAPI(Long orderId, Long amount) throws PaymentException {
-        // TODO: 실제 결제 API 구현
-        // try {
-        //     PaymentRequest request = PaymentRequest.builder()
-        //         .orderId(orderId)
-        //         .amount(amount)
-        //         .build();
-        //     return paymentGateway.charge(request); // Iamport, Toss 등
-        // } catch (TimeoutException e) {
-        //     throw new PaymentException("Payment gateway timeout", e);
-        // } catch (HttpException e) {
-        //     throw new PaymentException("Payment gateway error: " + e.getStatusCode(), e);
-        // }
-
-        // 더미 구현: 항상 성공
-        return PaymentResponse.success(orderId);
     }
 
     /**
@@ -268,35 +294,6 @@ public class OrderSagaService {
                     return product.getPrice() * item.getQuantity();
                 })
                 .sum();
-    }
-
-    /**
-     * PaymentResponse - 결제 API 응답
-     */
-    public static class PaymentResponse {
-        private final boolean success;
-        private final String failureReason;
-
-        private PaymentResponse(boolean success, String failureReason) {
-            this.success = success;
-            this.failureReason = failureReason;
-        }
-
-        public static PaymentResponse success(Long orderId) {
-            return new PaymentResponse(true, null);
-        }
-
-        public static PaymentResponse failure(String reason) {
-            return new PaymentResponse(false, reason);
-        }
-
-        public boolean isSuccess() {
-            return success;
-        }
-
-        public String getFailureReason() {
-            return failureReason;
-        }
     }
 
     /**

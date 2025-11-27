@@ -16,6 +16,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -129,23 +130,39 @@ public class CouponService {
     /**
      * 쿠폰 발급 (락 포함 - Redis 분산락 + DB 비관적 락)
      *
+     * ⚠️ 내부용 메서드: issueCoupon()을 통해서만 호출 권장
+     * 이 메서드는 재시도 로직이 없으므로 직접 호출 시 동시성 문제 가능합니다.
+     *
      * 동시성 제어 전략:
      * - @DistributedLock: Redis 기반 분산락 (key: "coupon:{couponId}:user:{userId}")
      *   - waitTime=5초: 최대 5초 동안 락 획득 시도
      *   - leaseTime=2초: 락 유지 시간 2초
      *   - 락 획득 실패 시 RuntimeException 발생
+     * - @Transactional: 메서드 전체를 하나의 트랜잭션으로 관리
+     *   - Redis 락 획득 후 트랜잭션 시작
+     *   - 트랜잭션 종료 후 Redis 락 해제
      * - findByIdForUpdate()로 DB 레벨 SELECT...FOR UPDATE 수행
      * - Domain 메서드(Coupon.decreaseStock()) 활용으로 비즈니스 로직 캡슐화
      * - UNIQUE 제약으로 중복 발급 방지
      *
-     * 개선 효과:
+     * 리팩터링 효과:
+     * - AOP는 분산락만 담당, 트랜잭션은 @Transactional에서만 관리
+     * - 원자성 보장: Lock → Tx 시작 → 비즈니스 로직 → Tx 커밋 → Lock 해제
+     * - 트랜잭션 분리 문제 해결
      * - Redis 분산락 + DB 비관적 락으로 분산 환경에서 동시성 완벽 제어
      * - Lock 보유 시간 최소화 (200ms → 50ms)
      * - TPS 약 4배 향상
      * - 코드 간결화 및 유지보수성 개선
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
+     * @return 발급된 쿠폰 정보
+     * @throws CouponNotFoundException 쿠폰을 찾을 수 없음
+     * @throws IllegalArgumentException 발급 불가 (활성화, 기간, 재고, 중복)
      */
     @DistributedLock(key = "coupon:#p1:user:#p0", waitTime = 5, leaseTime = 2)
-    private IssueCouponResponse issueCouponWithLock(Long userId, Long couponId) {
+    @Transactional
+    public IssueCouponResponse issueCouponWithLock(Long userId, Long couponId) {
         // === 2단계: DB 레벨 비관적 락 획득 ===
         // SELECT coupons WHERE coupon_id=? FOR UPDATE
         // 다른 트랜잭션의 접근을 자동으로 차단함 (synchronized 제거됨)

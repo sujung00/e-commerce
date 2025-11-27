@@ -40,6 +40,16 @@ public class MySQLOrderRepository implements OrderRepository {
     }
 
     @Override
+    @Transactional
+    public Optional<Order> findByIdForUpdate(Long orderId) {
+        // ✅ 비관적 락 적용: SELECT ... FOR UPDATE로 배타적 잠금
+        // - @Lock(LockModeType.PESSIMISTIC_WRITE)이 DB 레벨 잠금 처리
+        // - @Transactional으로 트랜잭션 내에서만 잠금 유효 (commit 또는 rollback 시 해제)
+        // - orderItems도 함께 로드 (fetch join)
+        return orderJpaRepository.findByIdForUpdate(orderId);
+    }
+
+    @Override
     public List<Order> findByUserId(Long userId, int page, int size) {
         // page와 size를 사용하여 Pageable 객체 생성 (0-based)
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));

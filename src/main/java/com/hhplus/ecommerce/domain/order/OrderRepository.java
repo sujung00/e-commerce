@@ -19,6 +19,23 @@ public interface OrderRepository {
     Optional<Order> findById(Long orderId);
 
     /**
+     * 주문 ID로 조회 (비관적 락 - SELECT ... FOR UPDATE)
+     *
+     * 동시성 제어:
+     * - DB 레벨 배타적 잠금 (Pessimistic Lock)
+     * - 다른 트랜잭션의 읽기/쓰기 모두 차단
+     * - 주문 상태 검증 및 변경 시 사용
+     *
+     * 사용 예:
+     * - updateOrderAsPaid(): PENDING → PAID 전환 전
+     * - compensateOrder(): PENDING → FAILED → CANCELLED 전환 전
+     *
+     * @param orderId 주문 ID
+     * @return 배타적 잠금이 적용된 Order
+     */
+    Optional<Order> findByIdForUpdate(Long orderId);
+
+    /**
      * 사용자별 주문 목록 조회 (페이지네이션)
      */
     List<Order> findByUserId(Long userId, int page, int size);
