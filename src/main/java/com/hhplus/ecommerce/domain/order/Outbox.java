@@ -109,4 +109,14 @@ public class Outbox {
         this.status = "PENDING";
         this.lastAttempt = LocalDateTime.now();
     }
+
+    /**
+     * 최대 재시도 초과 여부 확인
+     *
+     * @param maxRetries 최대 재시도 횟수
+     * @return true: 최대 재시도 초과, false: 재시도 가능
+     */
+    public boolean shouldAbandoned(int maxRetries) {
+        return this.retryCount >= maxRetries;
+    }
 }

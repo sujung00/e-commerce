@@ -76,13 +76,12 @@ public class Order {
      * 주문 생성 팩토리 메서드 (정적 팩토리)
      *
      * 비즈니스 규칙:
-     * - 주문은 항상 PENDING 상태로 생성 (결제 대기)
+     * - 주문은 항상 COMPLETED 상태로 생성
      * - 쿠폰 할인은 0 이상이어야 함
      * - 최종 금액은 0 이상이어야 함
      *
      * 상태 전환:
-     * PENDING (생성) → PAID (결제 성공) → COMPLETED (배송 완료)
-     *              → FAILED (결제 실패) → CANCELLED (보상 처리 완료)
+     * COMPLETED (생성) → CANCELLED (취소)
      */
     public static Order createOrder(Long userId, Long couponId, Long couponDiscount, Long subtotal, Long finalAmount) {
         if (finalAmount < 0) {
@@ -98,7 +97,7 @@ public class Order {
                 .couponDiscount(couponDiscount)
                 .subtotal(subtotal)
                 .finalAmount(finalAmount)
-                .orderStatus(OrderStatus.PENDING)
+                .orderStatus(OrderStatus.COMPLETED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();

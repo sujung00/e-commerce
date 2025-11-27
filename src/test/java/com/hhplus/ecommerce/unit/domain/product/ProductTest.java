@@ -501,6 +501,7 @@ class ProductTest {
                 TEST_PRICE,
                 TEST_TOTAL_STOCK,
                 TEST_STATUS,
+                0L,  // version
                 now,
                 now,
                 options

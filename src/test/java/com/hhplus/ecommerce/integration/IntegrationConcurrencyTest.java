@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * IntegrationConcurrencyTest - TestContainers 동시성 제어 통합 테스트
+ * 동시성통합테스트 - TestContainers 동시성 제어 통합 테스트
  *
  * 테스트 목표:
  * - 선착순 쿠폰 발급 시 동시성 제어 검증
@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 특징:
  * - TestContainers MySQL 사용으로 격리된 환경에서 테스트
  * - 각 테스트가 UUID 기반 고유한 데이터로 실행 (테스트 간 격리)
- * - 사용자 이메일은 UUID + 타임스탬프로 고유하게 생성
+ * - user 이메일은 UUID + 타임스탬프로 고유하게 생성
  * - 모든 이메일 중복 오류 없이 정상 작동
  */
 @SpringBootTest
@@ -112,12 +112,12 @@ class IntegrationConcurrencyTest {
             Coupon savedCoupon = couponRepository.save(testCoupon);
             couponIdArray[0] = savedCoupon.getCouponId();
 
-            // 모든 사용자 생성 (이메일 중복 방지)
+            // 모든 user 생성 (이메일 중복 방지)
             for (int i = 1; i <= numThreads; i++) {
                 String uniqueEmail = String.format("coupon_user%d_%s_%d@test.com", i, testId, testTimestamp);
                 User user = User.builder()
                         .email(uniqueEmail)
-                        .name("쿠폰테스트사용자" + i)
+                        .name("쿠폰테스트user" + i)
                         .balance(100000L)
                         .createdAt(LocalDateTime.now())
                         .updatedAt(LocalDateTime.now())
@@ -127,7 +127,7 @@ class IntegrationConcurrencyTest {
             return null;
         });
 
-        // 사용자 ID 조회 (별도 트랜잭션)
+        // user ID 조회 (별도 트랜잭션)
         long couponId = couponIdArray[0];
         newTransactionTemplate.execute(status -> {
             for (int i = 1; i <= numThreads; i++) {
@@ -152,14 +152,14 @@ class IntegrationConcurrencyTest {
             final int index = i;
             executor.submit(() -> {
                 try {
-                    long userId = userIds[index - 1];
+                    long user아이디 = userIds[index - 1];
 
                     startLatch.await();  // 모든 스레드 동시 시작
 
                     // Helper method를 통해 별도 트랜잭션에서 실행
                     try {
                         // 쿠폰 발급 시도
-                        issueCouponInNewTransaction(userId, couponId);
+                        issueCouponInNewTransaction(user아이디, couponId);
                         successCount.incrementAndGet();
                     } catch (IllegalArgumentException | org.springframework.dao.DataIntegrityViolationException e) {
                         // 쿠폰 소진 또는 중복 발급 시 예상되는 실패
@@ -255,11 +255,11 @@ class IntegrationConcurrencyTest {
             executor.submit(() -> {
                 try {
                     try {
-                        // 고유한 사용자 생성 (별도 트랜잭션)
+                        // 고유한 user 생성 (별도 트랜잭션)
                         String uniqueEmail = String.format("order_user%d_%s_%d@test.com", index, testId, testTimestamp);
                         User user = User.builder()
                                 .email(uniqueEmail)
-                                .name("주문테스트사용자" + index)
+                                .name("주문테스트user" + index)
                                 .balance(100000L)
                                 .createdAt(LocalDateTime.now())
                                 .updatedAt(LocalDateTime.now())
@@ -340,7 +340,7 @@ class IntegrationConcurrencyTest {
         newTransactionTemplate.execute(status -> {
             // 테스트용 쿠폰 생성
             Coupon testCoupon = Coupon.builder()
-                    .couponName("혼합시나리오쿠폰_" + testId)
+                    .couponName("mixedScenario_" + testId)
                     .discountType("FIXED_AMOUNT")
                     .discountAmount(2000L)
                     .isActive(true)
@@ -354,12 +354,12 @@ class IntegrationConcurrencyTest {
             Coupon savedCoupon = couponRepository.save(testCoupon);
             couponIdArray[0] = savedCoupon.getCouponId();
 
-            // 모든 사용자 생성 (이메일 중복 방지)
+            // 모든 user 생성 (이메일 중복 방지)
             for (int i = 1; i <= numUsers; i++) {
                 String uniqueEmail = String.format("mixed_user%d_%s_%d@test.com", i, testId, testTimestamp);
                 User user = User.builder()
                         .email(uniqueEmail)
-                        .name("혼합테스트사용자" + i)
+                        .name("혼합테스트user" + i)
                         .balance(100000L)
                         .createdAt(LocalDateTime.now())
                         .updatedAt(LocalDateTime.now())
@@ -369,7 +369,7 @@ class IntegrationConcurrencyTest {
             return null;
         });
 
-        // 생성된 사용자 ID 조회
+        // 생성된 user ID 조회
         long couponId = couponIdArray[0];
         newTransactionTemplate.execute(status -> {
             for (int i = 1; i <= numUsers; i++) {
@@ -435,7 +435,7 @@ class IntegrationConcurrencyTest {
         newTransactionTemplate.execute(status -> {
             // 테스트용 쿠폰 생성 (1000개)
             Coupon testCoupon = Coupon.builder()
-                    .couponName("성능테스트쿠폰_" + testId)
+                    .couponName("성능testCoupon_" + testId)
                     .discountType("FIXED_AMOUNT")
                     .discountAmount(1000L)
                     .isActive(true)
@@ -449,12 +449,12 @@ class IntegrationConcurrencyTest {
             Coupon savedCoupon = couponRepository.save(testCoupon);
             couponIdArray[0] = savedCoupon.getCouponId();
 
-            // 모든 사용자 생성 (배치 처리로 성능 최적화)
+            // 모든 user 생성 (배치 처리로 성능 최적화)
             for (int i = 1; i <= numRequests; i++) {
                 String uniqueEmail = String.format("perf_user%d_%s_%d@test.com", i, testId, testTimestamp);
                 User user = User.builder()
                         .email(uniqueEmail)
-                        .name("성능테스트사용자" + i)
+                        .name("성능테스트user" + i)
                         .balance(100000L)
                         .createdAt(LocalDateTime.now())
                         .updatedAt(LocalDateTime.now())
@@ -464,7 +464,7 @@ class IntegrationConcurrencyTest {
             return null;
         });
 
-        // 생성된 사용자 ID 조회
+        // 생성된 user ID 조회
         long couponId = couponIdArray[0];
         newTransactionTemplate.execute(status -> {
             for (int i = 1; i <= numRequests; i++) {
@@ -543,7 +543,7 @@ class IntegrationConcurrencyTest {
     }
 
     /**
-     * Helper method - 사용자 생성을 별도 트랜잭션에서 실행
+     * Helper method - user 생성을 별도 트랜잭션에서 실행
      */
     private void createUserInNewTransaction(User user) {
         newTransactionTemplate.execute(status -> {

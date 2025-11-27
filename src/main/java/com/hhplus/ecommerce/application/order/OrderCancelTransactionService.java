@@ -13,6 +13,8 @@ import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
+import com.hhplus.ecommerce.application.user.UserBalanceService;
+import com.hhplus.ecommerce.infrastructure.lock.DistributedLock;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
@@ -43,19 +45,22 @@ public class OrderCancelTransactionService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final UserCouponRepository userCouponRepository;
+    private final UserBalanceService userBalanceService;
 
     public OrderCancelTransactionService(OrderRepository orderRepository,
                                         ProductRepository productRepository,
                                         UserRepository userRepository,
-                                        UserCouponRepository userCouponRepository) {
+                                        UserCouponRepository userCouponRepository,
+                                        UserBalanceService userBalanceService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.userCouponRepository = userCouponRepository;
+        this.userBalanceService = userBalanceService;
     }
 
     /**
-     * 2단계: 원자적 주문 취소 처리 (@Transactional)
+     * 2단계: 원자적 주문 취소 처리 (@Transactional + @DistributedLock)
      *
      * 프록시를 통해 호출되므로 @Transactional이 정상 작동합니다.
      * 다음 작업이 하나의 트랜잭션으로 처리됩니다:
@@ -64,13 +69,21 @@ public class OrderCancelTransactionService {
      * - 사용자 잔액 복구
      * - 쿠폰 상태 복구 (있는 경우)
      *
+     * 동시성 제어:
+     * - @DistributedLock: Redis 기반 분산락 (key: "order:{orderId}")
+     *   - 주문 취소와 동시 주문 생성 방지
+     *   - waitTime=5초, leaseTime=2초
+     * - 주문 상태 변경은 원자적으로 처리
+     *
      * 실패 시 모든 변경사항 롤백
      *
      * @param orderId 주문 ID
      * @param userId 사용자 ID
      * @param order 주문 엔티티
      * @return 취소 응답
+     * @throws RuntimeException 분산락 획득 실패
      */
+    @DistributedLock(key = "order:#p0", waitTime = 5, leaseTime = 2)
     @Transactional
     public CancelOrderResponse executeTransactionalCancel(Long orderId, Long userId, Order order) {
         // 2-1: 주문 상태 변경 (Domain 메서드 활용)
@@ -132,21 +145,18 @@ public class OrderCancelTransactionService {
     }
 
     /**
-     * 사용자 잔액 복구 (Domain 메서드 활용)
+     * 사용자 잔액 복구 (UserBalanceService 활용)
      *
-     * User.refundBalance() 메서드가 다음을 처리합니다:
-     * - 잔액 복구 (추가)
-     * - 업데이트된 사용자 반환
+     * 동시성 제어:
+     * - UserBalanceService.refundBalance()에서 처리:
+     *   1. @DistributedLock: Redis 기반 분산락 (key: "balance:{userId}")
+     *   2. findByIdForUpdate(): DB 레벨 비관적 락 (SELECT ... FOR UPDATE)
+     *   3. User.refundBalance(): 잔액 환불
+     * - 분산 환경에서의 동시 접근 완벽 제어
      */
     private void restoreUserBalance(Long userId, Long finalAmount) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException(userId));
-
-        // Domain 메서드 호출 (User가 잔액 환불/복구)
-        user.refundBalance(finalAmount);
-
-        // 저장소에 반영
-        userRepository.save(user);
+        // UserBalanceService에서 분산락 + 트랜잭션 처리
+        userBalanceService.refundBalance(userId, finalAmount);
     }
 
     /**

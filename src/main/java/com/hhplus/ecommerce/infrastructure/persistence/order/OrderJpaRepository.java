@@ -1,8 +1,10 @@
 package com.hhplus.ecommerce.infrastructure.persistence.order;
 
 import com.hhplus.ecommerce.domain.order.Order;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -38,6 +40,30 @@ public interface OrderJpaRepository extends JpaRepository<Order, Long> {
            "LEFT JOIN FETCH o.orderItems oi " +
            "WHERE o.orderId = :orderId")
     Optional<Order> findByIdWithItems(@Param("orderId") Long orderId);
+
+    /**
+     * 주문 ID로 조회 (비관적 락 - SELECT ... FOR UPDATE)
+     *
+     * 동시성 제어:
+     * - DB 레벨 배타적 잠금 (Pessimistic Lock)
+     * - 다른 트랜잭션의 읽기/쓰기 모두 차단
+     * - LockModeType.PESSIMISTIC_WRITE: UPDATE/DELETE 차단
+     *
+     * SQL 생성:
+     * SELECT ... FROM orders o LEFT JOIN fetch o.orderItems oi WHERE o.order_id=? FOR UPDATE
+     *
+     * 사용 예:
+     * - updateOrderAsPaid(): PENDING → PAID 전환 전
+     * - compensateOrder(): PENDING → FAILED → CANCELLED 전환 전
+     *
+     * @param orderId 주문 ID
+     * @return 배타적 잠금이 적용된 Order (orderItems 함께 로드)
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o " +
+           "LEFT JOIN FETCH o.orderItems oi " +
+           "WHERE o.orderId = :orderId")
+    Optional<Order> findByIdForUpdate(@Param("orderId") Long orderId);
 
     long countByUserId(Long userId);
 

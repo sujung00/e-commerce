@@ -1,31 +1,29 @@
 package com.hhplus.ecommerce.api.presentation.coupon;
 
+import com.hhplus.ecommerce.integration.BaseIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * CouponController 통합 테스트
  * MySQL 기반 테스트 환경에서 WebEnvironment.RANDOM_PORT와 TestRestTemplate을 사용한 실제 HTTP 요청 테스트
+ * Testcontainers를 사용하여 자동으로 MySQL 컨테이너 관리
  *
  * 테스트 대상: CouponController
  * - POST /coupons/issue - 쿠폰 발급 (X-USER-ID 헤더)
  * - GET /coupons/issued - 사용자 쿠폰 조회 (X-USER-ID 헤더)
  * - GET /coupons - 사용 가능한 쿠폰 조회
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Transactional
 @DisplayName("CouponController 통합 테스트")
-class CouponControllerIntegrationTest {
+class CouponControllerIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;

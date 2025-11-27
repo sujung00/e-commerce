@@ -135,4 +135,28 @@ public class AlertService {
         log.warn(message);
         // TODO: 프로덕션에서는 높은 우선순위 알림 발송
     }
+
+    /**
+     * Outbox 메시지 발행 실패 알림 (최대 재시도 초과)
+     *
+     * 시나리오:
+     * - 배치 프로세스에서 PENDING 메시지 발행 실패
+     * - 최대 재시도 횟수(3회) 초과
+     * - 메시지를 ABANDONED 상태로 전환
+     * - 수동 개입으로 원인 파악 및 재처리 필요
+     *
+     * @param outbox 발행 실패한 Outbox 메시지
+     */
+    public void notifyOutboxFailure(com.hhplus.ecommerce.domain.order.Outbox outbox) {
+        String message = String.format(
+                "[Outbox 메시지 발행 실패 - DLQ로 이동] 메시지 ID: %d, 주문 ID: %d, 타입: %s, 재시도: %d회 - 즉시 확인 필요",
+                outbox.getMessageId(), outbox.getOrderId(), outbox.getMessageType(), outbox.getRetryCount()
+        );
+
+        log.error(message);
+        // TODO: 프로덕션에서는 높은 우선순위 알림 발송
+        // - 이메일: ops@company.com
+        // - Slack: #outbox-failures
+        // - PagerDuty: Warning alert
+    }
 }

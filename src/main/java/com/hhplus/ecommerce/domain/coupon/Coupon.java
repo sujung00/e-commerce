@@ -87,4 +87,53 @@ public class Coupon {
             }
         }
     }
+
+    /**
+     * 쿠폰 재고 차감 (Domain 비즈니스 로직)
+     *
+     * 동시성 제어:
+     * - @Version으로 낙관적 락 보호
+     * - Service 계층의 비관적 락(SELECT ... FOR UPDATE)과 함께 사용
+     * - DB 레벨 비관적 락이 메인 전략, @Version은 추가 안전장치
+     *
+     * 비즈니스 규칙:
+     * - 재고가 0보다 커야 함 (재고 부족 시 예외)
+     * - 차감 후 version 자동 증가 (JPA 관리)
+     * - 남은 수량이 0이면 is_active를 false로 변경
+     *
+     * @throws IllegalArgumentException 재고 부족
+     */
+    public void decreaseStock() {
+        if (this.remainingQty <= 0) {
+            throw new IllegalArgumentException("쿠폰 재고가 부족합니다 (남은 수량: " + this.remainingQty + ")");
+        }
+        this.remainingQty--;
+        this.updatedAt = LocalDateTime.now();
+
+        // 재고가 소진되면 자동으로 비활성화
+        if (this.remainingQty == 0) {
+            this.isActive = false;
+        }
+    }
+
+    /**
+     * 쿠폰 재고 확인
+     */
+    public boolean hasStock() {
+        return this.remainingQty > 0;
+    }
+
+    /**
+     * 쿠폰 활성화 상태 확인
+     */
+    public boolean isActiveCoupon() {
+        return Boolean.TRUE.equals(this.isActive);
+    }
+
+    /**
+     * 유효 기간 확인
+     */
+    public boolean isValidPeriod(LocalDateTime now) {
+        return !now.isBefore(this.validFrom) && !now.isAfter(this.validUntil);
+    }
 }
