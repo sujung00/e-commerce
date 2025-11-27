@@ -9,6 +9,7 @@ import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
+import com.hhplus.ecommerce.application.user.UserBalanceService;
 import com.hhplus.ecommerce.application.order.dto.CancelOrderResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,6 +67,9 @@ class OrderCancelTransactionServiceTest {
     @Mock
     private UserCouponRepository userCouponRepository;
 
+    @Mock
+    private UserBalanceService userBalanceService;
+
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
@@ -73,7 +77,8 @@ class OrderCancelTransactionServiceTest {
                 orderRepository,
                 productRepository,
                 userRepository,
-                userCouponRepository
+                userCouponRepository,
+                userBalanceService
         );
     }
 

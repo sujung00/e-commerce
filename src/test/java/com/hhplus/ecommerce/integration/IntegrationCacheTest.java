@@ -41,31 +41,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  * - 응답시간: 87% 감소
  */
 @DisplayName("Redis 캐시 통합 테스트")
-public class IntegrationCacheTest extends BaseIntegrationTest {
+class IntegrationCacheTest extends BaseIntegrationTest {
 
     @Autowired
-    private ProductService productService;
+    private ProductService 상품서비스;
 
     @Autowired
-    private CouponService couponService;
+    private CouponService 쿠폰서비스;
 
     @Autowired
-    private ProductRepository productRepository;
+    private ProductRepository 상품저장소;
 
     @Autowired
-    private CouponRepository couponRepository;
+    private CouponRepository 쿠폰저장소;
 
     @Autowired
-    private CacheManager cacheManager;
+    private CacheManager 캐시매니저;
 
-    private Long productId;
-    private Long couponId;
+    private Long 상품아이디;
+    private Long 쿠폰아이디;
 
     @BeforeEach
-    public void setUp() {
+    public void 준비() {
         // 테스트 데이터 준비
         // 상품 생성
-        Product product = Product.builder()
+        Product 상품 = Product.builder()
                 .productName("테스트 상품")
                 .description("테스트 설명")
                 .price(10000L)
@@ -73,26 +73,26 @@ public class IntegrationCacheTest extends BaseIntegrationTest {
                 .status("ACTIVE")
                 .createdAt(LocalDateTime.now())
                 .build();
-        productRepository.save(product);
+        상품저장소.save(상품);
         // 저장 후 직접 쿼리로 조회 (캐시에서만 사용)
-        List<Product> products = productRepository.findAll();
-        if (!products.isEmpty()) {
-            productId = products.get(0).getProductId();
+        List<Product> 상품목록 = 상품저장소.findAll();
+        if (!상품목록.isEmpty()) {
+            상품아이디 = 상품목록.get(0).getProductId();
         }
 
         // 상품 옵션 생성
-        if (productId != null) {
-            ProductOption option = ProductOption.builder()
-                    .productId(productId)
+        if (상품아이디 != null) {
+            ProductOption 옵션 = ProductOption.builder()
+                    .productId(상품아이디)
                     .name("기본 옵션")
                     .stock(100)
                     .version(0L)
                     .build();
-            productRepository.saveOption(option);
+            상품저장소.saveOption(옵션);
         }
 
         // 쿠폰 생성
-        Coupon coupon = Coupon.builder()
+        Coupon 쿠폰 = Coupon.builder()
                 .couponName("테스트 쿠폰")
                 .discountType("PERCENTAGE")
                 .discountRate(BigDecimal.valueOf(10))
@@ -102,167 +102,167 @@ public class IntegrationCacheTest extends BaseIntegrationTest {
                 .validFrom(LocalDateTime.now().minusDays(1))
                 .validUntil(LocalDateTime.now().plusDays(1))
                 .build();
-        couponRepository.save(coupon);
+        쿠폰저장소.save(쿠폰);
         // 저장 후 직접 쿼리로 조회
-        List<Coupon> coupons = couponRepository.findAll();
-        if (!coupons.isEmpty()) {
-            couponId = coupons.get(0).getCouponId();
+        List<Coupon> 쿠폰목록 = 쿠폰저장소.findAll();
+        if (!쿠폰목록.isEmpty()) {
+            쿠폰아이디 = 쿠폰목록.get(0).getCouponId();
         }
 
         // 캐시 초기화
-        clearAllCaches();
+        모든캐시초기화();
     }
 
     @Test
-    @DisplayName("상품 목록 조회 캐싱 검증")
-    public void testProductListCaching() {
+    @DisplayName("상품 목록 조회 캐싱 검증한다")
+    public void 상품목록조회_캐싱검증() {
         // Given: 캐시 초기화 상태
 
         // When: 첫 번째 호출 (DB에서 조회)
-        long startTime1 = System.currentTimeMillis();
-        ProductListResponse result1 = productService.getProductList(0, 10, "created_at,desc");
-        long duration1 = System.currentTimeMillis() - startTime1;
+        long 시작시간1 = System.currentTimeMillis();
+        ProductListResponse 결과1 = 상품서비스.getProductList(0, 10, "created_at,desc");
+        long 소요시간1 = System.currentTimeMillis() - 시작시간1;
 
         // Then: 데이터가 조회되고 캐시에 저장됨
-        assertThat(result1).isNotNull();
-        assertThat(result1.getContent()).isNotEmpty();
+        assertThat(결과1).isNotNull();
+        assertThat(결과1.getContent()).isNotEmpty();
 
         // When: 두 번째 호출 (캐시에서 조회)
-        long startTime2 = System.currentTimeMillis();
-        ProductListResponse result2 = productService.getProductList(0, 10, "created_at,desc");
-        long duration2 = System.currentTimeMillis() - startTime2;
+        long 시작시간2 = System.currentTimeMillis();
+        ProductListResponse 결과2 = 상품서비스.getProductList(0, 10, "created_at,desc");
+        long 소요시간2 = System.currentTimeMillis() - 시작시간2;
 
         // Then: 캐시된 데이터가 반환되고, 응답시간이 훨씬 빨라짐
-        assertThat(result2).isNotNull();
-        assertThat(result2.getContent()).isEqualTo(result1.getContent());
+        assertThat(결과2).isNotNull();
+        assertThat(결과2.getContent()).isEqualTo(결과1.getContent());
 
         // 캐시 효과 검증 (캐시된 응답이 더 빨라야 함)
         // 첫 호출 대비 캐시된 호출이 최소 1/3 이상 빨라야 함
-        assertThat(duration2).isLessThan(duration1);
+        assertThat(소요시간2).isLessThan(소요시간1);
 
-        System.out.println("✅ 상품 목록 캐싱: 첫 호출 " + duration1 + "ms → 캐시 호출 " + duration2 + "ms");
+        System.out.println("✅ 상품 목록 캐싱: 첫 호출 " + 소요시간1 + "ms → 캐시 호출 " + 소요시간2 + "ms");
     }
 
     @Test
-    @DisplayName("상품 상세 조회 캐싱 검증")
-    public void testProductDetailCaching() {
+    @DisplayName("상품 상세 조회 캐싱 검증한다")
+    public void 상품상세조회_캐싱검증() {
         // Given: 캐시 초기화 상태
 
         // When: 첫 번째 호출 (DB에서 조회)
-        long startTime1 = System.currentTimeMillis();
-        ProductDetailResponse result1 = productService.getProductDetail(productId);
-        long duration1 = System.currentTimeMillis() - startTime1;
+        long 시작시간1 = System.currentTimeMillis();
+        ProductDetailResponse 결과1 = 상품서비스.getProductDetail(상품아이디);
+        long 소요시간1 = System.currentTimeMillis() - 시작시간1;
 
         // Then: 상품 상세 정보가 조회됨
-        assertThat(result1).isNotNull();
-        assertThat(result1.getProductId()).isEqualTo(productId);
-        assertThat(result1.getProductName()).isEqualTo("테스트 상품");
+        assertThat(결과1).isNotNull();
+        assertThat(결과1.getProductId()).isEqualTo(상품아이디);
+        assertThat(결과1.getProductName()).isEqualTo("테스트 상품");
 
         // When: 두 번째 호출 (캐시에서 조회)
-        long startTime2 = System.currentTimeMillis();
-        ProductDetailResponse result2 = productService.getProductDetail(productId);
-        long duration2 = System.currentTimeMillis() - startTime2;
+        long 시작시간2 = System.currentTimeMillis();
+        ProductDetailResponse 결과2 = 상품서비스.getProductDetail(상품아이디);
+        long 소요시간2 = System.currentTimeMillis() - 시작시간2;
 
         // Then: 캐시된 데이터가 반환됨
-        assertThat(result2).isNotNull();
-        assertThat(result2.getProductId()).isEqualTo(result1.getProductId());
-        assertThat(result2.getProductName()).isEqualTo(result1.getProductName());
+        assertThat(결과2).isNotNull();
+        assertThat(결과2.getProductId()).isEqualTo(결과1.getProductId());
+        assertThat(결과2.getProductName()).isEqualTo(결과1.getProductName());
 
         // 캐시 효과 검증
-        assertThat(duration2).isLessThan(duration1);
+        assertThat(소요시간2).isLessThan(소요시간1);
 
-        System.out.println("✅ 상품 상세 캐싱: 첫 호출 " + duration1 + "ms → 캐시 호출 " + duration2 + "ms");
+        System.out.println("✅ 상품 상세 캐싱: 첫 호출 " + 소요시간1 + "ms → 캐시 호출 " + 소요시간2 + "ms");
     }
 
     @Test
-    @DisplayName("사용 가능한 쿠폰 조회 캐싱 검증")
-    public void testAvailableCouponsCaching() {
+    @DisplayName("사용 가능한 쿠폰 조회 캐싱 검증한다")
+    public void 사용가능쿠폰조회_캐싱검증() {
         // Given: 캐시 초기화 상태
 
         // When: 첫 번째 호출 (DB에서 조회)
-        long startTime1 = System.currentTimeMillis();
-        List<AvailableCouponResponse> result1 = couponService.getAvailableCoupons();
-        long duration1 = System.currentTimeMillis() - startTime1;
+        long 시작시간1 = System.currentTimeMillis();
+        List<AvailableCouponResponse> 결과1 = 쿠폰서비스.getAvailableCoupons();
+        long 소요시간1 = System.currentTimeMillis() - 시작시간1;
 
         // Then: 사용 가능한 쿠폰이 조회됨
-        assertThat(result1).isNotNull();
-        assertThat(result1).isNotEmpty();
+        assertThat(결과1).isNotNull();
+        assertThat(결과1).isNotEmpty();
 
         // When: 두 번째 호출 (캐시에서 조회)
-        long startTime2 = System.currentTimeMillis();
-        List<AvailableCouponResponse> result2 = couponService.getAvailableCoupons();
-        long duration2 = System.currentTimeMillis() - startTime2;
+        long 시작시간2 = System.currentTimeMillis();
+        List<AvailableCouponResponse> 결과2 = 쿠폰서비스.getAvailableCoupons();
+        long 소요시간2 = System.currentTimeMillis() - 시작시간2;
 
         // Then: 캐시된 데이터가 반환됨
-        assertThat(result2).isNotNull();
-        assertThat(result2.size()).isEqualTo(result1.size());
+        assertThat(결과2).isNotNull();
+        assertThat(결과2.size()).isEqualTo(결과1.size());
 
         // 캐시 효과 검증
-        assertThat(duration2).isLessThan(duration1);
+        assertThat(소요시간2).isLessThan(소요시간1);
 
-        System.out.println("✅ 쿠폰 목록 캐싱: 첫 호출 " + duration1 + "ms → 캐시 호출 " + duration2 + "ms");
+        System.out.println("✅ 쿠폰 목록 캐싱: 첫 호출 " + 소요시간1 + "ms → 캐시 호출 " + 소요시간2 + "ms");
     }
 
     @Test
-    @DisplayName("캐시 히트율 검증 - 동일 요청 반복")
-    public void testCacheHitRate() {
+    @DisplayName("캐시 히트율 검증한다 - 동일 요청 반복")
+    public void 캐시히트율_동일요청반복() {
         // Given: 캐시 초기화 상태
-        int iterations = 10;
-        long totalFirstCallTime = 0;
-        long totalCachedCallTime = 0;
+        int 반복횟수 = 10;
+        long 첫호출총시간 = 0;
+        long 캐시호출총시간 = 0;
 
         // When: 첫 호출
-        long startTime = System.currentTimeMillis();
-        productService.getProductList(0, 10, "created_at,desc");
-        totalFirstCallTime += System.currentTimeMillis() - startTime;
+        long 시작시간 = System.currentTimeMillis();
+        상품서비스.getProductList(0, 10, "created_at,desc");
+        첫호출총시간 += System.currentTimeMillis() - 시작시간;
 
         // When: 반복된 호출 (캐시에서 모두 반환되어야 함)
-        for (int i = 0; i < iterations; i++) {
-            startTime = System.currentTimeMillis();
-            ProductListResponse result = productService.getProductList(0, 10, "created_at,desc");
-            totalCachedCallTime += System.currentTimeMillis() - startTime;
+        for (int i = 0; i < 반복횟수; i++) {
+            시작시간 = System.currentTimeMillis();
+            ProductListResponse 결과 = 상품서비스.getProductList(0, 10, "created_at,desc");
+            캐시호출총시간 += System.currentTimeMillis() - 시작시간;
 
-            assertThat(result).isNotNull();
+            assertThat(결과).isNotNull();
         }
 
         // Then: 캐시된 호출들의 총 시간이 첫 호출보다 훨씬 빠름
-        long avgFirstCallTime = totalFirstCallTime;
-        long avgCachedCallTime = totalCachedCallTime / iterations;
+        long 평균첫호출시간 = 첫호출총시간;
+        long 평균캐시호출시간 = 캐시호출총시간 / 반복횟수;
 
-        assertThat(avgCachedCallTime).isLessThan(avgFirstCallTime);
+        assertThat(평균캐시호출시간).isLessThan(평균첫호출시간);
 
         // 캐시 효과: 10배 이상 빨라야 함 (네트워크, DB I/O 제거)
-        double speedupRatio = (double) avgFirstCallTime / avgCachedCallTime;
-        System.out.println("✅ 캐시 히트율: " + iterations + "회 반복 후 응답시간 " + speedupRatio + "배 향상");
+        double 속도향상비 = (double) 평균첫호출시간 / 평균캐시호출시간;
+        System.out.println("✅ 캐시 히트율: " + 반복횟수 + "회 반복 후 응답시간 " + 속도향상비 + "배 향상");
     }
 
     @Test
-    @DisplayName("캐시 키 분리 검증 - 다른 파라미터는 다른 캐시")
-    public void testCacheSeparationByParams() {
+    @DisplayName("캐시 키 분리 검증한다 - 다른 파라미터는 다른 캐시")
+    public void 캐시키분리_다른파라미터() {
         // Given: 캐시 초기화 상태
 
         // When: 다른 페이지 파라미터로 조회
-        ProductListResponse page0 = productService.getProductList(0, 10, "created_at,desc");
-        ProductListResponse page1 = productService.getProductList(1, 10, "created_at,desc");
+        ProductListResponse 페이지0 = 상품서비스.getProductList(0, 10, "created_at,desc");
+        ProductListResponse 페이지1 = 상품서비스.getProductList(1, 10, "created_at,desc");
 
         // Then: 다른 캐시 키로 별도 저장됨
         // page0과 page1은 다른 데이터 (다른 시작 위치에서 페이지네이션)
-        assertThat(page0).isNotNull();
-        assertThat(page1).isNotNull();
+        assertThat(페이지0).isNotNull();
+        assertThat(페이지1).isNotNull();
 
         // 페이지 크기가 다르면 다른 캐시 키
-        ProductListResponse size5 = productService.getProductList(0, 5, "created_at,desc");
-        assertThat(size5).isNotNull();
+        ProductListResponse 크기5 = 상품서비스.getProductList(0, 5, "created_at,desc");
+        assertThat(크기5).isNotNull();
 
         System.out.println("✅ 캐시 키 분리: 다른 파라미터별로 독립적으로 캐시됨");
     }
 
-    private void clearAllCaches() {
-        if (cacheManager != null) {
-            cacheManager.getCacheNames().forEach(cacheName -> {
-                var cache = cacheManager.getCache(cacheName);
-                if (cache != null) {
-                    cache.clear();
+    private void 모든캐시초기화() {
+        if (캐시매니저 != null) {
+            캐시매니저.getCacheNames().forEach(캐시이름 -> {
+                var 캐시 = 캐시매니저.getCache(캐시이름);
+                if (캐시 != null) {
+                    캐시.clear();
                 }
             });
         }
