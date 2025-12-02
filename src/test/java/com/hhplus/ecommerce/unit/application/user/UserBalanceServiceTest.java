@@ -5,6 +5,8 @@ import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
+import com.hhplus.ecommerce.domain.order.ChildTransactionEventRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +45,12 @@ public class UserBalanceServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ChildTransactionEventRepository childTransactionEventRepository;
+
+    @Mock
+    private ObjectMapper objectMapper;
+
     private User testUser;
     private static final Long TEST_USER_ID = 1L;
     private static final Long INITIAL_BALANCE = 100_000L;
@@ -52,7 +60,7 @@ public class UserBalanceServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        userBalanceService = new UserBalanceService(userRepository);
+        userBalanceService = new UserBalanceService(userRepository, childTransactionEventRepository, objectMapper);
 
         // 테스트용 사용자 생성
         testUser = User.builder()

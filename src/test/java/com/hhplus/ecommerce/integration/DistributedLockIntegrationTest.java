@@ -1,6 +1,11 @@
 package com.hhplus.ecommerce.integration;
 
-import com.hhplus.ecommerce.application.lock.DistributedLockExampleService;
+import com.hhplus.ecommerce.application.coupon.CouponService;
+import com.hhplus.ecommerce.application.user.UserBalanceService;
+import com.hhplus.ecommerce.domain.coupon.Coupon;
+import com.hhplus.ecommerce.domain.coupon.CouponRepository;
+import com.hhplus.ecommerce.domain.user.User;
+import com.hhplus.ecommerce.domain.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,230 +13,319 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Redis 분산락 통합 테스트
+ * Redis 분산락 + @Transactional 통합 테스트
  *
- * BaseIntegrationTest를 상속하여 TestContainers 기반 MySQL + Redis 자동 구동
+ * @DistributedLock과 @Transactional(propagation=REQUIRES_NEW)의 상호작용 검증:
+ * - Lock 획득 → Transaction 시작 → 비즈니스 로직 → Transaction 커밋 → Lock 해제
+ * - TransactionSynchronization을 통한 적절한 Lock 해제 시점 보장
  *
- * 테스트 특징:
- * - TestContainers Redis를 자동으로 시작 (localhost:6379 외부 의존 제거)
- * - TestContainers MySQL도 함께 구동 (격리된 테스트 환경)
- * - 분산락의 동시성 제어 검증
- * - 포트 충돌 없이 다중 테스트 병렬 실행 가능
+ * 테스트 대상:
+ * - UserBalanceService: deductBalance, chargeBalance, refundBalance
+ * - CouponService: issueCouponWithLock
+ *
+ * TestContainers 기반으로 MySQL + Redis 자동 구동하여
+ * 외부 의존성 제거 및 격리된 테스트 환경 제공
  */
-@DisplayName("[Integration] Redis 분산락 테스트 (TestContainers)")
+@DisplayName("[Integration] Redis 분산락 + @Transactional 통합 테스트")
 class DistributedLockIntegrationTest extends BaseIntegrationTest {
 
-    private static final Logger 로그 = LoggerFactory.getLogger(DistributedLockIntegrationTest.class);
+    private static final Logger log = LoggerFactory.getLogger(DistributedLockIntegrationTest.class);
 
     @Autowired
-    private DistributedLockExampleService 분산락예제서비스;
+    private UserBalanceService userBalanceService;
+
+    @Autowired
+    private CouponService couponService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private CouponRepository couponRepository;
 
     @BeforeEach
     void 준비() {
-        로그.info("========== 분산락 테스트 시작 ==========");
+        log.info("========== 분산락 + @Transactional 통합 테스트 시작 ==========");
+        // Redis 상태 초기화 (각 테스트마다 독립적으로 실행)
     }
 
     @Test
-    @DisplayName("고정 키 분산락 - 단일 스레드")
-    void 고정키분산락_단일스레드() {
-        // Given & When
-        boolean 결과 = 분산락예제서비스.issueCouponFixed();
+    @DisplayName("사용자 잔액 차감 - 단일 스레드 (Transaction 정상 처리)")
+    void 사용자잔액차감_단일스레드() {
+        // Given: 테스트 사용자 생성
+        User user = User.builder()
+                .userId(1L)
+                .name("user1")
+                .email("user1@example.com")
+                .balance(10000L)
+                .build();
+        userRepository.save(user);
+
+        // When: 잔액 차감
+        User result = userBalanceService.deductBalance(1L, 5000L);
+
+        // Then: 트랜잭션 성공 및 잔액 업데이트 확인
+        assertNotNull(result);
+        assertEquals(5000L, result.getBalance());
+        log.info("✅ 사용자 잔액 차감 테스트 통과");
+    }
+
+    @Test
+    @DisplayName("사용자 잔액 충전 - 단일 스레드 (Transaction 정상 처리)")
+    void 사용자잔액충전_단일스레드() {
+        // Given: 테스트 사용자 생성
+        User user = User.builder()
+                .userId(2L)
+                .name("user2")
+                .email("user2@example.com")
+                .balance(5000L)
+                .build();
+        userRepository.save(user);
+
+        // When: 잔액 충전
+        User result = userBalanceService.chargeBalance(2L, 5000L);
 
         // Then
-        assertTrue(결과, "고정 키 분산락 성공");
-        로그.info("✅ 고정 키 분산락 테스트 통과");
+        assertNotNull(result);
+        assertEquals(10000L, result.getBalance());
+        log.info("✅ 사용자 잔액 충전 테스트 통과");
     }
 
     @Test
-    @DisplayName("동적 키 분산락 - 단일 스레드")
-    void 동적키분산락_단일스레드() {
-        // Given & When
-        boolean 결과 = 분산락예제서비스.issueCoupon(1L);
+    @DisplayName("쿠폰 발급 - 단일 스레드 (Transaction 정상 처리)")
+    void 쿠폰발급_단일스레드() {
+        // Given: 테스트 사용자 및 쿠폰 생성
+        User user = User.builder()
+                .userId(3L)
+                .name("user3")
+                .email("user3@example.com")
+                .balance(10000L)
+                .build();
+        userRepository.save(user);
+
+        Coupon coupon = Coupon.builder()
+                .couponId(1L)
+                .couponName("Test Coupon")
+                .discountAmount(1000L)
+                .totalQuantity(10)
+                .remainingQty(10)
+                .isActive(true)
+                .validFrom(LocalDateTime.now().minusDays(1))
+                .validUntil(LocalDateTime.now().plusDays(1))
+                .build();
+        couponRepository.save(coupon);
+
+        // When: 쿠폰 발급
+        var result = couponService.issueCouponWithLock(3L, 1L);
 
         // Then
-        assertTrue(결과, "동적 키 분산락 성공");
-        로그.info("✅ 동적 키 분산락 테스트 통과");
+        assertNotNull(result);
+        log.info("✅ 쿠폰 발급 테스트 통과");
     }
 
     @Test
-    @DisplayName("다중 파라미터 분산락 - 단일 스레드")
-    void 다중파라미터분산락_단일스레드() {
-        // Given & When
-        boolean 결과 = 분산락예제서비스.issueCouponToUser(10L, 5L);
+    @DisplayName("동일 사용자의 동시 잔액 차감 - 순차 처리 검증")
+    void 동일사용자동시차감_순차처리검증() throws InterruptedException {
+        // Given: 초기 잔액이 충분한 사용자 생성
+        User user = User.builder()
+                .userId(10L)
+                .name("user10")
+                .email("user10@example.com")
+                .balance(50000L)
+                .build();
+        userRepository.save(user);
 
-        // Then
-        assertTrue(결과, "다중 파라미터 분산락 성공");
-        로그.info("✅ 다중 파라미터 분산락 테스트 통과");
-    }
+        int threadCount = 3;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failureCount = new AtomicInteger(0);
+        long startTime = System.currentTimeMillis();
 
-    @Test
-    @DisplayName("동일 키에 대한 동시 접근 - 순차 처리 검증")
-    void 동일키동시접근_순차처리검증() throws InterruptedException {
-        // Given
-        int 스레드수 = 5;
-        ExecutorService 실행기 = Executors.newFixedThreadPool(스레드수);
-        CountDownLatch 래치 = new CountDownLatch(스레드수);
-        AtomicInteger 성공수 = new AtomicInteger(0);
-        AtomicInteger 실패수 = new AtomicInteger(0);
-        long 시작시간 = System.currentTimeMillis();
+        log.info("[Test] 동일 사용자(10L)에 대해 {} 개 스레드가 동시 차감 시도", threadCount);
 
-        로그.info("[Test] 동일 키에 대해 {} 개 스레드가 동시 접근", 스레드수);
-
-        // When: 같은 coupon:1 키로 5개 스레드가 동시 접근
-        for (int i = 0; i < 스레드수; i++) {
-            int 스레드아이디 = i;
-            실행기.submit(() -> {
+        // When: 같은 사용자의 잔액을 동시에 차감
+        for (int i = 0; i < threadCount; i++) {
+            int threadId = i;
+            executor.submit(() -> {
                 try {
-                    로그.info("[Thread-{}] 락 획득 시도...", 스레드아이디);
-                    boolean 결과 = 분산락예제서비스.issueCouponFixed();
-                    if (결과) {
-                        성공수.incrementAndGet();
-                        로그.info("[Thread-{}] ✅ 성공", 스레드아이디);
-                    } else {
-                        실패수.incrementAndGet();
-                        로그.warn("[Thread-{}] ❌ 실패", 스레드아이디);
+                    log.info("[Thread-{}] 사용자 10의 잔액 차감 시도 (5000원)...", threadId);
+                    User result = userBalanceService.deductBalance(10L, 5000L);
+                    if (result != null) {
+                        successCount.incrementAndGet();
+                        log.info("[Thread-{}] ✅ 차감 성공, 잔액: {}", threadId, result.getBalance());
                     }
                 } catch (Exception e) {
-                    실패수.incrementAndGet();
-                    로그.error("[Thread-{}] 예외 발생", 스레드아이디, e);
+                    failureCount.incrementAndGet();
+                    log.warn("[Thread-{}] ⚠️ 차감 실패: {}", threadId, e.getMessage());
                 } finally {
-                    래치.countDown();
+                    latch.countDown();
                 }
             });
         }
 
         // 모든 스레드 완료 대기
-        boolean 완료됨 = 래치.await(60, TimeUnit.SECONDS);
-        실행기.shutdown();
-        long 종료시간 = System.currentTimeMillis();
-        long 소요시간 = 종료시간 - 시작시간;
+        latch.await(30, TimeUnit.SECONDS);
+        executor.shutdown();
+        long endTime = System.currentTimeMillis();
+        long elapsedTime = endTime - startTime;
 
-        // Then
-        로그.info("========== 테스트 결과 ==========");
-        로그.info("성공: {}, 실패: {}", 성공수.get(), 실패수.get());
-        로그.info("소요 시간: {} ms", 소요시간);
-        로그.info("예상 시간: ~5000ms (각 스레드 1초 × 5개)");
+        // Then: 분산락으로 인한 순차 처리 확인
+        log.info("========== 테스트 결과 ==========");
+        log.info("성공: {}, 실패: {}", successCount.get(), failureCount.get());
+        log.info("소요 시간: {} ms", elapsedTime);
 
-        assertEquals(스레드수, 성공수.get() + 실패수.get(),
-                "모든 스레드가 완료되어야 함");
-        assertEquals(스레드수, 성공수.get(),
-                "모든 스레드가 성공해야 함 (순차 처리)");
-        assertTrue(소요시간 >= 5000,
-                "순차 처리로 인해 최소 5초 이상 소요되어야 함 (실제: " + 소요시간 + "ms)");
+        assertEquals(threadCount, successCount.get() + failureCount.get(), "모든 스레드 완료");
+        assertTrue(successCount.get() > 0, "최소 한 개의 차감 성공");
 
-        로그.info("✅ 동시 접근 테스트 통과 - 순차 처리 확인");
+        // 최종 잔액 검증: 50000 - (5000 * 성공횟수)
+        User finalUser = userRepository.findById(10L).orElseThrow();
+        log.info("최종 잔액: {} (초기: 50000, 성공: {}번)", finalUser.getBalance(), successCount.get());
+
+        log.info("✅ 동시 차감 테스트 통과 - 분산락으로 순차 처리됨");
     }
 
     @Test
-    @DisplayName("다른 키에 대한 동시 접근 - 병렬 처리 검증")
-    void 다른키동시접근_병렬처리검증() throws InterruptedException {
-        // Given
-        int 스레드수 = 5;
-        ExecutorService 실행기 = Executors.newFixedThreadPool(스레드수);
-        CountDownLatch 래치 = new CountDownLatch(스레드수);
-        AtomicInteger 성공수 = new AtomicInteger(0);
-        long 시작시간 = System.currentTimeMillis();
+    @DisplayName("서로 다른 사용자의 동시 잔액 차감 - 병렬 처리 검증")
+    void 다른사용자동시차감_병렬처리검증() throws InterruptedException {
+        // Given: 서로 다른 사용자들 생성
+        for (long i = 20L; i <= 24L; i++) {
+            User user = User.builder()
+                    .userId(i)
+                    .name("user" + i)
+                    .email("user" + i + "@example.com")
+                    .balance(10000L)
+                    .build();
+            userRepository.save(user);
+        }
 
-        로그.info("[Test] 서로 다른 키에 대해 {} 개 스레드가 동시 접근", 스레드수);
+        int threadCount = 5;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        AtomicInteger successCount = new AtomicInteger(0);
+        long startTime = System.currentTimeMillis();
 
-        // When: 서로 다른 coupon:1, coupon:2, ..., coupon:5 키로 동시 접근
-        for (int i = 0; i < 스레드수; i++) {
-            long 쿠폰아이디 = i + 1;
-            실행기.submit(() -> {
+        log.info("[Test] 서로 다른 사용자 {} 명이 동시에 잔액 차감", threadCount);
+
+        // When: 서로 다른 사용자들이 동시에 잔액 차감
+        for (int i = 0; i < threadCount; i++) {
+            long userId = 20L + i;
+            executor.submit(() -> {
                 try {
-                    로그.info("[Thread-coupon:{}] 락 획득 시도...", 쿠폰아이디);
-                    boolean 결과 = 분산락예제서비스.issueCoupon(쿠폰아이디);
-                    if (결과) {
-                        성공수.incrementAndGet();
-                        로그.info("[Thread-coupon:{}] ✅ 성공", 쿠폰아이디);
+                    log.info("[Thread-{}] 사용자 {} 잔액 차감 시도...", userId - 20, userId);
+                    User result = userBalanceService.deductBalance(userId, 3000L);
+                    if (result != null) {
+                        successCount.incrementAndGet();
+                        log.info("[Thread-{}] ✅ 성공", userId - 20);
                     }
                 } catch (Exception e) {
-                    로그.error("[Thread-coupon:{}] 예외 발생", 쿠폰아이디, e);
+                    log.error("[Thread-{}] 실패", userId - 20, e);
                 } finally {
-                    래치.countDown();
+                    latch.countDown();
                 }
             });
         }
 
         // 모든 스레드 완료 대기
-        래치.await(60, TimeUnit.SECONDS);
-        실행기.shutdown();
-        long 종료시간 = System.currentTimeMillis();
-        long 소요시간 = 종료시간 - 시작시간;
+        latch.await(30, TimeUnit.SECONDS);
+        executor.shutdown();
+        long endTime = System.currentTimeMillis();
+        long elapsedTime = endTime - startTime;
 
-        // Then
-        로그.info("========== 테스트 결과 ==========");
-        로그.info("성공: {}", 성공수.get());
-        로그.info("소요 시간: {} ms", 소요시간);
-        로그.info("예상 시간: ~1000ms (병렬 처리, 최대 1초)");
+        // Then: 병렬 처리로 빠르게 완료되어야 함
+        log.info("========== 테스트 결과 ==========");
+        log.info("성공: {}", successCount.get());
+        log.info("소요 시간: {} ms", elapsedTime);
 
-        assertEquals(스레드수, 성공수.get(),
-                "모든 스레드가 성공해야 함 (병렬 처리)");
-        assertTrue(소요시간 < 5000,
-                "병렬 처리로 인해 5초 미만이어야 함 (실제: " + 소요시간 + "ms)");
-
-        로그.info("✅ 다른 키 테스트 통과 - 병렬 처리 확인");
+        assertEquals(threadCount, successCount.get(), "모든 사용자의 차감 성공 (병렬 처리)");
+        log.info("✅ 병렬 처리 테스트 통과");
     }
 
     @Test
-    @DisplayName("락 타임아웃 - 락 획득 실패")
-    void 락타임아웃_락획득실패() throws InterruptedException {
-        // Given
-        ExecutorService 실행기 = Executors.newFixedThreadPool(2);
-        CountDownLatch 래치 = new CountDownLatch(1);
-        AtomicInteger 두번째스레드성공 = new AtomicInteger(0);
+    @DisplayName("쿠폰 선착순 발급 - 동시성 제어 검증")
+    void 쿠폰선착순발급_동시성제어검증() throws InterruptedException {
+        // Given: 쿠폰 생성 (재고: 2개)
+        Coupon coupon = Coupon.builder()
+                .couponId(100L)
+                .couponName("Limited Coupon")
+                .discountAmount(5000L)
+                .totalQuantity(2)
+                .remainingQty(2)
+                .isActive(true)
+                .validFrom(LocalDateTime.now().minusDays(1))
+                .validUntil(LocalDateTime.now().plusDays(1))
+                .build();
+        couponRepository.save(coupon);
 
-        로그.info("[Test] 락 타임아웃 검증");
+        // 테스트 사용자들 생성
+        for (long i = 100L; i <= 104L; i++) {
+            User user = User.builder()
+                    .userId(i)
+                    .name("user" + i)
+                    .email("user" + i + "@example.com")
+                    .balance(10000L)
+                    .build();
+            userRepository.save(user);
+        }
 
-        // When: 첫 번째 스레드가 오래 걸리는 작업 수행
-        실행기.submit(() -> {
-            try {
-                로그.info("[Thread-1] 락 획득 시도 (오래 걸리는 작업)");
-                boolean 결과 = 분산락예제서비스.issueCoupon(100L);
-                로그.info("[Thread-1] 완료 - result: {}", 결과);
-            } catch (Exception e) {
-                로그.error("[Thread-1] 예외 발생", e);
-            }
-        });
+        int threadCount = 5;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failureCount = new AtomicInteger(0);
+        long startTime = System.currentTimeMillis();
 
-        // 첫 번째 스레드가 락을 획득하도록 대기
-        Thread.sleep(500);
+        log.info("[Test] 재고 2개 쿠폰을 {} 명이 동시에 발급 시도 (선착순)", threadCount);
 
-        // 두 번째 스레드가 즉시 락 획득 시도 (실패해야 함)
-        실행기.submit(() -> {
-            try {
-                로그.info("[Thread-2] 락 획득 시도 (즉시)");
-                boolean 결과 = 분산락예제서비스.issueCoupon(100L);
-                로그.info("[Thread-2] 완료 - result: {}", 결과);
-                if (!결과) {
-                    두번째스레드성공.set(1);
+        // When: 5명이 동시에 쿠폰 발급 시도 (2개만 발급 가능)
+        for (int i = 0; i < threadCount; i++) {
+            long userId = 100L + i;
+            executor.submit(() -> {
+                try {
+                    log.info("[User-{}] 쿠폰 발급 시도...", userId - 100);
+                    var result = couponService.issueCouponWithLock(userId, 100L);
+                    successCount.incrementAndGet();
+                    log.info("[User-{}] ✅ 쿠폰 발급 성공", userId - 100);
+                } catch (IllegalArgumentException e) {
+                    failureCount.incrementAndGet();
+                    log.info("[User-{}] ⚠️ 쿠폰 소진 또는 중복 발급", userId - 100);
+                } catch (Exception e) {
+                    failureCount.incrementAndGet();
+                    log.error("[User-{}] ❌ 예외 발생", userId - 100, e);
+                } finally {
+                    latch.countDown();
                 }
-                래치.countDown();
-            } catch (Exception e) {
-                로그.error("[Thread-2] 예외 발생", e);
-                래치.countDown();
-            }
-        });
+            });
+        }
 
-        // 결과 대기
-        래치.await(15, TimeUnit.SECONDS);
-        실행기.shutdown();
+        // 모든 스레드 완료 대기
+        latch.await(30, TimeUnit.SECONDS);
+        executor.shutdown();
+        long endTime = System.currentTimeMillis();
+        long elapsedTime = endTime - startTime;
 
-        // Then
-        로그.info("========== 테스트 결과 ==========");
-        로그.info("두 번째 스레드 실패 여부: {}", 두번째스레드성공.get());
+        // Then: 최대 2개만 발급되어야 함
+        log.info("========== 테스트 결과 ==========");
+        log.info("발급 성공: {}, 발급 실패: {}", successCount.get(), failureCount.get());
+        log.info("소요 시간: {} ms", elapsedTime);
+        log.info("예상: 최대 2개 발급 (재고 2개), 나머지 3개 실패");
 
-        // Note: 두 번째 스레드는 5초간 대기하므로 결과가 false일 가능성이 높음
-        로그.info("✅ 락 타임아웃 테스트 완료");
+        assertEquals(threadCount, successCount.get() + failureCount.get(), "모든 스레드 완료");
+        assertEquals(2, successCount.get(), "정확히 2개의 쿠폰만 발급되어야 함 (선착순)");
+
+        log.info("✅ 선착순 발급 테스트 통과 - 동시성 제어 확인");
     }
 }

@@ -8,8 +8,10 @@ import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
+import com.hhplus.ecommerce.domain.order.ChildTransactionEventRepository;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.UserCouponResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,6 +58,12 @@ class CouponServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ChildTransactionEventRepository childTransactionEventRepository;
+
+    @Mock
+    private ObjectMapper objectMapper;
+
     private static final Long TEST_USER_ID = 1L;
     private static final Long TEST_COUPON_ID = 1L;
     private static final Long TEST_USER_COUPON_ID = 100L;
@@ -63,7 +71,7 @@ class CouponServiceTest {
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
-        couponService = new CouponService(couponRepository, userCouponRepository, userRepository);
+        couponService = new CouponService(couponRepository, userCouponRepository, userRepository, childTransactionEventRepository, objectMapper);
     }
 
     // ========== 쿠폰 발급 (issueCoupon) ==========

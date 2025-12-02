@@ -61,4 +61,16 @@ public interface UserCouponRepository {
      * 사용자 쿠폰 업데이트
      */
     UserCoupon update(UserCoupon userCoupon);
+
+    /**
+     * 사용자 쿠폰 삭제 (보상용)
+     *
+     * Outbox 패턴의 보상 로직에서 호출
+     * - COUPON_ISSUE 이벤트의 보상 시 발급된 쿠폰 기록 삭제
+     * - 삭제되지 않은 경우 (이미 없는 경우) 무시
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
+     */
+    void deleteByUserIdAndCouponId(Long userId, Long couponId);
 }

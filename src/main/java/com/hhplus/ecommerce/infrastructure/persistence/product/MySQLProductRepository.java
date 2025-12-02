@@ -7,7 +7,9 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -72,6 +74,38 @@ public class MySQLProductRepository implements ProductRepository {
         // 최근 3일간의 주문 수는 0으로 초기화 (인기상품 계산용)
         // 실시간 인기상품 계산은 별도의 배치 작업이나 캐시로 처리
         return 0L;
+    }
+
+    /**
+     * ✅ 배치 쿼리로 여러 상품의 최근 3일 주문 수량 조회 (Message 5)
+     *
+     * N+1 문제 해결:
+     * - 기존 PopularProductServiceImpl: 각 상품마다 getOrderCount3Days() 호출
+     * - 개선: 모든 상품의 주문 수량을 1번의 쿼리로 조회
+     *
+     * 반환 형태:
+     * - Map<productId, orderCount> 형태로 메모리 lookup 최적화
+     * - Stream API로 빠른 처리
+     *
+     * @param productIds 상품 ID 목록 (최근 3일 주문된 상품들)
+     * @return productId별 최근 3일 주문 수량
+     */
+    public Map<Long, Long> getOrderCountsLast3Days(List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        List<Map<String, Object>> results = productJpaRepository.countOrdersByProductIdsLast3Days(productIds);
+
+        // 배치 쿼리 결과를 productId → orderCount Map으로 변환
+        Map<Long, Long> orderCountMap = new HashMap<>();
+        for (Map<String, Object> row : results) {
+            Long productId = ((Number) row.get("productId")).longValue();
+            Long orderCount = ((Number) row.get("orderCount")).longValue();
+            orderCountMap.put(productId, orderCount);
+        }
+
+        return orderCountMap;
     }
 
     @Override

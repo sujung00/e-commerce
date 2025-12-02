@@ -14,50 +14,51 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.DefaultTransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 분산락 AOP 처리 (우선순위 명시 버전)
+ * 분산락 AOP 처리 (TransactionSynchronization 기반)
  *
- * ⚠️ CRITICAL: AOP 실행 순서 보장
+ * ⚠️ CRITICAL: Lock 해제 시점 보장
  * ===========================================
- * Spring에서는 여러 AOP가 적용될 때 순서가 중요합니다.
- * @Transactional은 기본 order=0으로 실행되지만,
- * 분산락은 반드시 @Transactional보다 먼저 실행되어야 합니다.
- *
- * 해결책: @Order(Ordered.LOWEST_PRECEDENCE - 100) 적용
- * - 낮은 값 = 높은 우선순위 (먼저 실행)
- * - @Transactional (order=0) 보다 먼저 실행됨
+ * Lock을 획득하면서도 @Transactional 메서드의 트랜잭션이 완벽하게 커밋된 후에만
+ * Lock이 해제되어야 합니다. 이를 위해 TransactionSynchronization을 사용합니다.
  *
  * 실행 순서 (명시적 보장):
- * ┌─────────────────────────────────────┐
- * │ 1. Lock 획득 (DistributedLockAop)    │ ← @Order(-1000): 가장 먼저
- * ├─────────────────────────────────────┤
- * │ 2. @Transactional 시작              │ ← order=0: 다음에 실행
- * ├─────────────────────────────────────┤
- * │ 3. 비즈니스 로직 실행                │
- * ├─────────────────────────────────────┤
- * │ 4. @Transactional 종료 (커밋/롤백)   │
- * ├─────────────────────────────────────┤
- * │ 5. Lock 해제 (finally 블록)         │ ← 마지막에 실행
- * └─────────────────────────────────────┘
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ 1. Lock 획득 (DistributedLockAop)                                   │
+ * │    @Order(-1000): 가장 먼저 실행됨                                  │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │ 2. @Transactional 시작                                              │
+ * │    propagation = REQUIRES_NEW: 새로운 독립적인 트랜잭션 생성        │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │ 3. 비즈니스 로직 실행                                                │
+ * │    DB 레벨 비관적 락 (SELECT...FOR UPDATE) 적용                    │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │ 4. @Transactional 커밋/롤백                                         │
+ * │    TransactionSynchronization 콜백 등록됨                          │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │ 5. 트랜잭션 완전히 종료 후 Lock 해제                                │
+ * │    TransactionSynchronization.afterCompletion() 호출              │
+ * └─────────────────────────────────────────────────────────────────────┘
  *
- * 책임 분리:
- * - AOP는 "분산락만 담당"
- * - 트랜잭션은 서비스 메서드의 @Transactional에서만 관리
+ * 동시성 제어 전략:
+ * - Redis 분산락: 분산 환경에서 여러 서버의 동시 접근 방지
+ * - DB 비관적 락: 단일 DB 내에서 Lost Update 방지
+ * - TransactionSynchronization: 트랜잭션 완료 후 Lock 해제
+ * - REQUIRES_NEW: 각 메서드가 독립적인 트랜잭션 경계
  *
  * @DistributedLock 어노테이션이 붙은 메서드 호출 시:
  * 1. 동적 키 생성 (Spring EL 지원)
  * 2. Redis 분산락 획득 시도 (타임아웃 처리)
- * 3. 락 획득 성공 시 메서드 실행, 실패 시 RuntimeException 발생
- * 4. 메서드 실행 후 finally 블록에서 락 해제
+ * 3. TransactionSynchronization 콜백 등록
+ * 4. 메서드 실행 (@Transactional 트랜잭션 시작)
+ * 5. 트랜잭션 커밋/롤백
+ * 6. TransactionSynchronization 콜백 실행 → Lock 해제
  */
 @Aspect
 @Component
@@ -73,12 +74,16 @@ public class DistributedLockAop implements Ordered {
      * @DistributedLock 어노테이션이 붙은 메서드를 인터셉트하여 분산락을 적용합니다.
      *
      * ✅ 주요 개선:
-     * 1. @Order(LOWEST_PRECEDENCE - 1000) 적용 → @Transactional보다 먼저 실행
-     * 2. 래퍼 메서드 생성 → 트랜잭션 프록시를 우회하고 순수 @Transactional 호출 가능
+     * 1. @Order(LOWEST_PRECEDENCE - 1000) → @Transactional보다 먼저 실행 보장
+     * 2. TransactionSynchronization 사용 → 트랜잭션 완료 후 Lock 해제
      * 3. 실행 순서 보장:
-     *    Lock 획득 (AOP) → @Transactional 시작 → 비즈니스로직 → @Transactional 종료 → Lock 해제
-     * 4. AopForTransaction 제거 (REQUIRES_NEW 트랜잭션 생성 안 함)
-     * 5. joinPoint.proceed()만 호출 (트랜잭션 개입 없음)
+     *    Lock 획득 → @Transactional 시작 → 비즈니스로직 → @Transactional 종료 → Lock 해제
+     * 4. 동시성 시나리오 처리:
+     *    - 정상 커밋: TransactionSynchronization.afterCompletion(STATUS_COMMITTED)
+     *    - 롤백 발생: TransactionSynchronization.afterCompletion(STATUS_ROLLED_BACK)
+     *    - 트랜잭션 없음: finally 블록에서 lock 해제 (for non-transactional methods)
+     *
+     * ⚠️ 주의: 이 메서드는 반드시 @Transactional(propagation=REQUIRES_NEW)과 함께 사용되어야 합니다.
      */
     @Around("@annotation(distributedLock)")
     public Object around(ProceedingJoinPoint joinPoint, DistributedLock distributedLock) throws Throwable {
@@ -88,7 +93,6 @@ public class DistributedLockAop implements Ordered {
         boolean lockAcquired = false;
         try {
             // ============ STEP 1: Lock 획득 ============
-            // 이 단계는 @Transactional보다 먼저 실행됨 (Order 설정으로 보장)
             log.debug("[DistributedLock] 락 획득 시도 - key: {}, waitTime: {}s, leaseTime: {}s",
                     dynamicKey,
                     distributedLock.waitTime(),
@@ -109,9 +113,20 @@ public class DistributedLockAop implements Ordered {
 
             log.info("[DistributedLock] 락 획득 성공 - key: {}", dynamicKey);
 
-            // ============ STEP 2: @Transactional 시작 & 비즈니스 로직 실행 ============
+            // ============ STEP 2: TransactionSynchronization 콜백 등록 ============
+            // 트랜잭션이 존재하는 경우 (즉, @Transactional이 붙어있는 메서드)
+            // TransactionSynchronization 콜백을 등록하여 트랜잭션 완료 후 Lock 해제
+            // 트랜잭션이 없는 경우 finally 블록에서 Lock 해제됨
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                TransactionSynchronizationManager.registerSynchronization(
+                        new LockReleaseSynchronization(rLock, dynamicKey)
+                );
+                log.debug("[DistributedLock] TransactionSynchronization 콜백 등록 - key: {}", dynamicKey);
+            }
+
+            // ============ STEP 3: @Transactional 시작 & 비즈니스 로직 실행 ============
             // joinPoint.proceed()를 호출하면:
-            // - Spring이 @Transactional을 감지하고 트랜잭션 시작
+            // - Spring이 @Transactional을 감지하고 트랜잭션 시작 (또는 기존 트랜잭션 재사용)
             // - 비즈니스 로직 실행
             // - 예외 없으면 트랜잭션 커밋
             // - 예외 발생하면 트랜잭션 롤백 (Spring이 자동 처리)
@@ -123,7 +138,7 @@ public class DistributedLockAop implements Ordered {
 
             } catch (Throwable throwable) {
                 // ❌ 예외 발생 → 트랜잭션 롤백 (Spring이 자동 처리)
-                // 이 예외는 그대로 전파되며, 호출자가 처리하거나 상위 레이어로 전파됨
+                // TransactionSynchronization 콜백이 등록되었다면 afterCompletion()이 호출됨
                 log.error("[DistributedLock] 메서드 실행 중 예외 발생 - key: {}, exception: {}",
                         dynamicKey, throwable.getClass().getSimpleName(), throwable);
                 throw throwable;
@@ -139,20 +154,72 @@ public class DistributedLockAop implements Ordered {
             );
 
         } finally {
-            // ============ STEP 3: Lock 해제 ============
-            // 이 단계는 모든 상황에서 반드시 실행됨 (finally 보장)
-            // - 비즈니스 로직 성공 후
-            // - 비즈니스 로직 예외 발생 후
-            // - 어떤 상황이든 Lock 해제되어야 함
+            // ============ STEP 4: Lock 해제 (트랜잭션 없는 경우만) ============
+            // TransactionSynchronization이 등록되었으면 이 블록에서는 해제하지 않음
+            // (트랜잭션 완료 후 콜백에서 해제됨)
+            //
+            // TransactionSynchronization이 없는 경우 (non-transactional methods):
+            // - 이 finally 블록에서 Lock을 해제
             if (lockAcquired && rLock.isHeldByCurrentThread()) {
-                try {
-                    rLock.unlock();
-                    log.info("[DistributedLock] 락 해제 성공 - key: {}", dynamicKey);
-                } catch (Exception unlockError) {
-                    log.error("[DistributedLock] 락 해제 중 오류 발생 - key: {}", dynamicKey, unlockError);
-                    // 락 해제 오류는 로깅만 하고 계속 진행
-                    // (이미 비즈니스 로직은 완료되었으므로)
+                // TransactionSynchronization이 등록되었는지 확인
+                // (등록되었으면 콜백에서 처리되므로 여기서는 스킵)
+                if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+                    try {
+                        rLock.unlock();
+                        log.info("[DistributedLock] 락 해제 성공 (non-transactional) - key: {}", dynamicKey);
+                    } catch (Exception unlockError) {
+                        log.error("[DistributedLock] 락 해제 중 오류 발생 - key: {}", dynamicKey, unlockError);
+                    }
                 }
+            }
+        }
+    }
+
+    /**
+     * 트랜잭션 완료 후 Lock을 해제하는 TransactionSynchronization 구현
+     *
+     * 트랜잭션이 커밋되거나 롤백된 후에 호출되어 Lock을 안전하게 해제합니다.
+     */
+    private static class LockReleaseSynchronization implements TransactionSynchronization {
+        private final RLock rLock;
+        private final String lockKey;
+        private boolean lockReleased = false;
+
+        public LockReleaseSynchronization(RLock rLock, String lockKey) {
+            this.rLock = rLock;
+            this.lockKey = lockKey;
+        }
+
+        /**
+         * 트랜잭션 완료 후 호출됨 (커밋 또는 롤백 모두)
+         *
+         * @param status TransactionSynchronization.STATUS_COMMITTED (커밋 성공)
+         *               TransactionSynchronization.STATUS_ROLLED_BACK (롤백)
+         *               TransactionSynchronization.STATUS_UNKNOWN (불명확)
+         */
+        @Override
+        public void afterCompletion(int status) {
+            if (lockReleased) {
+                return;  // 중복 해제 방지
+            }
+
+            try {
+                if (rLock.isHeldByCurrentThread()) {
+                    rLock.unlock();
+                    lockReleased = true;
+
+                    String statusString = switch (status) {
+                        case STATUS_COMMITTED -> "COMMITTED";
+                        case STATUS_ROLLED_BACK -> "ROLLED_BACK";
+                        default -> "UNKNOWN";
+                    };
+
+                    log.info("[DistributedLock] 락 해제 성공 (TransactionSynchronization, status={}) - key: {}",
+                            statusString, lockKey);
+                }
+            } catch (Exception e) {
+                log.error("[DistributedLock] 락 해제 중 오류 발생 (TransactionSynchronization) - key: {}",
+                        lockKey, e);
             }
         }
     }

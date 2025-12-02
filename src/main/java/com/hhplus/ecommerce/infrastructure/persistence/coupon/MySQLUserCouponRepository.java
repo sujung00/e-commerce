@@ -75,4 +75,10 @@ public class MySQLUserCouponRepository implements UserCouponRepository {
     public UserCoupon update(UserCoupon userCoupon) {
         return userCouponJpaRepository.save(userCoupon);
     }
+
+    @Override
+    @Transactional
+    public void deleteByUserIdAndCouponId(Long userId, Long couponId) {
+        userCouponJpaRepository.deleteByUserIdAndCouponId(userId, couponId);
+    }
 }

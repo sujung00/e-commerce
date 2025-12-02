@@ -117,6 +117,34 @@ public class Coupon {
     }
 
     /**
+     * 쿠폰 재고 복구 (보상용)
+     *
+     * Outbox 패턴의 보상 로직에서 호출
+     * - COUPON_ISSUE 이벤트의 보상 시 쿠폰의 remaining_qty 복구
+     * - 발급 시에 1 감소했으므로, 보상 시에 1 증가
+     *
+     * 비즈니스 규칙:
+     * - 복구 후 total_quantity를 초과하지 않음
+     * - 재고가 복구되면 is_active를 true로 변경
+     *
+     * @throws IllegalArgumentException remaining_qty가 이미 total_quantity와 같은 경우
+     */
+    public void increaseRemainingQty() {
+        if (this.remainingQty >= this.totalQuantity) {
+            throw new IllegalArgumentException(
+                    "쿠폰 복구 불가능: 이미 전체 재고 상태입니다 (remaining: " + this.remainingQty + ", total: " + this.totalQuantity + ")"
+            );
+        }
+        this.remainingQty++;
+        this.updatedAt = LocalDateTime.now();
+
+        // 재고가 복구되면 다시 활성화
+        if (this.remainingQty > 0) {
+            this.isActive = true;
+        }
+    }
+
+    /**
      * 쿠폰 재고 확인
      */
     public boolean hasStock() {

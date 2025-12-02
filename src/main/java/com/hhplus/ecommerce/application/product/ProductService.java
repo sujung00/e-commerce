@@ -3,6 +3,7 @@ package com.hhplus.ecommerce.application.product;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
+import com.hhplus.ecommerce.infrastructure.config.CacheKeyConstants;
 import com.hhplus.ecommerce.presentation.product.response.ProductDetailResponse;
 import com.hhplus.ecommerce.presentation.product.response.ProductListResponse;
 import com.hhplus.ecommerce.presentation.product.response.ProductResponse;
@@ -37,12 +38,14 @@ public class ProductService {
      * TTL: 1시간 (실제 프로덕션에서는 Redis로 TTL 적용)
      * 예상 효과: TPS 200 → 1000 (5배 향상)
      *
+     * ✅ 개선: 캐시 이름을 CacheKeyConstants로 상수화
+     *
      * @param page 페이지 번호 (0-based)
      * @param size 페이지당 항목 수
      * @param sort 정렬 기준 (필드명,방향)
      * @return 페이지네이션된 상품 목록
      */
-    @Cacheable(value = "productList", key = "'list_' + #page + '_' + #size + '_' + #sort")
+    @Cacheable(value = CacheKeyConstants.PRODUCT_LIST, key = "'list_' + #page + '_' + #size + '_' + #sort")
     public ProductListResponse getProductList(int page, int size, String sort) {
         // 파라미터 검증
         if (page < 0) {
@@ -83,10 +86,12 @@ public class ProductService {
      * TTL: 2시간 (실제 프로덕션에서는 Redis로 TTL 적용)
      * 예상 효과: TPS 3배 향상, 응답시간 87% 감소
      *
+     * ✅ 개선: 캐시 이름을 CacheKeyConstants로 상수화
+     *
      * @param productId 상품 ID
      * @return 상품 상세 정보
      */
-    @Cacheable(value = "productDetail", key = "#productId")
+    @Cacheable(value = CacheKeyConstants.PRODUCT_DETAIL, key = "#productId")
     public ProductDetailResponse getProductDetail(Long productId) {
         // 파라미터 검증
         if (productId <= 0) {

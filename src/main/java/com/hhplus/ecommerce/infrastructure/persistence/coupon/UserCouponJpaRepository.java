@@ -40,4 +40,15 @@ public interface UserCouponJpaRepository extends JpaRepository<UserCoupon, Long>
     List<UserCoupon> findByUserIdAndStatusString(@Param("userId") Long userId, @Param("status") UserCouponStatus status);
 
     List<UserCoupon> findByUserId(Long userId);
+
+    /**
+     * 사용자 쿠폰 삭제 (보상용)
+     *
+     * Outbox 패턴의 보상 로직에서 호출
+     * - COUPON_ISSUE 이벤트의 보상 시 발급된 쿠폰 기록 삭제
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
+     */
+    void deleteByUserIdAndCouponId(Long userId, Long couponId);
 }
