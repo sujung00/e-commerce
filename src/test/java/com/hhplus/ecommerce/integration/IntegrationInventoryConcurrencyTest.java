@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * IntegrationInventoryConcurrencyTest - 재고 동시 차감 동시성 제어 테스트
+ * 재고동시성통합테스트 - 재고 동시 차감 동시성 제어 테스트
  *
  * 목표:
  * 1. 재고 동시 차감 시 초과 판매 방지 검증 (Pessimistic Lock)

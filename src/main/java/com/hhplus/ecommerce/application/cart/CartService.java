@@ -7,6 +7,8 @@ import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
 import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
 import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
 import com.hhplus.ecommerce.presentation.cart.response.CartResponseDto;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -36,7 +38,20 @@ public class CartService {
 
     /**
      * 사용자의 장바구니 조회
+     *
+     * ✅ 성능 최적화 (Message 5):
+     * - Redis 캐시: TTL 3분으로 조회 성능 개선
+     * - 캐시 전략: key = "cart:{userId}"
+     * - 캐시 무효화: 장바구니 수정 시 자동 제거
+     *
+     * @param userId 사용자 ID
+     * @return 장바구니 정보 (상품 목록, 총액 포함)
      */
+    @Cacheable(
+            value = "cartCache",
+            key = "'cart:' + #userId",
+            unless = "#result == null"
+    )
     public CartResponseDto getCartByUserId(Long userId) {
         // 사용자 존재 검증
         if (!userRepository.existsById(userId)) {
@@ -68,6 +83,9 @@ public class CartService {
     /**
      * 장바구니에 아이템 추가
      *
+     * ✅ 캐시 무효화 (Message 5):
+     * - @CacheEvict: 장바구니 수정 시 캐시 제거
+     *
      * 로직:
      * 1. 사용자 존재 검증
      * 2. 수량 검증
@@ -77,6 +95,7 @@ public class CartService {
      *    - 없으면: 새 항목 생성
      * 5. 장바구니 총액 업데이트
      */
+    @CacheEvict(value = "cartCache", key = "'cart:' + #userId")
     public CartItemResponse addItem(Long userId, AddCartItemRequest request) {
         // 사용자 존재 검증
         if (!userRepository.existsById(userId)) {
@@ -134,7 +153,10 @@ public class CartService {
 
     /**
      * 장바구니 아이템 수량 수정
+     *
+     * ✅ 캐시 무효화 (Message 5)
      */
+    @CacheEvict(value = "cartCache", key = "'cart:' + #userId")
     public CartItemResponse updateItemQuantity(Long userId, Long cartItemId, UpdateQuantityRequest request) {
         // 사용자 존재 검증
         if (!userRepository.existsById(userId)) {
@@ -173,7 +195,10 @@ public class CartService {
 
     /**
      * 장바구니에서 아이템 제거
+     *
+     * ✅ 캐시 무효화 (Message 5)
      */
+    @CacheEvict(value = "cartCache", key = "'cart:' + #userId")
     public void removeItem(Long userId, Long cartItemId) {
         // 사용자 존재 검증
         if (!userRepository.existsById(userId)) {

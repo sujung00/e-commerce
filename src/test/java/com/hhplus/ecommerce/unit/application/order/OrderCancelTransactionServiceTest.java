@@ -10,6 +10,7 @@ import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.OrderCancelTransactionService;
+import com.hhplus.ecommerce.application.user.UserBalanceService;
 import com.hhplus.ecommerce.application.order.dto.CancelOrderResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -62,6 +63,9 @@ class OrderCancelTransactionServiceTest {
     @Mock
     private UserCouponRepository userCouponRepository;
 
+    @Mock
+    private UserBalanceService userBalanceService;
+
     private static final Long TEST_USER_ID = 1L;
     private static final Long TEST_ORDER_ID = 100L;
     private static final Long TEST_PRODUCT_ID = 1L;
@@ -74,7 +78,8 @@ class OrderCancelTransactionServiceTest {
                 orderRepository,
                 productRepository,
                 userRepository,
-                userCouponRepository
+                userCouponRepository,
+                userBalanceService
         );
     }
 

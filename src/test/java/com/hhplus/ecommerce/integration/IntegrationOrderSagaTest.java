@@ -39,7 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * IntegrationOrderSagaTest - 주문 Saga 패턴 및 결제 흐름 동시성 테스트
+ * 주문사가통합테스트 - 주문 Saga 패턴 및 결제 흐름 동시성 테스트
  *
  * 테스트 목표:
  * 1. 결제 프로세스의 원자성 검증 (@Transactional + @Retryable)

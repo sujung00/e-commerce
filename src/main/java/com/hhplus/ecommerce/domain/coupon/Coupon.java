@@ -87,4 +87,81 @@ public class Coupon {
             }
         }
     }
+
+    /**
+     * 쿠폰 재고 차감 (Domain 비즈니스 로직)
+     *
+     * 동시성 제어:
+     * - @Version으로 낙관적 락 보호
+     * - Service 계층의 비관적 락(SELECT ... FOR UPDATE)과 함께 사용
+     * - DB 레벨 비관적 락이 메인 전략, @Version은 추가 안전장치
+     *
+     * 비즈니스 규칙:
+     * - 재고가 0보다 커야 함 (재고 부족 시 예외)
+     * - 차감 후 version 자동 증가 (JPA 관리)
+     * - 남은 수량이 0이면 is_active를 false로 변경
+     *
+     * @throws IllegalArgumentException 재고 부족
+     */
+    public void decreaseStock() {
+        if (this.remainingQty <= 0) {
+            throw new IllegalArgumentException("쿠폰 재고가 부족합니다 (남은 수량: " + this.remainingQty + ")");
+        }
+        this.remainingQty--;
+        this.updatedAt = LocalDateTime.now();
+
+        // 재고가 소진되면 자동으로 비활성화
+        if (this.remainingQty == 0) {
+            this.isActive = false;
+        }
+    }
+
+    /**
+     * 쿠폰 재고 복구 (보상용)
+     *
+     * Outbox 패턴의 보상 로직에서 호출
+     * - COUPON_ISSUE 이벤트의 보상 시 쿠폰의 remaining_qty 복구
+     * - 발급 시에 1 감소했으므로, 보상 시에 1 증가
+     *
+     * 비즈니스 규칙:
+     * - 복구 후 total_quantity를 초과하지 않음
+     * - 재고가 복구되면 is_active를 true로 변경
+     *
+     * @throws IllegalArgumentException remaining_qty가 이미 total_quantity와 같은 경우
+     */
+    public void increaseRemainingQty() {
+        if (this.remainingQty >= this.totalQuantity) {
+            throw new IllegalArgumentException(
+                    "쿠폰 복구 불가능: 이미 전체 재고 상태입니다 (remaining: " + this.remainingQty + ", total: " + this.totalQuantity + ")"
+            );
+        }
+        this.remainingQty++;
+        this.updatedAt = LocalDateTime.now();
+
+        // 재고가 복구되면 다시 활성화
+        if (this.remainingQty > 0) {
+            this.isActive = true;
+        }
+    }
+
+    /**
+     * 쿠폰 재고 확인
+     */
+    public boolean hasStock() {
+        return this.remainingQty > 0;
+    }
+
+    /**
+     * 쿠폰 활성화 상태 확인
+     */
+    public boolean isActiveCoupon() {
+        return Boolean.TRUE.equals(this.isActive);
+    }
+
+    /**
+     * 유효 기간 확인
+     */
+    public boolean isValidPeriod(LocalDateTime now) {
+        return !now.isBefore(this.validFrom) && !now.isAfter(this.validUntil);
+    }
 }

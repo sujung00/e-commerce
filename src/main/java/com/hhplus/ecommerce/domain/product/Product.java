@@ -22,6 +22,12 @@ import java.util.Optional;
  * - 모든 옵션의 재고가 0이면 자동으로 품절(SOLD_OUT) 상태로 변경
  * - 가격은 0보다 커야 함
  * - 옵션은 null이 될 수 없음
+ *
+ * 동시성 제어:
+ * - @Version: 낙관적 락으로 동시 수정 충돌 감지
+ * - ProductOption과 일관된 Lock 전략 (둘 다 낙관적 락)
+ * - OptimisticLockException 발생 시 @Retryable로 자동 재시도
+ * - synchronized 제거: DB 레벨 낙관적 락으로 충분
  */
 @Entity
 @Table(name = "products")
@@ -49,6 +55,10 @@ public class Product {
 
     @Column(name = "status", nullable = false)
     private String status;
+
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -177,14 +187,21 @@ public class Product {
     /**
      * 옵션의 재고 차감 (주문 시)
      *
+     * 동시성 제어:
+     * - Product와 ProductOption 모두 @Version 사용 (낙관적 락)
+     * - OptimisticLockException 발생 시 @Retryable로 자동 재시도
+     * - synchronized 불필요: DB 레벨에서 충돌 감지 및 재시도
+     *
      * 비즈니스 규칙:
      * - 옵션이 존재해야 함
      * - 차감량은 0보다 커야 함
      * - 충분한 재고가 필요
+     * - 재고 차감 후 총 재고 재계산 및 상태 업데이트
      *
      * @param optionId 옵션 ID
      * @param quantity 차감 수량
      * @throws ProductNotFoundException 옵션을 찾을 수 없음
+     * @throws IllegalArgumentException 재고 부족
      */
     public void deductStock(Long optionId, int quantity) {
         if (quantity <= 0) {
@@ -200,7 +217,12 @@ public class Product {
             );
         }
 
+        // ProductOption.deductStock()이 @Version으로 보호됨
+        // 동시에 차감 시도 시 하나만 성공, 나머지는 OptimisticLockException
         option.deductStock(quantity);
+
+        // Product 엔티티도 @Version으로 보호됨
+        // 총 재고 재계산 및 상태 업데이트 시 version 자동 증가
         this.recalculateTotalStock();
     }
 
