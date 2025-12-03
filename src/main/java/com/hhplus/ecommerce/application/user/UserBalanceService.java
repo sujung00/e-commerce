@@ -8,7 +8,6 @@ import com.hhplus.ecommerce.domain.order.ChildTransactionEvent;
 import com.hhplus.ecommerce.domain.order.ChildTransactionEventRepository;
 import com.hhplus.ecommerce.domain.order.ChildTxType;
 import com.hhplus.ecommerce.domain.order.EventStatus;
-import com.hhplus.ecommerce.infrastructure.lock.DistributedLock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -102,7 +101,6 @@ public class UserBalanceService {
      * @throws IllegalArgumentException 금액이 0 이하
      * @throws RuntimeException 분산락 획득 실패
      */
-    @DistributedLock(key = "balance:#p0", waitTime = 5, leaseTime = 2)
     @Transactional(
         propagation = Propagation.REQUIRES_NEW,
         rollbackFor = Exception.class
@@ -125,7 +123,6 @@ public class UserBalanceService {
      * @throws IllegalArgumentException 금액이 0 이하
      * @throws RuntimeException 분산락 획득 실패
      */
-    @DistributedLock(key = "balance:#p0", waitTime = 5, leaseTime = 2)
     @Transactional(
         propagation = Propagation.REQUIRES_NEW,
         rollbackFor = Exception.class
@@ -237,7 +234,6 @@ public class UserBalanceService {
      * @throws IllegalArgumentException 금액이 0 이하
      * @throws RuntimeException 분산락 획득 실패
      */
-    @DistributedLock(key = "balance:#p0", waitTime = 5, leaseTime = 2)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public User chargeBalance(Long userId, Long amount) {
         // 1. 사용자 조회 (비관적 락 획득)
@@ -280,7 +276,6 @@ public class UserBalanceService {
      * @throws IllegalArgumentException 금액이 0 이하
      * @throws RuntimeException 분산락 획득 실패
      */
-    @DistributedLock(key = "balance:#p0", waitTime = 5, leaseTime = 2)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public User refundBalance(Long userId, Long amount) {
         // 1. 사용자 조회 (비관적 락 획득)

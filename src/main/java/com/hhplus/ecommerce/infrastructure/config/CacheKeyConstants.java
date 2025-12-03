@@ -1,21 +1,27 @@
 package com.hhplus.ecommerce.infrastructure.config;
 
 /**
- * 캐시 키 상수 클래스
+ * ⚠️ [DEPRECATED] 캐시 키 상수 클래스
  *
- * 역할:
- * - @Cacheable의 문자열 리터럴을 상수로 관리
- * - 캐시 키 일관성 보장
- * - IDE 자동완성으로 개발 효율 향상
- * - 캐시 키 변경 시 한 곳에서만 수정
+ * ❌ 이 클래스는 더 이상 사용되지 않습니다.
+ * ✅ 대신 {@link RedisKeyType} enum을 사용하세요.
  *
- * 캐시 전략:
- * - productList: 상품 목록 조회 (TTL: 1시간)
- * - productDetail: 상품 상세 조회 (TTL: 2시간)
- * - couponList: 쿠폰 목록 조회 (TTL: 30분)
- * - popularProducts: 인기 상품 조회 (TTL: 1시간)
- * - cartItems: 장바구니 아이템 (TTL: 30분)
+ * 마이그레이션 방법:
+ * Before:
+ *   CacheKeyConstants.PRODUCT_LIST
+ *   CacheKeyConstants.COUPON_LIST
+ *
+ * After:
+ *   RedisKeyType.CACHE_PRODUCT_LIST
+ *   RedisKeyType.CACHE_COUPON_LIST
+ *
+ * 이 클래스는 하위 호환성을 위해 유지되지만,
+ * 새로운 코드에서는 사용하지 마세요.
+ *
+ * @deprecated 2025-12-03 - {@link RedisKeyType} 사용 권장
+ * @see RedisKeyType
  */
+@Deprecated(since = "2025-12-03", forRemoval = true)
 public final class CacheKeyConstants {
 
     private CacheKeyConstants() {

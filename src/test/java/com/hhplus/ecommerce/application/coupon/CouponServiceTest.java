@@ -9,6 +9,7 @@ import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.order.ChildTransactionEventRepository;
+import com.hhplus.ecommerce.application.cache.CacheInvalidationStrategy;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.UserCouponResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.CacheManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -64,6 +66,12 @@ class CouponServiceTest {
     @Mock
     private ObjectMapper objectMapper;
 
+    @Mock
+    private CacheManager cacheManager;
+
+    @Mock
+    private CacheInvalidationStrategy cacheInvalidationStrategy;
+
     private static final Long TEST_USER_ID = 1L;
     private static final Long TEST_COUPON_ID = 1L;
     private static final Long TEST_USER_COUPON_ID = 100L;
@@ -71,7 +79,8 @@ class CouponServiceTest {
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
-        couponService = new CouponService(couponRepository, userCouponRepository, userRepository, childTransactionEventRepository, objectMapper);
+        couponService = new CouponService(couponRepository, userCouponRepository, userRepository,
+                childTransactionEventRepository, objectMapper, cacheManager, cacheInvalidationStrategy);
     }
 
     // ========== 쿠폰 발급 (issueCoupon) ==========

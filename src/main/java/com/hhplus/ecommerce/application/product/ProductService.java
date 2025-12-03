@@ -3,7 +3,7 @@ package com.hhplus.ecommerce.application.product;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
-import com.hhplus.ecommerce.infrastructure.config.CacheKeyConstants;
+import com.hhplus.ecommerce.infrastructure.config.RedisKeyType;
 import com.hhplus.ecommerce.presentation.product.response.ProductDetailResponse;
 import com.hhplus.ecommerce.presentation.product.response.ProductListResponse;
 import com.hhplus.ecommerce.presentation.product.response.ProductResponse;
@@ -45,7 +45,11 @@ public class ProductService {
      * @param sort 정렬 기준 (필드명,방향)
      * @return 페이지네이션된 상품 목록
      */
-    @Cacheable(value = CacheKeyConstants.PRODUCT_LIST, key = "'list_' + #page + '_' + #size + '_' + #sort")
+    /**
+     * 캐시 이름: productList (RedisKeyType.CACHE_PRODUCT_LIST)
+     * 캐시 키: list_{page}_{size}_{sort}
+     */
+    @Cacheable(value = "productList", key = "'list_' + #page + '_' + #size + '_' + #sort")
     public ProductListResponse getProductList(int page, int size, String sort) {
         // 파라미터 검증
         if (page < 0) {
@@ -91,7 +95,11 @@ public class ProductService {
      * @param productId 상품 ID
      * @return 상품 상세 정보
      */
-    @Cacheable(value = CacheKeyConstants.PRODUCT_DETAIL, key = "#productId")
+    /**
+     * 캐시 이름: productDetail (RedisKeyType.CACHE_PRODUCT_DETAIL)
+     * 캐시 키: {productId}
+     */
+    @Cacheable(value = "productDetail", key = "#productId")
     public ProductDetailResponse getProductDetail(Long productId) {
         // 파라미터 검증
         if (productId <= 0) {

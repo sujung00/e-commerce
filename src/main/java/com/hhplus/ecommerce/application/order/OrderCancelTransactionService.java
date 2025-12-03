@@ -14,7 +14,6 @@ import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.user.UserBalanceService;
-import com.hhplus.ecommerce.infrastructure.lock.DistributedLock;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
@@ -83,7 +82,6 @@ public class OrderCancelTransactionService {
      * @return 취소 응답
      * @throws RuntimeException 분산락 획득 실패
      */
-    @DistributedLock(key = "order:#p0", waitTime = 5, leaseTime = 2)
     @Transactional
     public CancelOrderResponse executeTransactionalCancel(Long orderId, Long userId, Order order) {
         // 2-1: 주문 상태 변경 (Domain 메서드 활용)

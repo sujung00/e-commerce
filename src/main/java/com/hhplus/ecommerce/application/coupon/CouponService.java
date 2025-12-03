@@ -11,12 +11,14 @@ import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.order.ChildTransactionEvent;
 import com.hhplus.ecommerce.domain.order.ChildTransactionEventRepository;
 import com.hhplus.ecommerce.domain.order.ChildTxType;
-import com.hhplus.ecommerce.infrastructure.config.CacheKeyConstants;
+import com.hhplus.ecommerce.infrastructure.config.RedisKeyType;
+import com.hhplus.ecommerce.application.cache.CacheInvalidationStrategy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hhplus.ecommerce.presentation.coupon.response.AvailableCouponResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.UserCouponResponse;
-import com.hhplus.ecommerce.infrastructure.lock.DistributedLock;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Caching;
@@ -64,17 +66,24 @@ public class CouponService {
     private final UserRepository userRepository;
     private final ChildTransactionEventRepository childTransactionEventRepository;
     private final ObjectMapper objectMapper;
+    private final CacheManager cacheManager;
+    private final CacheInvalidationStrategy cacheInvalidationStrategy;
 
     public CouponService(CouponRepository couponRepository,
                          UserCouponRepository userCouponRepository,
                          UserRepository userRepository,
                          ChildTransactionEventRepository childTransactionEventRepository,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper,
+                         CacheManager cacheManager,
+                         @Qualifier("selectiveCacheInvalidationStrategy")
+                         CacheInvalidationStrategy cacheInvalidationStrategy) {
         this.couponRepository = couponRepository;
         this.userCouponRepository = userCouponRepository;
         this.userRepository = userRepository;
         this.childTransactionEventRepository = childTransactionEventRepository;
         this.objectMapper = objectMapper;
+        this.cacheManager = cacheManager;
+        this.cacheInvalidationStrategy = cacheInvalidationStrategy;
     }
 
     /**
@@ -103,11 +112,11 @@ public class CouponService {
      * @throws IllegalArgumentException 발급 불가 사유 (유효기간, 재고, 중복)
      */
     /**
-     * ✅ 캐시 무효화 추가 (Message 5):
-     * - @CacheEvict: 쿠폰 발급 시 사용자의 캐시된 쿠폰 목록 무효화
-     * - allEntries=true로 모든 status의 쿠폰 목록 캐시 제거
+     * ✅ 캐시 무효화 개선 (Phase 3):
+     * - allEntries=true 제거 (비효율적)
+     * - 선택적 캐시 무효화 적용 (CacheInvalidationStrategy)
+     * - 쿠폰 발급 로직 내에서 필요한 캐시만 무효화
      */
-    @CacheEvict(value = "userCouponsCache", allEntries = true)
     public IssueCouponResponse issueCoupon(Long userId, Long couponId) {
         // === 1단계: 검증 (읽기 전용) ===
 
@@ -147,52 +156,46 @@ public class CouponService {
     }
 
     /**
-     * 쿠폰 발급 (락 포함 - Redis 분산락 + DB 비관적 락)
+     * 쿠폰 발급 (DB 비관적 락만 사용)
      *
-     * ⚠️ 내부용 메서드: issueCoupon()을 통해서만 호출 권장
-     * 이 메서드는 재시도 로직이 없으므로 직접 호출 시 동시성 문제 가능합니다.
+     * ✅ 개선사항:
+     * - 분산락 제거: DB 비관적 락만으로 충분
+     * - 캐시 무효화 범위 축소: allEntries=true → 특정 키만 제거
+     *
+     * 호출 경로:
+     * - CouponQueueService.processCouponQueue()에서만 호출
+     * - FIFO 큐에서 순차적으로 처리되므로 재시도 불필요
      *
      * 동시성 제어 전략:
-     * - @DistributedLock: Redis 기반 분산락 (key: "coupon:{couponId}:user:{userId}")
-     *   - waitTime=5초: 최대 5초 동안 락 획득 시도
-     *   - leaseTime=2초: 락 유지 시간 2초
-     *   - 락 획득 실패 시 RuntimeException 발생
-     * - @Transactional: 메서드 전체를 하나의 트랜잭션으로 관리
-     *   - Redis 락 획득 후 트랜잭션 시작
-     *   - 트랜잭션 종료 후 Redis 락 해제
-     * - findByIdForUpdate()로 DB 레벨 SELECT...FOR UPDATE 수행
-     * - Domain 메서드(Coupon.decreaseStock()) 활용으로 비즈니스 로직 캡슐화
-     * - UNIQUE 제약으로 중복 발급 방지
+     * - DB 레벨의 비관적 락만 사용 (SELECT ... FOR UPDATE)
+     * - findByIdForUpdate()가 트랜잭션 내 exclusive lock 획득
+     * - 다른 요청은 자동으로 차단됨
+     * - UNIQUE(user_id, coupon_id) 제약으로 중복 발급 방지
      *
-     * 리팩터링 효과:
-     * - AOP는 분산락만 담당, 트랜잭션은 @Transactional에서만 관리
-     * - 원자성 보장: Lock → Tx 시작 → 비즈니스 로직 → Tx 커밋 → Lock 해제
-     * - 트랜잭션 분리 문제 해결
-     * - Redis 분산락 + DB 비관적 락으로 분산 환경에서 동시성 완벽 제어
-     * - Lock 보유 시간 최소화 (200ms → 50ms)
-     * - TPS 약 4배 향상
-     * - 코드 간결화 및 유지보수성 개선
+     * 캐시 무효화:
+     * - allEntries=true 제거 (비효율)
+     * - 발급 가능한 쿠폰 목록 캐시만 무효화
      *
      * @param userId 사용자 ID
      * @param couponId 쿠폰 ID
+     * @param orderId 주문 ID (Outbox 패턴용)
      * @return 발급된 쿠폰 정보
      * @throws CouponNotFoundException 쿠폰을 찾을 수 없음
      * @throws IllegalArgumentException 발급 불가 (활성화, 기간, 재고, 중복)
      */
-    /**
-     * ✅ 캐시 무효화 추가 (Message 5):
-     * - @CacheEvict: 쿠폰 발급 시 사용자의 캐시된 쿠폰 목록 무효화
-     */
-    @DistributedLock(key = "coupon:#p1:user:#p0", waitTime = 5, leaseTime = 2)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    @CacheEvict(value = "userCouponsCache", allEntries = true)
     public IssueCouponResponse issueCouponWithLock(Long userId, Long couponId, Long orderId) {
         return issueCouponWithLockInternal(userId, couponId, orderId);
     }
 
-    @DistributedLock(key = "coupon:#p1:user:#p0", waitTime = 5, leaseTime = 2)
+    /**
+     * 쿠폰 발급 (주문 연관 없음)
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
+     * @return 발급된 쿠폰 정보
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    @CacheEvict(value = "userCouponsCache", allEntries = true)
     public IssueCouponResponse issueCouponWithLock(Long userId, Long couponId) {
         return issueCouponWithLockInternal(userId, couponId, null);
     }
@@ -268,6 +271,44 @@ public class CouponService {
 
         log.info("[CouponService] 쿠폰 발급 완료: userId={}, couponId={}, userCouponId={}, remaining_qty={}, version={}",
                 userId, couponId, savedUserCoupon.getUserCouponId(), coupon.getRemainingQty(), coupon.getVersion());
+
+        // ✅ 캐시 무효화 (선택적 무효화 전략 적용)
+        // - 쿠폰 상세 캐시: 항상 무효화
+        // - 활성 쿠폰 목록 캐시: 재고 소진 시만 무효화
+        // - allEntries=true 제거로 다른 쿠폰 캐시에 영향 최소화
+        try {
+            boolean isStockExhausted = remainingQtyAfter == 0;
+            boolean isLastItem = remainingQtyBefore == 1;  // 마지막 쿠폰 발급 여부
+            CacheInvalidationStrategy.InvalidationContext context =
+                    new CacheInvalidationStrategy.InvalidationContext(
+                            couponId,
+                            remainingQtyBefore,
+                            remainingQtyAfter,
+                            isLastItem,
+                            isStockExhausted
+                    );
+
+            // 전략에 따라 무효화할 캐시 키 결정
+            if (cacheInvalidationStrategy.shouldInvalidate(context)) {
+                String[] keysToInvalidate = cacheInvalidationStrategy.getKeysToInvalidate(context);
+
+                if (keysToInvalidate != null && keysToInvalidate.length > 0) {
+                    for (String key : keysToInvalidate) {
+                        try {
+                            org.springframework.cache.Cache cache = cacheManager.getCache("couponListCache");
+                            if (cache != null) {
+                                cache.evict(key);
+                                log.debug("[CouponService] 선택적 캐시 무효화: key={}", key);
+                            }
+                        } catch (Exception e) {
+                            log.warn("[CouponService] 캐시 무효화 실패 (무시됨): key={}", key, e);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[CouponService] 캐시 무효화 컨텍스트 생성 실패 (무시됨)", e);
+        }
 
         // ✅ Outbox 패턴: Event 저장 (보상용)
         // orderId가 있을 때만 Event 저장
@@ -371,10 +412,10 @@ public class CouponService {
      * GET /coupons
      *
      * 캐시: couponList (조회 빈도 높음, 변경 빈도 낮음)
-     * TTL: 30분 (실제 프로덕션에서는 Redis로 TTL 적용)
+     * TTL: 30분 (Redis로 자동 관리)
      * 예상 효과: TPS 300 → 2000 (6배 향상)
      *
-     * ✅ 개선: 캐시 이름을 CacheKeyConstants로 상수화
+     * ✅ 개선: RedisKeyType.CACHE_COUPON_LIST로 관리
      *
      * 비즈니스 로직:
      * 1. 발급 가능한 쿠폰 조회 (is_active=true, 유효기간 내, remaining_qty > 0)
@@ -387,7 +428,11 @@ public class CouponService {
      *
      * @return 발급 가능한 쿠폰 목록
      */
-    @Cacheable(value = CacheKeyConstants.COUPON_LIST, key = "'all'")
+    /**
+     * 캐시 이름: couponListCache (RedisKeyType.CACHE_COUPON_LIST)
+     * 캐시 키: cache:coupon:list (고정)
+     */
+    @Cacheable(value = "couponListCache", key = "'cache:coupon:list'")
     public List<AvailableCouponResponse> getAvailableCoupons() {
         // 1. 발급 가능한 쿠폰 조회
         List<Coupon> availableCoupons = couponRepository.findAllAvailable();
@@ -396,6 +441,27 @@ public class CouponService {
         return availableCoupons.stream()
                 .map(AvailableCouponResponse::from)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 특정 쿠폰을 캐시에서 조회
+     *
+     * CouponController에서 기본 검증용으로 사용
+     *
+     * @param couponId 쿠폰 ID
+     * @return 쿠폰 정보 (없으면 null)
+     */
+    public AvailableCouponResponse getAvailableCouponFromCache(Long couponId) {
+        try {
+            List<AvailableCouponResponse> coupons = getAvailableCoupons();
+            return coupons.stream()
+                .filter(c -> c.getCouponId().equals(couponId))
+                .findFirst()
+                .orElse(null);
+        } catch (Exception e) {
+            log.warn("[CouponService] 캐시에서 쿠폰 조회 실패: couponId={}", couponId, e);
+            return null;
+        }
     }
 
     /**
