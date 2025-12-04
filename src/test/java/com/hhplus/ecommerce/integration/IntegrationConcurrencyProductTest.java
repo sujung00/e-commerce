@@ -29,10 +29,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - 실제 환경에서는 @Retryable로 자동 재시도
  * - 이 테스트는 낙관적 락의 기본 동작만 확인
  */
-@SpringBootTest
-@ActiveProfiles("test")
 @DisplayName("[Integration] Product 동시성 테스트")
-class IntegrationConcurrencyProductTest {
+class IntegrationConcurrencyProductTest extends BaseIntegrationTest {
 
     @Autowired
     private ProductRepository productRepository;

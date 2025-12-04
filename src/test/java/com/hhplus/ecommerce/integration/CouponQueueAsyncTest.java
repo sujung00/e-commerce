@@ -37,10 +37,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * 4. 상태 조회 (폴링)
  * 5. 재시도 처리
  */
-@SpringBootTest
-@ActiveProfiles("test")
 @DisplayName("쿠폰 발급 비동기 큐 시스템 통합 테스트")
-class CouponQueueAsyncTest {
+class CouponQueueAsyncTest extends BaseIntegrationTest {
 
     @Autowired
     private CouponQueueService couponQueueService;

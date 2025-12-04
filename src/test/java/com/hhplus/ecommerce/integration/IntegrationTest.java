@@ -3,7 +3,6 @@ package com.hhplus.ecommerce.integration;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.inventory.InventoryService;
 import com.hhplus.ecommerce.application.order.OrderService;
-import com.hhplus.ecommerce.unit.config.TestContainersInitializer;
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.product.Product;
@@ -47,10 +46,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - @Transactional: 테스트 후 자동 롤백으로 데이터 격리
  * - ddl-auto: create-drop으로 스키마 자동 생성/제거
  */
-@SpringBootTest
-@Transactional
 @DisplayName("MySQL 기반 통합 테스트")
-class IntegrationTest {
+class IntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private CouponService 쿠폰서비스;

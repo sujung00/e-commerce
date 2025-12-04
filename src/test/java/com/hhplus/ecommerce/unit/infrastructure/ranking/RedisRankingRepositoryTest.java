@@ -50,9 +50,12 @@ public class RedisRankingRepositoryTest {
 
     @BeforeEach
     void setUp() {
+        rankingRepository = new RedisRankingRepository(redisTemplate);
+    }
+
+    private void setupZSetMock() {
         // RedisTemplate이 ZSetOperations을 반환하도록 설정
         when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        rankingRepository = new RedisRankingRepository(redisTemplate);
     }
 
     // ========== incrementProductScore 테스트 ==========
@@ -61,6 +64,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("상품 점수 증가 - 정상 동작")
     void testIncrementProductScore_Success() {
         // Given
+        setupZSetMock();
         Long productId = 100L;
 
         // When
@@ -75,6 +79,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("상품 점수 증가 - 여러 상품")
     void testIncrementProductScore_MultipleProducts() {
         // Given
+        setupZSetMock();
         Long product1 = 100L;
         Long product2 = 200L;
 
@@ -93,6 +98,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("TOP N 상품 조회 - 정상 동작")
     void testGetTopProducts_Success() {
         // Given: Mock 데이터 설정
+        setupZSetMock();
         Set<ZSetOperations.TypedTuple<String>> mockResults = new LinkedHashSet<>();
         mockResults.add(new MockTypedTuple("100", 150.0)); // productId=100, score=150
         mockResults.add(new MockTypedTuple("200", 120.0)); // productId=200, score=120
@@ -117,6 +123,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("TOP N 상품 조회 - 결과 없음")
     void testGetTopProducts_EmptyResult() {
         // Given: 빈 결과
+        setupZSetMock();
         when(zSetOperations.reverseRangeWithScores(RANKING_KEY, 0, 4))
                 .thenReturn(null);
 
@@ -131,6 +138,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("TOP N 상품 조회 - 범위 확인")
     void testGetTopProducts_RangeParameter() {
         // Given
+        setupZSetMock();
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong()))
                 .thenReturn(new HashSet<>());
 
@@ -147,6 +155,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("상품 순위 조회 - 정상 동작")
     void testGetProductRank_Success() {
         // Given: 순위 3 반환 (0부터 시작이므로 실제 순위는 4)
+        setupZSetMock();
         when(zSetOperations.reverseRank(RANKING_KEY, "100"))
                 .thenReturn(2L);
 
@@ -162,6 +171,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("상품 순위 조회 - 1등")
     void testGetProductRank_FirstPlace() {
         // Given: 순위 0 (1등)
+        setupZSetMock();
         when(zSetOperations.reverseRank(RANKING_KEY, "100"))
                 .thenReturn(0L);
 
@@ -177,6 +187,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("상품 순위 조회 - 존재하지 않음")
     void testGetProductRank_NotFound() {
         // Given: null 반환 (존재하지 않음)
+        setupZSetMock();
         when(zSetOperations.reverseRank(RANKING_KEY, "999"))
                 .thenReturn(null);
 
@@ -193,6 +204,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("상품 점수 조회 - 정상 동작")
     void testGetProductScore_Success() {
         // Given
+        setupZSetMock();
         when(zSetOperations.score(RANKING_KEY, "100"))
                 .thenReturn(150.0);
 
@@ -207,6 +219,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("상품 점수 조회 - 0점")
     void testGetProductScore_ZeroScore() {
         // Given
+        setupZSetMock();
         when(zSetOperations.score(RANKING_KEY, "100"))
                 .thenReturn(null);
 
@@ -222,7 +235,7 @@ public class RedisRankingRepositoryTest {
     @Test
     @DisplayName("일일 랭킹 초기화")
     void testResetDailyRanking_Success() {
-        // Given
+        // Given: zSetOperations를 사용하지 않으므로 setupZSetMock() 호출 안 함
         when(redisTemplate.delete(RANKING_KEY))
                 .thenReturn(true);
 
@@ -236,7 +249,7 @@ public class RedisRankingRepositoryTest {
     @Test
     @DisplayName("일일 랭킹 초기화 - 데이터 없음")
     void testResetDailyRanking_NoData() {
-        // Given
+        // Given: zSetOperations를 사용하지 않으므로 setupZSetMock() 호출 안 함
         when(redisTemplate.delete(RANKING_KEY))
                 .thenReturn(false);
 
@@ -253,6 +266,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("incrementProductScore 예외 처리")
     void testIncrementProductScore_Exception() {
         // Given: 예외 발생
+        setupZSetMock();
         when(zSetOperations.incrementScore(anyString(), anyString(), anyDouble()))
                 .thenThrow(new RuntimeException("Redis 연결 실패"));
 
@@ -266,6 +280,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("getTopProducts 예외 처리")
     void testGetTopProducts_Exception() {
         // Given
+        setupZSetMock();
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong()))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
@@ -279,6 +294,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("getProductRank 예외 처리")
     void testGetProductRank_Exception() {
         // Given
+        setupZSetMock();
         when(zSetOperations.reverseRank(anyString(), anyString()))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
@@ -292,6 +308,7 @@ public class RedisRankingRepositoryTest {
     @DisplayName("getProductScore 예외 처리")
     void testGetProductScore_Exception() {
         // Given
+        setupZSetMock();
         when(zSetOperations.score(anyString(), anyString()))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 

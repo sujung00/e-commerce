@@ -30,10 +30,10 @@ public class UserBalanceDomainService {
         }
 
         if (user.getBalance() < requiredAmount) {
-            throw new DomainException(
-                ErrorCode.INSUFFICIENT_BALANCE,
-                "Insufficient balance. Current: " + user.getBalance() +
-                    ", Required: " + requiredAmount
+            throw new InsufficientBalanceException(
+                user.getUserId(),
+                user.getBalance(),
+                requiredAmount
             );
         }
     }
@@ -62,9 +62,10 @@ public class UserBalanceDomainService {
         long newBalance = currentBalance - amount;
 
         if (newBalance < 0) {
-            throw new DomainException(
-                ErrorCode.INSUFFICIENT_BALANCE,
-                "Deduction would result in negative balance"
+            throw new InsufficientBalanceException(
+                user.getUserId(),
+                currentBalance,
+                amount
             );
         }
 

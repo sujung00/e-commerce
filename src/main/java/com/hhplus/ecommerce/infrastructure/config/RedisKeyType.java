@@ -16,6 +16,7 @@ import java.time.Duration;
  * - 파라미터: RedisKeyType.CACHE_USER_COUPONS.buildKey(userId, status)
  * - TTL: RedisKeyType.CACHE_COUPON_LIST.getTtl()
  * - PATTERN: RedisKeyType.CACHE_COUPON_LIST.getPattern()
+ * - 어노테이션: @Cacheable(cacheNames = RedisKeyType.CACHE_PRODUCT_LIST_NAME)
  */
 public enum RedisKeyType {
 
@@ -75,6 +76,14 @@ public enum RedisKeyType {
         Duration.ofHours(1),
         "인기 상품",
         "현재 인기 있는 상품 목록"
+    ),
+
+    CACHE_CART_ITEMS(
+        "cache:cart:items:{cartId}",
+        RedisKeyCategory.CACHE,
+        Duration.ofMinutes(30),
+        "장바구니 아이템",
+        "사용자별 장바구니 아이템 목록"
     ),
 
     // ===== 분산 락 (Distributed Lock) - 동시성 제어 =====
@@ -209,6 +218,26 @@ public enum RedisKeyType {
         "사용자별 API 호출 횟수 제한"
     );
 
+    // ===== Spring Cache 어노테이션용 상수 정의 =====
+    // 컴파일 타임 상수로 @Cacheable, @CacheEvict 등에서 사용 가능
+
+    /** 상품 목록 캐시 이름 (Spring Cache용) */
+    public static final String CACHE_PRODUCT_LIST_NAME = "productList";
+
+    /** 상품 상세 캐시 이름 (Spring Cache용) */
+    public static final String CACHE_PRODUCT_DETAIL_NAME = "productDetail";
+
+    /** 인기 상품 캐시 이름 (Spring Cache용) */
+    public static final String CACHE_POPULAR_PRODUCTS_NAME = "popularProducts";
+
+    /** 쿠폰 목록 캐시 이름 (Spring Cache용) */
+    public static final String CACHE_COUPON_LIST_NAME = "couponList";
+
+    /** 장바구니 아이템 캐시 이름 (Spring Cache용) */
+    public static final String CACHE_CART_ITEMS_NAME = "cartItems";
+
+    // ===== Enum 필드 =====
+
     private final String pattern;
     private final RedisKeyCategory category;
     private final Duration ttl;
@@ -277,6 +306,29 @@ public enum RedisKeyType {
 
     public String getDescription() {
         return description;
+    }
+
+    /**
+     * Spring Cache 호환 캐시 이름 반환
+     *
+     * 기존 CacheKeyConstants와의 하위 호환성을 위해
+     * 단순한 캐시 이름을 반환합니다.
+     *
+     * 사용 예:
+     * - @Cacheable(value = RedisKeyType.CACHE_PRODUCT_LIST.getCacheName())
+     * - CacheConfig의 Map 키로 사용
+     *
+     * @return Spring Cache용 캐시 이름
+     */
+    public String getCacheName() {
+        return switch (this) {
+            case CACHE_PRODUCT_LIST -> "productList";
+            case CACHE_PRODUCT_DETAIL -> "productDetail";
+            case CACHE_POPULAR_PRODUCTS -> "popularProducts";
+            case CACHE_COUPON_LIST -> "couponList";
+            case CACHE_CART_ITEMS -> "cartItems";
+            default -> this.pattern;  // 기본값: 패턴 그대로 반환
+        };
     }
 
     /**

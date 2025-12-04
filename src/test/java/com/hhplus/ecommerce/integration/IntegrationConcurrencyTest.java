@@ -1,7 +1,6 @@
 package com.hhplus.ecommerce.integration;
 
 import com.hhplus.ecommerce.application.coupon.CouponService;
-import com.hhplus.ecommerce.unit.config.TestContainersInitializer;
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.product.Product;
@@ -45,9 +44,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - user 이메일은 UUID + 타임스탬프로 고유하게 생성
  * - 모든 이메일 중복 오류 없이 정상 작동
  */
-@SpringBootTest
 @DisplayName("동시성 제어 통합 테스트")
-class IntegrationConcurrencyTest {
+class IntegrationConcurrencyTest extends BaseIntegrationTest {
 
     @Autowired
     private CouponService couponService;

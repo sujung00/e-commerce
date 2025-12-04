@@ -183,9 +183,10 @@ public class Order {
 
     /**
      * 주문이 취소 가능한 상태인지 확인
+     * PENDING, PAID 상태에서만 취소 가능
      */
     public boolean isCancellable() {
-        return this.orderStatus == OrderStatus.COMPLETED || this.orderStatus == OrderStatus.FAILED;
+        return this.orderStatus == OrderStatus.PENDING || this.orderStatus == OrderStatus.PAID;
     }
 
     /**
