@@ -34,10 +34,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Lock 보유 시간 감소
  * - TPS 향상 확인
  */
-@SpringBootTest
-@ActiveProfiles("test")
 @DisplayName("[Integration] Coupon 동시성 테스트")
-class IntegrationConcurrencyCouponTest {
+class IntegrationConcurrencyCouponTest extends BaseIntegrationTest {
 
     @Autowired
     private CouponService couponService;

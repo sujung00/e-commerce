@@ -2,7 +2,7 @@ package com.hhplus.ecommerce.application.product;
 
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
-import com.hhplus.ecommerce.infrastructure.config.CacheKeyConstants;
+import com.hhplus.ecommerce.infrastructure.config.RedisKeyType;
 import com.hhplus.ecommerce.infrastructure.persistence.product.MySQLProductRepository;
 import com.hhplus.ecommerce.presentation.product.response.PopularProductListResponse;
 import com.hhplus.ecommerce.presentation.product.response.PopularProductView;
@@ -46,17 +46,17 @@ public class PopularProductServiceImpl implements PopularProductService {
      * 인기 상품 조회 (상위 5개, 최근 3일 주문 수량 기준)
      *
      * Redis 캐싱:
-     * - @Cacheable(value = CacheKeyConstants.POPULAR_PRODUCTS, key = "'list'")
+     * - @Cacheable(value = RedisKeyType.CACHE_POPULAR_PRODUCTS, key = "'list'")
      * - TTL: 1시간 (RedisCacheManager 설정)
      * - 캐시 미스 시: calculatePopularProducts() 호출
      * - 캐시 히트 시: Redis에서 직접 반환 (DB 쿼리 없음)
      *
-     * ✅ 개선: 캐시 이름을 CacheKeyConstants로 상수화
+     * ✅ 개선: 캐시 이름을 RedisKeyType enum으로 타입 안전하게 관리
      *
      * @return 상위 5개 인기 상품 목록
      */
     @Override
-    @Cacheable(value = CacheKeyConstants.POPULAR_PRODUCTS, key = "'list'")
+    @Cacheable(cacheNames = RedisKeyType.CACHE_POPULAR_PRODUCTS_NAME, key = "'list'")
     public PopularProductListResponse getPopularProducts() {
         return calculatePopularProducts();
     }

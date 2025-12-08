@@ -146,8 +146,7 @@ class OrderCancelTransactionServiceTest {
 
         when(productRepository.findById(TEST_PRODUCT_ID))
                 .thenReturn(Optional.of(product));
-        when(userRepository.findById(TEST_USER_ID))
-                .thenReturn(Optional.of(user));
+        when(userBalanceService.refundBalance(TEST_USER_ID, 100000L)).thenReturn(user);
         when(orderRepository.save(any(Order.class)))
                 .thenReturn(order);
 
@@ -264,8 +263,8 @@ class OrderCancelTransactionServiceTest {
 
         when(productRepository.findById(1L)).thenReturn(Optional.of(product1));
         when(productRepository.findById(2L)).thenReturn(Optional.of(product2));
-        when(userRepository.findById(TEST_USER_ID)).thenReturn(Optional.of(user));
         when(orderRepository.save(any(Order.class))).thenReturn(order);
+        when(userBalanceService.refundBalance(TEST_USER_ID, 180000L)).thenReturn(user);
 
         // When
         CancelOrderResponse result = orderCancelTransactionService.executeTransactionalCancel(
@@ -337,19 +336,11 @@ class OrderCancelTransactionServiceTest {
                 .orderItems(List.of(orderItem))
                 .build();
 
-        User user = User.builder()
-                .userId(TEST_USER_ID)
-                .name("testuser")
-                .email("test@example.com")
-                .balance(50000L)  // 100000 - 100000 + 100000 = 150000
-                .build();
-
         when(productRepository.findById(TEST_PRODUCT_ID))
                 .thenReturn(Optional.of(product));
-        when(userRepository.findById(TEST_USER_ID))
-                .thenReturn(Optional.of(user));
         when(orderRepository.save(any(Order.class)))
                 .thenReturn(order);
+        when(userBalanceService.refundBalance(TEST_USER_ID, 100000L)).thenReturn(null);
 
         // When
         CancelOrderResponse result = orderCancelTransactionService.executeTransactionalCancel(
@@ -358,9 +349,8 @@ class OrderCancelTransactionServiceTest {
 
         // Then
         assertNotNull(result);
-        // 잔액 복구 확인
-        assertEquals(150000L, user.getBalance());  // 50000 + 100000
-        verify(userRepository, times(1)).findById(TEST_USER_ID);
+        // 잔액 복구 확인 - userBalanceService.refundBalance() 호출 검증
+        verify(userBalanceService, times(1)).refundBalance(TEST_USER_ID, 100000L);
     }
 
     @Test
@@ -424,10 +414,9 @@ class OrderCancelTransactionServiceTest {
 
         when(productRepository.findById(TEST_PRODUCT_ID))
                 .thenReturn(Optional.of(product));
-        when(userRepository.findById(TEST_USER_ID))
-                .thenReturn(Optional.of(user));
         when(orderRepository.save(any(Order.class)))
                 .thenReturn(order);
+        when(userBalanceService.refundBalance(TEST_USER_ID, 100000L)).thenReturn(user);
 
         // 정상적으로 처리됨 (메모리 저장소이므로 버전 충돌이 자동으로 발생하지 않음)
         // 버전 충돌 테스트는 Integration Test 또는 동시성 테스트에서 수행 필요
@@ -490,10 +479,9 @@ class OrderCancelTransactionServiceTest {
 
         when(productRepository.findById(TEST_PRODUCT_ID))
                 .thenReturn(Optional.of(product));
-        when(userRepository.findById(TEST_USER_ID))
-                .thenReturn(Optional.of(user));
         when(orderRepository.save(any(Order.class)))
                 .thenReturn(order);
+        when(userBalanceService.refundBalance(TEST_USER_ID, 245000L)).thenReturn(user);
 
         // When
         CancelOrderResponse result = orderCancelTransactionService.executeTransactionalCancel(

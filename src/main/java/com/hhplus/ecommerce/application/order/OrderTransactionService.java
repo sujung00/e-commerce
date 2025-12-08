@@ -24,7 +24,6 @@ import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.user.UserBalanceService;
-import com.hhplus.ecommerce.infrastructure.lock.DistributedLock;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -170,7 +169,6 @@ public class OrderTransactionService {
      * @param idempotencyToken 멱등성 토큰 (UUID)
      * @return 저장된 주문
      */
-    @DistributedLock(key = "order:#p0", waitTime = 5, leaseTime = 2)
     @Transactional(
         propagation = Propagation.REQUIRED,
         rollbackFor = Exception.class
@@ -197,7 +195,6 @@ public class OrderTransactionService {
                 userId, orderItems, couponId, couponDiscount, subtotal, finalAmount, idempotencyToken);
     }
 
-    @DistributedLock(key = "order:#p0", waitTime = 5, leaseTime = 2)
     @Transactional(
         propagation = Propagation.REQUIRED,
         rollbackFor = Exception.class  // ✅ 모든 예외를 롤백 (Checked Exception 포함)

@@ -86,11 +86,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * "Could not find a valid Docker environment"
  *
  * 해결 방법:
- * 1. ~/.testcontainers.properties 생성:
- *    ```properties
- *    docker.client.strategy=org.testcontainers.dockerclient.DockerDesktopClientProviderStrategy
- *    ryuk.container.privileged=true
- *    ```
  *
  * 2. Docker Desktop이 실행 중인지 확인
  * 3. 터미널에서 `docker ps` 실행 가능 여부 확인

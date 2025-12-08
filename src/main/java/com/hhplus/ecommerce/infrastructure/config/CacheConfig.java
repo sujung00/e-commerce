@@ -28,7 +28,7 @@ import java.util.Map;
  *    - cacheRedisTemplate: 캐시 전용 (JSON 직렬화)
  *    - redisTemplate: 일반 작업용 (String 직렬화, 기본 직렬화)
  *
- * 2. 캐시 키 상수화: CacheKeyConstants 사용으로 일관성 보장
+ * 2. 캐시 키 enum화: RedisKeyType enum 사용으로 일관성 및 타입 안전성 보장
  *
  * 3. 기존 기능 유지: 모든 캐시 기능 동일하게 동작
  *
@@ -152,7 +152,7 @@ public class CacheConfig {
     /**
      * 캐시 매니저 설정 (RedisCacheManager)
      *
-     * ✅ 개선: CacheKeyConstants를 사용하여 캐시 키 상수화
+     * ✅ 개선: RedisKeyType enum을 사용하여 캐시 이름 및 TTL 관리
      *
      * 캐시별 TTL 설정:
      * - productList: 1시간 (매우 빈번한 조회, 변경 빈도 낮음)
@@ -185,25 +185,25 @@ public class CacheConfig {
         // 캐시별 개별 설정
         Map<String, RedisCacheConfiguration> cacheConfigMap = new HashMap<>();
 
-        // 상품 목록: 1시간 (TTL 길게 → 변경 빈도 낮음)
-        cacheConfigMap.put(CacheKeyConstants.PRODUCT_LIST, defaultConfig
-                .entryTtl(Duration.ofHours(1)));
+        // 상품 목록: RedisKeyType (TTL: 1시간)
+        cacheConfigMap.put(RedisKeyType.CACHE_PRODUCT_LIST_NAME, defaultConfig
+                .entryTtl(RedisKeyType.CACHE_PRODUCT_LIST.getTtl()));
 
-        // 쿠폰 목록: 30분 (TTL 중간 → 변경 빈도 중간)
-        cacheConfigMap.put(CacheKeyConstants.COUPON_LIST, defaultConfig
-                .entryTtl(Duration.ofMinutes(30)));
+        // 쿠폰 목록: RedisKeyType (TTL: 30분)
+        cacheConfigMap.put(RedisKeyType.CACHE_COUPON_LIST_NAME, defaultConfig
+                .entryTtl(RedisKeyType.CACHE_COUPON_LIST.getTtl()));
 
-        // 상품 상세: 2시간 (TTL 길게 → 변경 빈도 매우 낮음)
-        cacheConfigMap.put(CacheKeyConstants.PRODUCT_DETAIL, defaultConfig
-                .entryTtl(Duration.ofHours(2)));
+        // 상품 상세: RedisKeyType (TTL: 2시간)
+        cacheConfigMap.put(RedisKeyType.CACHE_PRODUCT_DETAIL_NAME, defaultConfig
+                .entryTtl(RedisKeyType.CACHE_PRODUCT_DETAIL.getTtl()));
 
-        // 장바구니: 30분 (TTL 짧음 → 사용자별 데이터, 변경 빈도 높음)
-        cacheConfigMap.put(CacheKeyConstants.CART_ITEMS, defaultConfig
-                .entryTtl(Duration.ofMinutes(30)));
+        // 장바구니: RedisKeyType (TTL: 30분)
+        cacheConfigMap.put(RedisKeyType.CACHE_CART_ITEMS_NAME, defaultConfig
+                .entryTtl(RedisKeyType.CACHE_CART_ITEMS.getTtl()));
 
-        // 인기 상품: 1시간 (TTL 길게 → 변경 빈도 낮음, 계산 비용 높음)
-        cacheConfigMap.put(CacheKeyConstants.POPULAR_PRODUCTS, defaultConfig
-                .entryTtl(Duration.ofHours(1)));
+        // 인기 상품: RedisKeyType (TTL: 1시간)
+        cacheConfigMap.put(RedisKeyType.CACHE_POPULAR_PRODUCTS_NAME, defaultConfig
+                .entryTtl(RedisKeyType.CACHE_POPULAR_PRODUCTS.getTtl()));
 
         return RedisCacheManager.builder(redisConnectionFactory)
                 .cacheDefaults(defaultConfig)
