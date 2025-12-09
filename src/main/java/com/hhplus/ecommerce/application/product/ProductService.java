@@ -123,20 +123,6 @@ public class ProductService {
     }
 
     /**
-     * 상품과 주문 수량을 임시로 보관하는 내부 클래스
-     * Application 계층에서 Domain과 Infrastructure 계층의 데이터를 조합할 때 사용
-     */
-    private static class ProductWithOrderCount {
-        final Product product;
-        final Long orderCount3Days;
-
-        ProductWithOrderCount(Product product, Long orderCount3Days) {
-            this.product = product;
-            this.orderCount3Days = orderCount3Days;
-        }
-    }
-
-    /**
      * 정렬 적용
      *
      * @param products 정렬할 상품 목록

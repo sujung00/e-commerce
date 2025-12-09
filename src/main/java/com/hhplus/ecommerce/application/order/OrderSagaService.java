@@ -12,6 +12,7 @@ import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
 import com.hhplus.ecommerce.application.alert.AlertService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
+import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -58,17 +59,20 @@ public class OrderSagaService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final AlertService alertService;
+    private final OrderCalculator orderCalculator;
 
     public OrderSagaService(OrderTransactionService orderTransactionService,
                           OrderRepository orderRepository,
                           ProductRepository productRepository,
                           UserRepository userRepository,
-                          AlertService alertService) {
+                          AlertService alertService,
+                          OrderCalculator orderCalculator) {
         this.orderTransactionService = orderTransactionService;
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.alertService = alertService;
+        this.orderCalculator = orderCalculator;
     }
 
     /**
@@ -108,12 +112,22 @@ public class OrderSagaService {
             // ✅ 원자적 처리: 모두 성공하거나 모두 실패
             // ✅ 포인트 차감 성공 = 즉시 결제 완료 (외부 API 없음)
             log.info("[OrderSagaService] 주문 생성 시작 - userId={}, finalAmount={}", userId, finalAmount);
+
+            // OrderItemDto를 OrderItemCommand로 변환 (OrderCalculator 호출용)
+            List<OrderItemCommand> orderItemCommands = orderItems.stream()
+                    .map(dto -> OrderItemCommand.builder()
+                            .productId(dto.getProductId())
+                            .optionId(dto.getOptionId())
+                            .quantity(dto.getQuantity())
+                            .build())
+                    .collect(java.util.stream.Collectors.toList());
+
             order = orderTransactionService.executeTransactionalOrder(
                     userId,
                     orderItems,
                     couponId,
                     couponId != null ? calculateCouponDiscount(couponId) : 0L,
-                    calculateSubtotal(orderItems),
+                    orderCalculator.calculateSubtotal(orderItemCommands),
                     finalAmount
             );
             log.info("[OrderSagaService] 주문 생성 + 포인트 차감 완료 - orderId={}, 결제완료", order.getOrderId());
@@ -283,18 +297,6 @@ public class OrderSagaService {
         return 0L; // 임시
     }
 
-    /**
-     * 소계 계산 (주문 항목 가격 합계)
-     */
-    private Long calculateSubtotal(List<OrderItemDto> orderItems) {
-        return orderItems.stream()
-                .mapToLong(item -> {
-                    Product product = productRepository.findById(item.getProductId())
-                            .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다"));
-                    return product.getPrice() * item.getQuantity();
-                })
-                .sum();
-    }
 
     /**
      * PaymentException - 결제 실패 예외
