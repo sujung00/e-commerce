@@ -3,16 +3,18 @@ package com.hhplus.ecommerce.application.order;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderItem;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
-import com.hhplus.ecommerce.domain.order.OrderStatus;
+import com.hhplus.ecommerce.domain.order.event.CompensationCompletedEvent;
+import com.hhplus.ecommerce.domain.order.event.CompensationFailedEvent;
+import com.hhplus.ecommerce.domain.order.event.PaymentSuccessEvent;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
-import com.hhplus.ecommerce.application.alert.AlertService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -27,6 +29,12 @@ import java.util.List;
  * - 포인트 차감을 통한 주문 결제 처리
  * - 주문 생성과 동시에 포인트 차감 및 결제 완료
  * - 결제 실패 시 보상 트랜잭션 (Compensation) 실행
+ *
+ * ✅ 트랜잭션 외부 I/O 분리:
+ * - 알림 발송(AlertService)을 트랜잭션 내부에서 제거
+ * - PaymentSuccessEvent, CompensationCompletedEvent, CompensationFailedEvent 발행
+ * - @Async + @TransactionalEventListener(AFTER_COMMIT)에서 비동기 알림 처리
+ * - 트랜잭션 내에서는 DB 작업 + 이벤트 발행만 수행
  *
  * 현재 플로우 (포인트 기반 단순화):
  * Step 1: OrderTransactionService.executeTransactionalOrder()
@@ -58,20 +66,20 @@ public class OrderSagaService {
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final AlertService alertService;
+    private final ApplicationEventPublisher eventPublisher;
     private final OrderCalculator orderCalculator;
 
     public OrderSagaService(OrderTransactionService orderTransactionService,
                           OrderRepository orderRepository,
                           ProductRepository productRepository,
                           UserRepository userRepository,
-                          AlertService alertService,
+                          ApplicationEventPublisher eventPublisher,
                           OrderCalculator orderCalculator) {
         this.orderTransactionService = orderTransactionService;
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
-        this.alertService = alertService;
+        this.eventPublisher = eventPublisher;
         this.orderCalculator = orderCalculator;
     }
 
@@ -85,6 +93,11 @@ public class OrderSagaService {
      *         - ✅ 성공 시 = 주문 생성 + 결제 완료
      * Step 2: 실패 시 보상 트랜잭션
      *         - 재고 복구, 포인트 환불, 주문 취소
+     *
+     * ✅ 트랜잭션 외부 I/O 분리:
+     * - alertService.notifyPaymentSuccess() 제거 → PaymentSuccessEvent 발행
+     * - alertService.notifyCompensationFailure() 제거 → CompensationFailedEvent 발행
+     * - 이벤트 리스너가 AFTER_COMMIT + @Async로 비동기 알림 처리
      *
      * 특징:
      * - 포인트 차감 성공 = 즉시 결제 완료 (외부 API 없음)
@@ -134,7 +147,23 @@ public class OrderSagaService {
 
             // ✅ Step 1 성공 = 결제 완료
             // 외부 API 호출이 없으므로 추가 단계 필요 없음
-            alertService.notifyPaymentSuccess(order.getOrderId(), userId, finalAmount);
+            // ✅ 트랜잭션 외부 I/O 분리: PaymentSuccessEvent 발행
+            // - alertService 호출 제거 (외부 I/O)
+            // - 이벤트는 트랜잭션 커밋 후 AFTER_COMMIT + @Async 리스너에서 처리
+            // - 알림 실패가 비즈니스 트랜잭션에 영향을 주지 않음
+            try {
+                PaymentSuccessEvent event = new PaymentSuccessEvent(
+                        order.getOrderId(),
+                        userId,
+                        finalAmount
+                );
+                eventPublisher.publishEvent(event);
+                log.debug("[OrderSagaService] PaymentSuccessEvent 발행: orderId={}", order.getOrderId());
+            } catch (Exception e) {
+                // 이벤트 발행 실패는 로깅만 하고 메인 로직에 영향 주지 않음
+                log.warn("[OrderSagaService] PaymentSuccessEvent 발행 실패 (무시됨): orderId={}, error={}",
+                        order.getOrderId(), e.getMessage());
+            }
 
             return order;
 
@@ -159,7 +188,22 @@ public class OrderSagaService {
                 } catch (Exception compensationError) {
                     log.error("[OrderSagaService] 보상 트랜잭션 실패! 수동 개입 필요 - orderId={}, error={}",
                             order.getOrderId(), compensationError.getMessage());
-                    alertService.notifyCompensationFailure(order.getOrderId(), userId, compensationError.getMessage());
+
+                    // ✅ 트랜잭션 외부 I/O 분리: CompensationFailedEvent 발행
+                    // - alertService 호출 제거 (외부 I/O)
+                    try {
+                        CompensationFailedEvent event = new CompensationFailedEvent(
+                                order.getOrderId(),
+                                userId,
+                                compensationError.getMessage()
+                        );
+                        eventPublisher.publishEvent(event);
+                        log.debug("[OrderSagaService] CompensationFailedEvent 발행: orderId={}", order.getOrderId());
+                    } catch (Exception eventError) {
+                        log.warn("[OrderSagaService] CompensationFailedEvent 발행 실패 (무시됨): orderId={}, error={}",
+                                order.getOrderId(), eventError.getMessage());
+                    }
+
                     throw new CompensationException("Failed to compensate order: " + order.getOrderId(), compensationError);
                 }
             }
@@ -184,6 +228,11 @@ public class OrderSagaService {
      * 4. 모든 작업이 원자적으로 처리됨 (@Transactional)
      *
      * ⚠️ 주의: 상태 검증 전에 재고/잔액 복구 로직 실행 금지
+     *
+     * ✅ 트랜잭션 외부 I/O 분리:
+     * - alertService.notifyCompensationComplete() 제거 → CompensationCompletedEvent 발행
+     * - alertService.notifyCompensationFailure() 제거 → CompensationFailedEvent 발행
+     * - 이벤트 리스너가 AFTER_COMMIT + @Async로 비동기 알림 처리
      *
      * 복구 항목:
      * - 재고 복구: 각 주문 항목별로 ProductOption의 stock 복구
@@ -277,14 +326,45 @@ public class OrderSagaService {
 
             // ==================== STEP 7: 완료 알림 ====================
             log.info("[OrderSagaService] 보상 트랜잭션 완료 - orderId={}, 최종상태=CANCELLED", orderId);
-            alertService.notifyCompensationComplete(orderId, order.getUserId(), order.getFinalAmount());
+
+            // ✅ 트랜잭션 외부 I/O 분리: CompensationCompletedEvent 발행
+            // - alertService 호출 제거 (외부 I/O)
+            // - 이벤트는 트랜잭션 커밋 후 AFTER_COMMIT + @Async 리스너에서 처리
+            try {
+                CompensationCompletedEvent event = new CompensationCompletedEvent(
+                        orderId,
+                        order.getUserId(),
+                        order.getFinalAmount()
+                );
+                eventPublisher.publishEvent(event);
+                log.debug("[OrderSagaService] CompensationCompletedEvent 발행: orderId={}", orderId);
+            } catch (Exception e) {
+                // 이벤트 발행 실패는 로깅만 하고 메인 로직에 영향 주지 않음
+                log.warn("[OrderSagaService] CompensationCompletedEvent 발행 실패 (무시됨): orderId={}, error={}",
+                        orderId, e.getMessage());
+            }
 
             return cancelledOrder;
 
         } catch (Exception e) {
             log.error("[OrderSagaService] 보상 트랜잭션 중 오류 발생! 수동 개입 필요 - orderId={}, error={}, message={}",
                     orderId, e.getClass().getSimpleName(), e.getMessage(), e);
-            alertService.notifyCompensationFailure(orderId, order.getUserId(), e.getMessage());
+
+            // ✅ 트랜잭션 외부 I/O 분리: CompensationFailedEvent 발행
+            // - alertService 호출 제거 (외부 I/O)
+            try {
+                CompensationFailedEvent event = new CompensationFailedEvent(
+                        orderId,
+                        order.getUserId(),
+                        e.getMessage()
+                );
+                eventPublisher.publishEvent(event);
+                log.debug("[OrderSagaService] CompensationFailedEvent 발행: orderId={}", orderId);
+            } catch (Exception eventError) {
+                log.warn("[OrderSagaService] CompensationFailedEvent 발행 실패 (무시됨): orderId={}, error={}",
+                        orderId, eventError.getMessage());
+            }
+
             throw new CompensationException("Compensation failed for order: " + orderId, e);
         }
     }
