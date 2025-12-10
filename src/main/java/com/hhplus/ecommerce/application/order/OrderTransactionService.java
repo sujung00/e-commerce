@@ -18,12 +18,11 @@ import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.order.OutboxRepository;
-import com.hhplus.ecommerce.domain.coupon.UserCoupon;
-import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
-import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
+import com.hhplus.ecommerce.domain.order.event.OrderCreatedEvent;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.user.UserBalanceService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,8 +34,6 @@ import org.slf4j.LoggerFactory;
 import jakarta.persistence.OptimisticLockException;
 
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -67,30 +64,30 @@ public class OrderTransactionService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final OutboxRepository outboxRepository;
-    private final UserCouponRepository userCouponRepository;
     private final UserBalanceService userBalanceService;
     private final ExecutedChildTransactionRepository executedChildTransactionRepository;
     private final CouponService couponService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OrderTransactionService(OrderRepository orderRepository,
                                    ProductRepository productRepository,
                                    UserRepository userRepository,
                                    OutboxRepository outboxRepository,
-                                   UserCouponRepository userCouponRepository,
                                    UserBalanceService userBalanceService,
                                    ExecutedChildTransactionRepository executedChildTransactionRepository,
                                    CouponService couponService,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper,
+                                   ApplicationEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.outboxRepository = outboxRepository;
-        this.userCouponRepository = userCouponRepository;
         this.userBalanceService = userBalanceService;
         this.executedChildTransactionRepository = executedChildTransactionRepository;
         this.couponService = couponService;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -339,29 +336,31 @@ public class OrderTransactionService {
         // 모든 OrderItem 추가 후 다시 저장 (CascadeType.PERSIST로 인해 자동 저장됨)
         savedOrder = orderRepository.save(savedOrder);
 
-        // ===== 2-6: 쿠폰 사용 처리 (있는 경우) =====
-        // ⚠️ 쿠폰 처리는 부모 TX에서 실행
-        // 예외 발생 시 자식 TX(잔액 차감)는 이미 커밋되므로 주의
-        if (couponId != null) {
-            try {
-                markCouponAsUsed(userId, couponId, savedOrder.getOrderId());
-            } catch (IllegalArgumentException e) {
-                // 쿠폰이 없거나 이미 사용된 경우
-                // 이 경우 잔액 차감은 이미 커밋됨 → 데이터 불일치 가능
-                // 따라서 예외를 전파하여 부모 TX 롤백하되,
-                // 자식 TX는 이미 커밋되었으므로 보상 로직 필요
-                log.error("[Order] 쿠폰 처리 실패: userId={}, couponId={}, message={}",
-                        userId, couponId, e.getMessage());
-                // 주문은 생성되었으나 쿠폰 미적용
-                // 이 경우를 명확히 하기 위해 별도 예외로 변환 권장
-                throw new OrderException("쿠폰 처리 실패로 주문이 취소되었습니다", e);
-            }
-        }
+        // ===== 2-6: OrderCreatedEvent 발행 =====
+        // God Transaction 해체
+        // 쿠폰 사용 처리와 상품 상태 업데이트를 이벤트 핸들러로 분리
+        // - CouponEventHandler: 동기 처리 (BEFORE_COMMIT)
+        // - ProductStatusEventHandler: 비동기 처리 (AFTER_COMMIT)
+        List<OrderCreatedEvent.OrderItemInfo> orderItemInfos = orderItems.stream()
+                .map(item -> new OrderCreatedEvent.OrderItemInfo(
+                        item.getProductId(),
+                        item.getOptionId(),
+                        item.getQuantity()
+                ))
+                .collect(Collectors.toList());
 
-        // ===== 2-7: 상품 상태 업데이트 (모든 옵션 재고가 0인 경우 품절로 변경) =====
-        updateProductStatus(orderItems);
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                savedOrder.getOrderId(),
+                userId,
+                couponId,
+                orderItemInfos
+        );
 
-        // ===== 2-8: Outbox 메시지 저장 (3단계: 외부 전송) =====
+        eventPublisher.publishEvent(event);
+        log.info("[OrderTransactionService] OrderCreatedEvent 발행: orderId={}, userId={}, couponId={}, itemCount={}",
+                savedOrder.getOrderId(), userId, couponId, orderItemInfos.size());
+
+        // ===== 2-7: Outbox 메시지 저장 (3단계: 외부 전송) =====
         // 트랜잭션 2단계 내에서 저장되므로 원자성 보장
         // 별도 배치 프로세스가 PENDING 상태의 메시지를 외부 시스템에 전송
         saveOrderCompletionEvent(savedOrder.getOrderId(), userId);
@@ -437,82 +436,6 @@ public class OrderTransactionService {
         userBalanceService.deductBalance(userId, finalAmount, orderId);
     }
 
-    /**
-     * 쿠폰 사용 처리 (Pessimistic Lock 적용)
-     *
-     * 동시성 제어: TOCTOU 문제 방지
-     * - findByUserIdAndCouponIdForUpdate()를 사용하여 SELECT ... FOR UPDATE 적용
-     * - DB 레벨 비관적 락으로 쿠폰 중복 사용 방지
-     * - 쿠폰 상태 확인 후 USED로 변경
-     * - 이 메서드는 @Transactional executeTransactionalOrder() 내에서 호출되므로
-     *   모든 작업이 원자적으로 처리됨
-     *
-     * 플로우:
-     * 1. 쿠폰을 비관적 락으로 조회 (SELECT ... FOR UPDATE)
-     * 2. 쿠폰 상태 검증 (UNUSED 상태인지 확인)
-     * 3. 쿠폰 상태를 USED로 변경
-     * 4. used_at 타임스탬프 설정
-     * 5. DB에 저장
-     * 6. 트랜잭션 커밋 시 모든 변경사항 원자적 반영
-     *
-     * @param userId 사용자 ID
-     * @param couponId 쿠폰 ID
-     * @param orderId 주문 ID
-     * @throws IllegalArgumentException 쿠폰을 찾을 수 없거나 이미 사용된 경우
-     */
-    private void markCouponAsUsed(Long userId, Long couponId, Long orderId) {
-        // ✅ 비관적 락 적용: SELECT ... FOR UPDATE로 즉시 락 획득
-        // 다른 트랜잭션이 동시에 이 쿠폰을 사용하려고 하면 대기
-        UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponIdForUpdate(userId, couponId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자 쿠폰을 찾을 수 없습니다"));
-
-        // ✅ 쿠폰 상태 검증: UNUSED 상태인지 확인
-        if (userCoupon.getStatus() != UserCouponStatus.UNUSED) {
-            throw new IllegalArgumentException(
-                    "쿠폰은 UNUSED 상태여야 합니다. 현재 상태: " + userCoupon.getStatus());
-        }
-
-        // ✅ 쿠폰 상태를 USED로 변경
-        userCoupon.setStatus(UserCouponStatus.USED);
-        userCoupon.setUsedAt(java.time.LocalDateTime.now());
-
-        // ✅ DB에 저장 (executeTransactionalOrder() 메서드의 @Transactional에 의해 원자적 처리)
-        userCouponRepository.update(userCoupon);
-
-        log.info("[OrderTransactionService] 쿠폰 사용 처리 완료 (Pessimistic Lock 적용): " +
-                "userId={}, couponId={}, orderId={}, status={}",
-                userId, couponId, orderId, userCoupon.getStatus());
-    }
-
-    /**
-     * 상품 상태 업데이트 (Domain 메서드 활용)
-     *
-     * Product.recalculateTotalStock()이 다음을 처리합니다:
-     * - 모든 옵션의 재고 합계 재계산
-     * - 모든 옵션의 재고가 0인 경우 자동으로 상태를 '품절'로 변경
-     * - 그 외의 경우 상태를 '판매중'으로 변경
-     *
-     * Note: deductStock() 호출 시 자동으로 상태가 업데이트되므로,
-     * 이 메서드는 상태 업데이트 재확인 용도로 사용할 수 있습니다.
-     */
-    private void updateProductStatus(List<OrderItemDto> orderItems) {
-        // 상품별로 집계
-        Set<Long> productIds = orderItems.stream()
-                .map(OrderItemDto::getProductId)
-                .collect(Collectors.toSet());
-
-        for (Long productId : productIds) {
-            Product product = productRepository.findById(productId)
-                    .orElseThrow(() -> new ProductNotFoundException(productId));
-
-            // Domain 메서드 호출 (Product가 상태 자동 업데이트)
-            // 모든 옵션 재고가 0이면 '품절', 그 외에는 '판매중'으로 변경
-            product.recalculateTotalStock();
-
-            // 저장소에 반영
-            productRepository.save(product);
-        }
-    }
 
     /**
      * OptimisticLockException 복구 메서드 (@Recover)

@@ -5,6 +5,7 @@ import com.hhplus.ecommerce.domain.coupon.event.CouponIssuedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.CacheManager;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -50,6 +51,7 @@ public class CouponEventListener {
      *
      * @param event 쿠폰 발급 완료 이벤트
      */
+    @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleCouponIssued(CouponIssuedEvent event) {
         log.info("[CouponEventListener] 쿠폰 발급 이벤트 수신 - couponId={}, userId={}, remainingQty={}",
