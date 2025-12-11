@@ -187,4 +187,44 @@ public class AlertService {
         // - Slack: #inventory-alerts
         // - 재입고 시스템: 자동 발주 트리거
     }
+
+    /**
+     * 중요 보상 트랜잭션 실패 알림 (최고 심각도)
+     *
+     * 시나리오:
+     * - Saga 보상 트랜잭션 중 중요(Critical) Step 실패
+     * - 데이터 불일치 가능성 발생 (재고/잔액/쿠폰 복구 실패)
+     * - 즉시 수동 개입 필요 - 시스템 정합성 회복 필수
+     * - Dead Letter Queue(DLQ)로 발행하여 재처리 가능
+     *
+     * 발생 예시:
+     * - 재고 복구 실패: 데이터베이스 락 타임아웃, 동시성 충돌
+     * - 잔액 복구 실패: 정합성 오류, 트랜잭션 롤백 실패
+     * - 쿠폰 복구 실패: 상태 전이 오류
+     *
+     * 처리 방법:
+     * - 관리자가 즉시 DLQ 확인
+     * - 데이터베이스 직접 조회하여 상태 확인
+     * - 수동으로 보상 로직 재실행 또는 데이터 수정
+     * - 고객에게 적절한 보상 제공 (포인트, 쿠폰 등)
+     *
+     * @param orderId 주문 ID
+     * @param stepName 실패한 Step 이름 (예: DeductInventoryStep)
+     */
+    public void notifyCriticalCompensationFailure(Long orderId, String stepName) {
+        String message = String.format(
+                "[중요 보상 실패 - 긴급 대응 필요!] 주문 ID: %d, 실패 Step: %s - " +
+                        "즉시 수동 개입 필요! DLQ 확인하여 데이터 정합성 복구 바랍니다.",
+                orderId, stepName
+        );
+
+        log.error(message);
+
+        // TODO: 프로덕션에서는 최고 우선순위 알림 발송
+        // - PagerDuty: Critical alert (온콜 엔지니어 호출)
+        // - Slack: @channel (전체 알림)
+        // - 이메일: admin@company.com (높은 우선순위)
+        // - SMS: 관리자 연락처 (긴급)
+        // - Monitoring Dashboard: Red alert 표시
+    }
 }

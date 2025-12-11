@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,9 +50,9 @@ import java.util.List;
  * 6. DB 저장
  *
  * 트랜잭션 전략:
- * - @Transactional (기본 propagation)
- * - 주문 생성은 단일 트랜잭션에서 처리
- * - Step 실패 시 자동 롤백
+ * - @Transactional(propagation = REQUIRES_NEW)
+ * - 각 Step은 독립적인 트랜잭션으로 실행
+ * - Step 실패 시 해당 Step만 롤백 (다른 Step에 영향 없음)
  */
 @Component
 public class CreateOrderStep implements SagaStep {
@@ -95,8 +96,21 @@ public class CreateOrderStep implements SagaStep {
      * @throws Exception 주문 생성 실패 시
      */
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void execute(SagaContext context) throws Exception {
+        // ========== 트랜잭션 정보 로깅 (독립 트랜잭션 검증) ==========
+        String txName = TransactionSynchronizationManager.getCurrentTransactionName();
+        boolean txActive = TransactionSynchronizationManager.isActualTransactionActive();
+
+        log.info("[{}] ========== 주문 생성 트랜잭션 시작 ==========", getName());
+        log.info("[{}] Transaction Active: {}", getName(), txActive);
+        log.info("[{}] Transaction Name: {}", getName(), txName != null ? txName : "NONE");
+
+        if (!txActive) {
+            log.error("[{}] ⚠️ 트랜잭션이 활성화되지 않음! REQUIRES_NEW 동작 실패!", getName());
+            throw new IllegalStateException("트랜잭션이 활성화되지 않았습니다");
+        }
+
         Long userId = context.getUserId();
         Long couponId = context.getCouponId();
         Long finalAmount = context.getFinalAmount();
@@ -167,6 +181,7 @@ public class CreateOrderStep implements SagaStep {
 
         log.info("[{}] 주문 생성 Step 완료 - orderId={}, orderItems={}개",
                 getName(), savedOrder.getOrderId(), orderItems.size());
+        log.info("[{}] ========== 주문 생성 트랜잭션 종료 (커밋 예정) ==========", getName());
     }
 
     /**
@@ -188,8 +203,21 @@ public class CreateOrderStep implements SagaStep {
      * @throws Exception 보상 중 치명적 오류 발생 시
      */
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void compensate(SagaContext context) throws Exception {
+        // ========== 트랜잭션 정보 로깅 (독립 트랜잭션 검증) ==========
+        String txName = TransactionSynchronizationManager.getCurrentTransactionName();
+        boolean txActive = TransactionSynchronizationManager.isActualTransactionActive();
+
+        log.warn("[{}] ========== 주문 취소 트랜잭션 시작 (보상) ==========", getName());
+        log.warn("[{}] Transaction Active: {}", getName(), txActive);
+        log.warn("[{}] Transaction Name: {}", getName(), txName != null ? txName : "NONE");
+
+        if (!txActive) {
+            log.error("[{}] ⚠️ 보상 트랜잭션이 활성화되지 않음! REQUIRES_NEW 동작 실패!", getName());
+            throw new IllegalStateException("보상 트랜잭션이 활성화되지 않았습니다");
+        }
+
         // ========== Step 1: 보상 플래그 확인 ==========
         if (!context.isOrderCreated()) {
             log.info("[{}] 주문 생성이 실행되지 않았으므로 보상 skip", getName());
@@ -243,5 +271,7 @@ public class CreateOrderStep implements SagaStep {
             log.error("[{}] 주문 취소 실패 (무시하고 계속) - orderId={}, error={}",
                     getName(), orderId, e.getMessage(), e);
         }
+
+        log.warn("[{}] ========== 주문 취소 트랜잭션 종료 (커밋 예정) ==========", getName());
     }
 }

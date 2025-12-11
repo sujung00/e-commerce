@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * DeductInventoryStep - 재고 차감 Step (Saga Step 1/4)
@@ -83,8 +84,19 @@ public class DeductInventoryStep implements SagaStep {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void execute(SagaContext context) throws Exception {
-        log.info("[{}] 재고 차감 시작 - 주문 항목 {}개",
-                getName(), context.getOrderItems().size());
+        // ========== 트랜잭션 정보 로깅 (독립 트랜잭션 검증) ==========
+        String txName = TransactionSynchronizationManager.getCurrentTransactionName();
+        boolean txActive = TransactionSynchronizationManager.isActualTransactionActive();
+
+        log.info("[{}] ========== 재고 차감 트랜잭션 시작 ==========", getName());
+        log.info("[{}] Transaction Active: {}", getName(), txActive);
+        log.info("[{}] Transaction Name: {}", getName(), txName != null ? txName : "NONE");
+        log.info("[{}] 주문 항목: {}개", getName(), context.getOrderItems().size());
+
+        if (!txActive) {
+            log.error("[{}] ⚠️ 트랜잭션이 활성화되지 않음! REQUIRES_NEW 동작 실패!", getName());
+            throw new IllegalStateException("트랜잭션이 활성화되지 않았습니다");
+        }
 
         // ========== Step 1: 각 주문 항목별로 재고 차감 ==========
         for (OrderItemDto item : context.getOrderItems()) {
@@ -116,6 +128,7 @@ public class DeductInventoryStep implements SagaStep {
 
         log.info("[{}] 재고 차감 완료 - 총 {}개 옵션 처리",
                 getName(), context.getOrderItems().size());
+        log.info("[{}] ========== 재고 차감 트랜잭션 종료 (커밋 예정) ==========", getName());
     }
 
     /**
@@ -138,6 +151,19 @@ public class DeductInventoryStep implements SagaStep {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void compensate(SagaContext context) throws Exception {
+        // ========== 트랜잭션 정보 로깅 (독립 트랜잭션 검증) ==========
+        String txName = TransactionSynchronizationManager.getCurrentTransactionName();
+        boolean txActive = TransactionSynchronizationManager.isActualTransactionActive();
+
+        log.warn("[{}] ========== 재고 복구 트랜잭션 시작 (보상) ==========", getName());
+        log.warn("[{}] Transaction Active: {}", getName(), txActive);
+        log.warn("[{}] Transaction Name: {}", getName(), txName != null ? txName : "NONE");
+
+        if (!txActive) {
+            log.error("[{}] ⚠️ 보상 트랜잭션이 활성화되지 않음! REQUIRES_NEW 동작 실패!", getName());
+            throw new IllegalStateException("보상 트랜잭션이 활성화되지 않았습니다");
+        }
+
         // ========== Step 1: 보상 플래그 확인 ==========
         if (!context.isInventoryDeducted()) {
             log.info("[{}] 재고 차감이 실행되지 않았으므로 보상 skip", getName());
@@ -179,5 +205,6 @@ public class DeductInventoryStep implements SagaStep {
 
         log.warn("[{}] 재고 복구 완료 - 총 {}개 옵션 복구 시도",
                 getName(), context.getDeductedInventory().size());
+        log.warn("[{}] ========== 재고 복구 트랜잭션 종료 (커밋 예정) ==========", getName());
     }
 }
