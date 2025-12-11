@@ -20,6 +20,8 @@ import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.order.OutboxRepository;
 import com.hhplus.ecommerce.domain.order.event.OrderCreatedEvent;
 import com.hhplus.ecommerce.domain.order.event.OrderCompletedEvent;
+import com.hhplus.ecommerce.domain.product.event.LowInventoryEvent;
+import com.hhplus.ecommerce.domain.product.ProductConstants;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.user.UserBalanceService;
@@ -404,6 +406,11 @@ public class OrderTransactionService {
      * - 동시성 제어 (synchronized 블록)
      *
      * Application 계층은 Domain 메서드를 호출하기만 하면 됩니다.
+     *
+     * 개선사항 (재고 부족 이벤트):
+     * - 재고 차감 후 재고가 LOW_STOCK_THRESHOLD 이하이면 LowInventoryEvent 발행
+     * - 이벤트 리스너(InventoryEventListener)에서 관리자 알림 처리
+     * - 트랜잭션 커밋 후 비동기로 실행되어 주문 트랜잭션과 분리
      */
     private void deductInventory(List<OrderItemDto> orderItems) {
         for (OrderItemDto itemRequest : orderItems) {
@@ -413,6 +420,28 @@ public class OrderTransactionService {
             // Domain 메서드 호출 (Product가 내부적으로 ProductOption 조회 및 재고 차감)
             // 예외 처리: InsufficientStockException, ProductOptionNotFoundException
             product.deductStock(itemRequest.getOptionId(), itemRequest.getQuantity());
+
+            // 재고 차감 후 재고 부족 여부 확인 및 이벤트 발행
+            ProductOption option = product.findOptionById(itemRequest.getOptionId())
+                    .orElseThrow(() -> new ProductNotFoundException(itemRequest.getProductId()));
+
+            if (option.getStock() <= ProductConstants.LOW_STOCK_THRESHOLD) {
+                log.warn("[OrderTransactionService] 재고 부족 감지 - productId={}, optionId={}, stock={}, threshold={}",
+                        product.getProductId(), option.getOptionId(), option.getStock(), ProductConstants.LOW_STOCK_THRESHOLD);
+
+                LowInventoryEvent lowInventoryEvent = new LowInventoryEvent(
+                        product.getProductId(),
+                        option.getOptionId(),
+                        product.getProductName(),
+                        option.getName(),
+                        option.getStock(),
+                        ProductConstants.LOW_STOCK_THRESHOLD
+                );
+
+                eventPublisher.publishEvent(lowInventoryEvent);
+                log.info("[OrderTransactionService] LowInventoryEvent 발행: productId={}, optionId={}, stock={}",
+                        product.getProductId(), option.getOptionId(), option.getStock());
+            }
 
             // 저장소에 반영
             productRepository.save(product);

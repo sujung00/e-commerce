@@ -159,4 +159,32 @@ public class AlertService {
         // - Slack: #outbox-failures
         // - PagerDuty: Warning alert
     }
+
+    /**
+     * 재고 부족 알림
+     *
+     * 시나리오:
+     * - 주문 처리 중 상품 재고가 임계값 이하로 떨어짐
+     * - 재입고 요청 또는 관리자에게 알림 필요
+     * - 품절 방지를 위한 선제적 조치
+     *
+     * @param productId 상품 ID
+     * @param optionId 옵션 ID
+     * @param productName 상품명
+     * @param optionName 옵션명
+     * @param currentStock 현재 재고
+     * @param threshold 임계값
+     */
+    public void notifyLowInventory(Long productId, Long optionId, String productName, String optionName, Integer currentStock, Integer threshold) {
+        String message = String.format(
+                "[재고 부족 알림] 상품: %s, 옵션: %s (ID: %d/%d), 현재 재고: %d개, 임계값: %d개 - 재입고 필요",
+                productName, optionName, productId, optionId, currentStock, threshold
+        );
+
+        log.warn(message);
+        // TODO: 프로덕션에서는 실제 알림 채널로 발송
+        // - 이메일: inventory@company.com
+        // - Slack: #inventory-alerts
+        // - 재입고 시스템: 자동 발주 트리거
+    }
 }
