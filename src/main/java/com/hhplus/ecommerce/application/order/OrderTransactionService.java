@@ -19,6 +19,7 @@ import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.order.OutboxRepository;
 import com.hhplus.ecommerce.domain.order.event.OrderCreatedEvent;
+import com.hhplus.ecommerce.domain.order.event.OrderCompletedEvent;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.user.UserBalanceService;
@@ -360,10 +361,20 @@ public class OrderTransactionService {
         log.info("[OrderTransactionService] OrderCreatedEvent 발행: orderId={}, userId={}, couponId={}, itemCount={}",
                 savedOrder.getOrderId(), userId, couponId, orderItemInfos.size());
 
-        // ===== 2-7: Outbox 메시지 저장 (3단계: 외부 전송) =====
-        // 트랜잭션 2단계 내에서 저장되므로 원자성 보장
-        // 별도 배치 프로세스가 PENDING 상태의 메시지를 외부 시스템에 전송
+        // ===== 2-7: Outbox 메시지 저장 (배치 기반 백업) =====
         saveOrderCompletionEvent(savedOrder.getOrderId(), userId);
+
+        // ===== 2-8: OrderCompletedEvent 발행 (실시간 전송) =====
+        // @TransactionalEventListener(AFTER_COMMIT)에서 데이터 플랫폼 전송
+        OrderCompletedEvent completedEvent = new OrderCompletedEvent(
+                savedOrder.getOrderId(),
+                userId,
+                savedOrder.getFinalAmount()
+        );
+
+        eventPublisher.publishEvent(completedEvent);
+        log.info("[OrderTransactionService] OrderCompletedEvent 발행: orderId={}, userId={}, amount={}",
+                savedOrder.getOrderId(), userId, savedOrder.getFinalAmount());
 
         return savedOrder;
     }
