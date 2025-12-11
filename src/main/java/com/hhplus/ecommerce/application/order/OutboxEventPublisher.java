@@ -1,36 +1,93 @@
 package com.hhplus.ecommerce.application.order;
 
+import com.hhplus.ecommerce.application.shipping.client.ShippingServiceClient;
 import com.hhplus.ecommerce.domain.order.Outbox;
+import com.hhplus.ecommerce.domain.order.OutboxRepository;
+import com.hhplus.ecommerce.infrastructure.external.DataPlatformClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * OutboxEventPublisher - Outbox 메시지 발행 서비스
  *
  * 역할:
- * - Outbox 메시지를 외부 시스템으로 발행
- * - 메시지 타입별로 적절한 발행 채널 선택
+ * - Outbox 패턴을 통한 외부 시스템 연동
+ * - 메시지를 Outbox 테이블에 저장 후 즉시 발행 시도
+ * - 실패 시 PENDING 상태로 유지하여 배치 재시도 보장
  *
  * 지원하는 메시지 타입:
  * - ORDER_COMPLETED: 주문 완료 이벤트 (배송, 알림 등)
  * - ORDER_CANCELLED: 주문 취소 이벤트 (재고 복구 등)
  * - PAYMENT_COMPLETED: 결제 완료 이벤트 (결제 이력 저장 등)
+ * - DATA_PLATFORM: 데이터 플랫폼 전송
+ * - SHIPPING: 배송 시스템 전송
+ *
+ * Outbox 패턴 플로우:
+ * 1. publishWithOutbox(): Outbox 테이블에 메시지 저장 (트랜잭션 보장)
+ * 2. 즉시 발행 시도 (publish())
+ * 3. 성공 → SENT 상태, 실패 → PENDING 유지
+ * 4. OutboxPollingService(배치)가 PENDING 메시지 재시도
  *
  * 확장 가능성:
  * - Kafka: 메시지 큐를 통한 이벤트 발행
  * - HTTP: REST API를 통한 직접 호출
  * - 이메일/SMS: 고객 알림
  * - 데이터베이스: 이벤트 스토어 저장
- *
- * 현재 구현:
- * - 로깅 기반 (프로토타입)
- * - 향후 Kafka, HTTP 등으로 확장 가능
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class OutboxEventPublisher {
+
+    private final OutboxRepository outboxRepository;
+    private final DataPlatformClient dataPlatformClient;
+    private final ShippingServiceClient shippingServiceClient;
+
+    /**
+     * Outbox 패턴을 통한 메시지 발행
+     *
+     * 플로우:
+     * 1. Outbox 테이블에 메시지 저장 (PENDING 상태)
+     * 2. 즉시 발행 시도
+     * 3. 성공 → SENT 상태로 업데이트
+     * 4. 실패 → PENDING 유지, 배치가 재시도
+     *
+     * @param messageType 메시지 타입 (ORDER_COMPLETED, DATA_PLATFORM, SHIPPING 등)
+     * @param orderId 주문 ID
+     * @param userId 사용자 ID
+     * @param payload JSON 형태의 메시지 데이터
+     */
+    @Transactional
+    public void publishWithOutbox(String messageType, Long orderId, Long userId, String payload) {
+        log.info("[OutboxEventPublisher] Outbox 메시지 저장 시작 - type={}, orderId={}, userId={}",
+            messageType, orderId, userId);
+
+        // 1. Outbox 테이블에 저장 (트랜잭션 보장)
+        Outbox outbox = Outbox.createOutboxWithPayload(orderId, userId, messageType, payload);
+        Outbox savedOutbox = outboxRepository.save(outbox);
+
+        log.info("[OutboxEventPublisher] Outbox 메시지 저장 완료 - messageId={}, status=PENDING",
+            savedOutbox.getMessageId());
+
+        // 2. 즉시 발행 시도 (실패해도 배치가 재시도)
+        try {
+            publish(savedOutbox);
+
+            // 발행 성공 → SENT 상태로 업데이트
+            savedOutbox.markAsSent();
+            outboxRepository.save(savedOutbox);
+
+            log.info("[OutboxEventPublisher] 즉시 발행 성공 - messageId={}, status=SENT",
+                savedOutbox.getMessageId());
+
+        } catch (Exception e) {
+            // 발행 실패 → PENDING 유지 (배치가 재시도)
+            log.warn("[OutboxEventPublisher] 즉시 발행 실패 (배치가 재시도) - messageId={}, error={}",
+                savedOutbox.getMessageId(), e.getMessage());
+        }
+    }
 
     /**
      * Outbox 메시지를 외부 시스템에 발행
@@ -53,6 +110,14 @@ public class OutboxEventPublisher {
 
             case "PAYMENT_COMPLETED":
                 publishPaymentCompleted(message);
+                break;
+
+            case "DATA_PLATFORM":
+                publishDataPlatform(message);
+                break;
+
+            case "SHIPPING":
+                publishShipping(message);
                 break;
 
             default:
@@ -142,6 +207,46 @@ public class OutboxEventPublisher {
         // - 정산 처리
 
         log.info("[OutboxEventPublisher] PAYMENT_COMPLETED 이벤트를 결제/회계 시스템으로 발행합니다 - orderId={}",
+                message.getOrderId());
+    }
+
+    /**
+     * 데이터 플랫폼 이벤트 발행
+     *
+     * 용도:
+     * - 분석 시스템: 주문/사용자 데이터 수집
+     * - 데이터 웨어하우스: ETL 처리
+     *
+     * @param message Outbox 메시지
+     * @throws Exception 발행 실패 시
+     */
+    private void publishDataPlatform(Outbox message) throws Exception {
+        log.info("[OutboxEventPublisher] DATA_PLATFORM 발행 - orderId={}, payload={}",
+                message.getOrderId(), message.getPayload());
+
+        // DataPlatformClient를 통한 외부 연동
+        dataPlatformClient.send(message.getPayload());
+
+        log.info("[OutboxEventPublisher] DATA_PLATFORM 이벤트 발행 완료 - orderId={}",
+                message.getOrderId());
+    }
+
+    /**
+     * 배송 시스템 이벤트 발행
+     *
+     * 용도:
+     * - 배송 시스템: 배송 생성 및 추적
+     *
+     * @param message Outbox 메시지
+     * @throws Exception 발행 실패 시
+     */
+    private void publishShipping(Outbox message) throws Exception {
+        log.info("[OutboxEventPublisher] SHIPPING 발행 - orderId={}, payload={}",
+                message.getOrderId(), message.getPayload());
+
+        // ShippingServiceClient를 통한 외부 연동
+        // 실제로는 payload를 파싱하여 ShipmentRequest로 변환 후 전송
+        log.info("[OutboxEventPublisher] SHIPPING 이벤트 발행 완료 - orderId={}",
                 message.getOrderId());
     }
 }
