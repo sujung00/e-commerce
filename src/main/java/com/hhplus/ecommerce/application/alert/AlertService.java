@@ -227,4 +227,44 @@ public class AlertService {
         // - SMS: 관리자 연락처 (긴급)
         // - Monitoring Dashboard: Red alert 표시
     }
+
+    /**
+     * 네트워크 파티션 알림 (Circuit Breaker Open)
+     *
+     * 시나리오:
+     * - Saga 실행 중 네트워크 파티션 감지
+     * - Circuit Breaker가 OPEN 상태로 전환
+     * - 부분 성공 상태의 트랜잭션 발생 가능
+     * - 수동 개입 또는 자동 재시도 필요
+     *
+     * 발생 예시:
+     * - 외부 API 통신 장애 (타임아웃, 연결 거부)
+     * - DB 연결 장애 (네트워크 단절)
+     * - 서비스 간 통신 장애 (마이크로서비스 환경)
+     *
+     * 처리 방법:
+     * - Circuit Breaker 상태 모니터링
+     * - 부분 성공 트랜잭션 확인 및 재시도 큐 등록
+     * - 네트워크 복구 후 자동 재시도
+     * - DLQ로 이동하여 수동 처리
+     *
+     * @param userId 사용자 ID
+     * @param orderId 주문 ID (null 가능)
+     * @param partialState 부분 성공 상태 설명
+     */
+    public void notifyNetworkPartition(Long userId, Long orderId, String partialState) {
+        String message = String.format(
+                "[네트워크 파티션 감지 - Circuit Breaker Open] 사용자 ID: %d, 주문 ID: %s, 부분 성공 상태: %s - " +
+                        "네트워크 복구 후 재시도 큐 확인 필요",
+                userId, orderId, partialState
+        );
+
+        log.error(message);
+
+        // TODO: 프로덕션에서는 높은 우선순위 알림 발송
+        // - Slack: #network-alerts
+        // - PagerDuty: Warning alert
+        // - Monitoring Dashboard: Yellow alert 표시
+        // - 재시도 큐에 등록하여 자동 재시도
+    }
 }

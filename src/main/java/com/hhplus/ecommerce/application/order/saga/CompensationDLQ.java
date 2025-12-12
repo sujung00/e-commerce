@@ -1,36 +1,36 @@
 package com.hhplus.ecommerce.application.order.saga;
 
+import com.hhplus.ecommerce.domain.order.FailedCompensationEntity;
+import com.hhplus.ecommerce.domain.order.FailedCompensationRepository;
+import com.hhplus.ecommerce.domain.order.FailedCompensationStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 /**
- * CompensationDLQ - 보상 실패 Dead Letter Queue
+ * CompensationDLQ - 보상 실패 Dead Letter Queue (DB 기반 영구 저장)
  *
  * 역할:
- * - 보상 트랜잭션 실패 시 FailedCompensation을 임시 저장
+ * - 보상 트랜잭션 실패 시 FailedCompensation을 DB에 영구 저장
  * - 수동 재처리를 위한 인터페이스 제공
  * - 실패 이력 추적 및 조회 기능
+ * - Thread-safe 및 다중 서버 환경 지원
  *
- * 현재 구현:
- * - In-Memory ConcurrentHashMap 기반 (단일 서버 환경)
- * - 로깅을 통한 실패 알림
- *
- * 프로덕션 확장 방안:
- * - Kafka DLQ Topic: 분산 환경에서 메시지 유실 방지
- * - Database 저장: failed_compensations 테이블로 영구 보관
- * - Redis Queue: 빠른 조회와 TTL 기반 자동 삭제
- * - SQS/RabbitMQ DLQ: 클라우드 메시징 서비스
+ * 개선사항:
+ * - In-Memory → DB 기반 영구 저장 (서버 재시작 시에도 데이터 유지)
+ * - 다중 서버 환경에서 일관된 DLQ 관리
+ * - 트랜잭션 독립성 보장 (REQUIRES_NEW)
  *
  * 사용 흐름:
  * 1. OrderSagaOrchestrator에서 보상 실패 시 publish() 호출
- * 2. FailedCompensation을 DLQ에 저장
+ * 2. FailedCompensation을 DB에 저장 (PENDING 상태)
  * 3. 관리자가 getAllFailed() 조회
- * 4. 수동 재처리 후 markAsResolved() 호출
+ * 4. 수동 재처리 후 markAsResolved() 호출 (RESOLVED 상태로 변경)
  *
  * 향후 기능:
  * - 자동 재시도 로직 (exponential backoff)
@@ -41,18 +41,23 @@ import java.util.ArrayList;
 @Component
 public class CompensationDLQ {
 
-    /**
-     * In-Memory DLQ Storage
-     * Key: orderId
-     * Value: List of FailedCompensation (하나의 주문에서 여러 Step 실패 가능)
-     */
-    private final ConcurrentMap<Long, List<FailedCompensation>> dlqStorage = new ConcurrentHashMap<>();
+    private final FailedCompensationRepository failedCompensationRepository;
+
+    public CompensationDLQ(FailedCompensationRepository failedCompensationRepository) {
+        this.failedCompensationRepository = failedCompensationRepository;
+    }
 
     /**
-     * 보상 실패 메시지를 DLQ에 발행
+     * 보상 실패 메시지를 DLQ에 발행 (DB 저장)
+     *
+     * REQUIRES_NEW 전략:
+     * - 보상 실패 기록은 부모 트랜잭션과 독립적으로 저장
+     * - 부모 트랜잭션 롤백 시에도 DLQ 기록은 유지
+     * - 보상 실패 이력을 반드시 남기기 위함
      *
      * @param failedCompensation 실패한 보상 정보
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void publish(FailedCompensation failedCompensation) {
         Long orderId = failedCompensation.getOrderId();
 
@@ -62,23 +67,26 @@ public class CompensationDLQ {
                 failedCompensation.getStepName(),
                 failedCompensation.getErrorMessage());
 
-        // DLQ에 저장 (동일 orderId에 대해 여러 실패 가능)
-        dlqStorage.computeIfAbsent(orderId, k -> new ArrayList<>())
-                .add(failedCompensation);
+        // FailedCompensation DTO → FailedCompensationEntity 변환
+        FailedCompensationEntity entity = FailedCompensationEntity.builder()
+                .orderId(orderId)
+                .userId(failedCompensation.getUserId())
+                .stepName(failedCompensation.getStepName())
+                .stepOrder(failedCompensation.getStepOrder())
+                .errorMessage(failedCompensation.getErrorMessage())
+                .stackTrace(failedCompensation.getStackTrace())
+                .failedAt(failedCompensation.getFailedAt())
+                .retryCount(failedCompensation.getRetryCount())
+                .status(FailedCompensationStatus.PENDING)
+                .contextSnapshot(failedCompensation.getContextSnapshot())
+                .createdAt(LocalDateTime.now())
+                .build();
 
-        log.warn("[CompensationDLQ] DLQ 저장 완료 - orderId={}, 총 실패 Step={}개",
-                orderId,
-                dlqStorage.get(orderId).size());
+        // DB에 저장
+        FailedCompensationEntity savedEntity = failedCompensationRepository.save(entity);
 
-        // TODO: 프로덕션 구현
-        // 1. Kafka DLQ Topic 발행
-        // kafkaTemplate.send("compensation-dlq", failedCompensation);
-        //
-        // 2. Database 저장
-        // failedCompensationRepository.save(toEntity(failedCompensation));
-        //
-        // 3. 외부 알림 시스템 연동
-        // slackNotifier.sendAlert("보상 실패 발생: orderId=" + orderId);
+        log.warn("[CompensationDLQ] DLQ 저장 완료 - compensationId={}, orderId={}, stepName={}",
+                savedEntity.getCompensationId(), orderId, failedCompensation.getStepName());
     }
 
     /**
@@ -87,23 +95,32 @@ public class CompensationDLQ {
      * @param orderId 주문 ID
      * @return 실패한 보상 목록
      */
+    @Transactional(readOnly = true)
     public List<FailedCompensation> getFailedCompensations(Long orderId) {
-        return dlqStorage.getOrDefault(orderId, new ArrayList<>());
+        List<FailedCompensationEntity> entities = failedCompensationRepository.findByOrderId(orderId);
+
+        log.info("[CompensationDLQ] orderId={}의 실패 보상 조회 - 총 {}개",
+                orderId, entities.size());
+
+        return entities.stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
     }
 
     /**
-     * 모든 실패한 보상 조회 (관리자용)
+     * 모든 PENDING 상태의 실패한 보상 조회 (관리자용)
      *
      * @return 모든 실패한 보상 목록
      */
+    @Transactional(readOnly = true)
     public List<FailedCompensation> getAllFailed() {
-        List<FailedCompensation> allFailed = new ArrayList<>();
-        dlqStorage.values().forEach(allFailed::addAll);
+        List<FailedCompensationEntity> entities = failedCompensationRepository.findAllPending();
 
-        log.info("[CompensationDLQ] 전체 실패 보상 조회 - 총 {}개 주문, {}개 실패 Step",
-                dlqStorage.size(), allFailed.size());
+        log.info("[CompensationDLQ] 전체 PENDING 실패 보상 조회 - 총 {}개", entities.size());
 
-        return allFailed;
+        return entities.stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
     }
 
     /**
@@ -111,35 +128,55 @@ public class CompensationDLQ {
      *
      * @param orderId 주문 ID
      */
+    @Transactional
     public void markAsResolved(Long orderId) {
-        List<FailedCompensation> removed = dlqStorage.remove(orderId);
+        List<FailedCompensationEntity> entities = failedCompensationRepository.findByOrderId(orderId);
 
-        if (removed != null) {
-            log.info("[CompensationDLQ] 보상 실패 해결 처리 완료 - orderId={}, 제거된 실패 Step={}개",
-                    orderId, removed.size());
-        } else {
+        if (entities.isEmpty()) {
             log.warn("[CompensationDLQ] 해결 요청되었으나 DLQ에 없음 - orderId={}", orderId);
+            return;
         }
 
-        // TODO: 프로덕션 구현
-        // failedCompensationRepository.markAsResolved(orderId);
+        // 모든 PENDING 상태를 RESOLVED로 변경
+        for (FailedCompensationEntity entity : entities) {
+            if (entity.getStatus() == FailedCompensationStatus.PENDING) {
+                entity.markAsResolved();
+                failedCompensationRepository.save(entity);
+            }
+        }
+
+        log.info("[CompensationDLQ] 보상 실패 해결 처리 완료 - orderId={}, 처리된 실패 Step={}개",
+                orderId, entities.size());
     }
 
     /**
      * DLQ 크기 조회 (모니터링용)
      *
-     * @return 실패한 주문 수
+     * @return 실패한 주문 수 (PENDING 상태)
      */
+    @Transactional(readOnly = true)
     public int getSize() {
-        return dlqStorage.size();
+        List<FailedCompensationEntity> entities = failedCompensationRepository.findAllPending();
+        return entities.size();
     }
 
     /**
-     * DLQ 전체 삭제 (테스트용)
+     * Entity → DTO 변환
+     *
+     * @param entity FailedCompensationEntity
+     * @return FailedCompensation DTO
      */
-    public void clear() {
-        int size = dlqStorage.size();
-        dlqStorage.clear();
-        log.warn("[CompensationDLQ] DLQ 전체 삭제 - 삭제된 항목: {}개", size);
+    private FailedCompensation toDto(FailedCompensationEntity entity) {
+        return FailedCompensation.builder()
+                .orderId(entity.getOrderId())
+                .userId(entity.getUserId())
+                .stepName(entity.getStepName())
+                .stepOrder(entity.getStepOrder())
+                .errorMessage(entity.getErrorMessage())
+                .stackTrace(entity.getStackTrace())
+                .failedAt(entity.getFailedAt())
+                .retryCount(entity.getRetryCount())
+                .contextSnapshot(entity.getContextSnapshot())
+                .build();
     }
 }
