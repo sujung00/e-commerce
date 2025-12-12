@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
  * - ORDER_COMPLETED: 주문 완료 이벤트 (배송, 알림 등)
  * - ORDER_CANCELLED: 주문 취소 이벤트 (재고 복구 등)
  * - PAYMENT_COMPLETED: 결제 완료 이벤트 (결제 이력 저장 등)
+ * - PAYMENT_SUCCESS: 결제 성공 이벤트 (실시간 알림 등)
  * - DATA_PLATFORM: 데이터 플랫폼 전송
  * - SHIPPING: 배송 시스템 전송
  *
@@ -110,6 +111,10 @@ public class OutboxEventPublisher {
 
             case "PAYMENT_COMPLETED":
                 publishPaymentCompleted(message);
+                break;
+
+            case "PAYMENT_SUCCESS":
+                publishPaymentSuccess(message);
                 break;
 
             case "DATA_PLATFORM":
@@ -207,6 +212,34 @@ public class OutboxEventPublisher {
         // - 정산 처리
 
         log.info("[OutboxEventPublisher] PAYMENT_COMPLETED 이벤트를 결제/회계 시스템으로 발행합니다 - orderId={}",
+                message.getOrderId());
+    }
+
+    /**
+     * 결제 성공 이벤트 발행 (실시간 알림)
+     *
+     * 용도:
+     * - 실시간 알림: 사용자에게 결제 성공 푸시 알림
+     * - SMS/이메일: 결제 영수증 발송
+     * - 모니터링: 실시간 결제 성공률 추적
+     *
+     * 발행 방법:
+     * - Kafka: kafkaTemplate.send("payment.success", message)
+     * - HTTP: 알림 서비스 API 호출
+     *
+     * @param message Outbox 메시지
+     * @throws Exception 발행 실패 시
+     */
+    private void publishPaymentSuccess(Outbox message) throws Exception {
+        log.info("[OutboxEventPublisher] PAYMENT_SUCCESS 발행 - orderId={}, userId={}",
+                message.getOrderId(), message.getUserId());
+
+        // TODO: 실제 구현
+        // - 푸시 알림 발송
+        // - SMS/이메일 발송
+        // - 실시간 모니터링 데이터 전송
+
+        log.info("[OutboxEventPublisher] PAYMENT_SUCCESS 이벤트를 알림 시스템으로 발행합니다 - orderId={}",
                 message.getOrderId());
     }
 

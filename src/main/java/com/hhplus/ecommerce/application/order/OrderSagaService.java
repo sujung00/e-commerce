@@ -7,6 +7,7 @@ import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.order.event.CompensationCompletedEvent;
 import com.hhplus.ecommerce.domain.order.event.CompensationFailedEvent;
 import com.hhplus.ecommerce.domain.order.event.PaymentSuccessEvent;
+import com.hhplus.ecommerce.domain.order.event.OrderCompletedEvent;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
@@ -15,6 +16,8 @@ import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,19 +80,25 @@ public class OrderSagaService {
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final OrderCalculator orderCalculator;
+    private final OutboxEventPublisher outboxEventPublisher;
+    private final ObjectMapper objectMapper;
 
     public OrderSagaService(OrderSagaOrchestrator orderSagaOrchestrator,
                           OrderRepository orderRepository,
                           ProductRepository productRepository,
                           UserRepository userRepository,
                           ApplicationEventPublisher eventPublisher,
-                          OrderCalculator orderCalculator) {
+                          OrderCalculator orderCalculator,
+                          OutboxEventPublisher outboxEventPublisher,
+                          ObjectMapper objectMapper) {
         this.orderSagaOrchestrator = orderSagaOrchestrator;
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.orderCalculator = orderCalculator;
+        this.outboxEventPublisher = outboxEventPublisher;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -172,6 +181,7 @@ public class OrderSagaService {
             // ✅ 트랜잭션 외부 I/O 분리: PaymentSuccessEvent 발행
             // - 이벤트는 트랜잭션 커밋 후 AFTER_COMMIT + @Async 리스너에서 처리
             // - 알림 실패가 비즈니스 트랜잭션에 영향을 주지 않음
+            // ✅ Outbox 패턴 통합: 실패 시 Outbox에 저장하여 배치 재시도 보장
             try {
                 PaymentSuccessEvent event = new PaymentSuccessEvent(
                         order.getOrderId(),
@@ -181,8 +191,57 @@ public class OrderSagaService {
                 eventPublisher.publishEvent(event);
                 log.debug("[OrderSagaService] PaymentSuccessEvent 발행: orderId={}", order.getOrderId());
             } catch (Exception e) {
+                // 이벤트 발행 실패 시 Outbox에 저장하여 배치 재시도 보장
+                log.warn("[OrderSagaService] PaymentSuccessEvent 발행 실패 - Outbox에 저장: orderId={}, error={}",
+                        order.getOrderId(), e.getMessage());
+
+                try {
+                    // PaymentSuccessEvent를 JSON으로 직렬화
+                    PaymentSuccessEvent event = new PaymentSuccessEvent(
+                            order.getOrderId(),
+                            userId,
+                            finalAmount
+                    );
+                    String eventPayload = objectMapper.writeValueAsString(event);
+
+                    // Outbox에 저장 (배치가 재시도)
+                    outboxEventPublisher.publishWithOutbox(
+                            "PAYMENT_SUCCESS",
+                            order.getOrderId(),
+                            userId,
+                            eventPayload
+                    );
+
+                    log.info("[OrderSagaService] PaymentSuccessEvent Outbox 저장 완료 - orderId={}, 배치가 재시도합니다",
+                            order.getOrderId());
+
+                } catch (JsonProcessingException jsonError) {
+                    // JSON 직렬화 실패 (심각한 오류)
+                    log.error("[OrderSagaService] PaymentSuccessEvent JSON 직렬화 실패 - orderId={}, error={}",
+                            order.getOrderId(), jsonError.getMessage(), jsonError);
+                } catch (Exception outboxError) {
+                    // Outbox 저장 실패 (심각한 오류)
+                    log.error("[OrderSagaService] PaymentSuccessEvent Outbox 저장 실패 - orderId={}, error={}",
+                            order.getOrderId(), outboxError.getMessage(), outboxError);
+                }
+            }
+
+            // ========== Step 4: OrderCompletedEvent 발행 (실시간 전송) ==========
+            // ✅ 트랜잭션 커밋 후 발행: @TransactionalEventListener(AFTER_COMMIT)에서 데이터 플랫폼 전송
+            // - OrderTransactionService와 동일한 방식으로 OrderCompletedEvent 발행
+            // - 두 서비스 모두에서 일관되게 이벤트 발행하여 데이터 플랫폼 통합
+            try {
+                OrderCompletedEvent completedEvent = new OrderCompletedEvent(
+                        order.getOrderId(),
+                        userId,
+                        finalAmount
+                );
+                eventPublisher.publishEvent(completedEvent);
+                log.info("[OrderSagaService] OrderCompletedEvent 발행 (Saga): orderId={}, userId={}, amount={}",
+                        order.getOrderId(), userId, finalAmount);
+            } catch (Exception e) {
                 // 이벤트 발행 실패는 로깅만 하고 메인 로직에 영향 주지 않음
-                log.warn("[OrderSagaService] PaymentSuccessEvent 발행 실패 (무시됨): orderId={}, error={}",
+                log.warn("[OrderSagaService] OrderCompletedEvent 발행 실패 (무시됨): orderId={}, error={}",
                         order.getOrderId(), e.getMessage());
             }
 
