@@ -43,6 +43,11 @@ public class MySQLExecutedChildTransactionRepository implements ExecutedChildTra
     }
 
     @Override
+    public Optional<ExecutedChildTransaction> findByIdempotencyTokenForUpdate(String idempotencyToken) {
+        return jpaRepository.findByIdempotencyTokenForUpdate(idempotencyToken);
+    }
+
+    @Override
     public List<ExecutedChildTransaction> findByOrderId(Long orderId) {
         return jpaRepository.findByOrderId(orderId);
     }
