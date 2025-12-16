@@ -17,6 +17,7 @@ import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;
+import com.hhplus.ecommerce.domain.order.FailedCompensationEntity;
 import com.hhplus.ecommerce.domain.order.FailedCompensationRepository;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
@@ -561,5 +562,172 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         });
 
         System.out.println("[TEST-002] ✅ 테스트 완료: 모든 검증 통과");
+    }
+
+    /**
+     * TEST-003: CompensationDLQ 저장 및 조회
+     *
+     * 시나리오:
+     * 1. FailedCompensation 생성
+     * 2. CompensationDLQ.publish() 호출 (부모 트랜잭션 내)
+     * 3. 부모 트랜잭션 롤백
+     * 4. DLQ 데이터는 독립 트랜잭션(REQUIRES_NEW)으로 유지됨
+     * 5. getFailedCompensations(orderId) 조회
+     * 6. markAsResolved(orderId) 호출
+     * 7. PENDING → RESOLVED 상태 전환 확인
+     *
+     * 검증 조건:
+     * - REQUIRES_NEW 트랜잭션으로 독립 저장
+     * - 부모 트랜잭션 롤백 시에도 DLQ 기록 유지
+     * - FailedCompensationEntity 필드 정확성
+     * - getFailedCompensations(orderId) 정상 조회
+     * - PENDING → RESOLVED 상태 전환
+     */
+    @Test
+    @DisplayName("TEST-003: CompensationDLQ 저장 및 조회 - REQUIRES_NEW 트랜잭션 독립성 검증")
+    @DirtiesContext
+    void test003_CompensationDLQ_SaveAndQuery() throws Exception {
+        // ========== Given: 테스트 데이터 준비 ==========
+        String testId = UUID.randomUUID().toString().substring(0, 8);
+        long testTimestamp = System.currentTimeMillis();
+
+        // 테스트용 데이터 생성
+        Long testUserId = 999L;
+        Long testOrderId = 888L;
+        String testStepName = "TestCompensationStep";
+        Integer testStepOrder = 2;
+        String testErrorMessage = "TEST-003: 보상 실패 테스트 메시지";
+        String testStackTrace = "java.lang.RuntimeException: TEST-003\n\tat TestClass.testMethod(Test.java:123)";
+        LocalDateTime testFailedAt = LocalDateTime.now();
+        Integer testRetryCount = 0;
+        String testContextSnapshot = "{\"orderId\":888,\"userId\":999}";
+
+        FailedCompensation failedCompensation = FailedCompensation.builder()
+                .orderId(testOrderId)
+                .userId(testUserId)
+                .stepName(testStepName)
+                .stepOrder(testStepOrder)
+                .errorMessage(testErrorMessage)
+                .stackTrace(testStackTrace)
+                .failedAt(testFailedAt)
+                .retryCount(testRetryCount)
+                .contextSnapshot(testContextSnapshot)
+                .build();
+
+        System.out.println("[TEST-003 Given] FailedCompensation 데이터 준비 완료");
+        System.out.println("  - orderId: " + testOrderId);
+        System.out.println("  - stepName: " + testStepName);
+
+        // ========== When: CompensationDLQ.publish() 호출 (부모 트랜잭션 내) ==========
+        // 부모 트랜잭션을 시작하고 롤백하여 REQUIRES_NEW 독립성 검증
+        try {
+            newTransactionTemplate.execute(status -> {
+                System.out.println("[TEST-003 When] 부모 트랜잭션 시작");
+
+                // CompensationDLQ.publish() 호출 (REQUIRES_NEW 트랜잭션)
+                compensationDLQ.publish(failedCompensation);
+
+                System.out.println("[TEST-003 When] CompensationDLQ.publish() 완료");
+
+                // 부모 트랜잭션 강제 롤백
+                status.setRollbackOnly();
+                System.out.println("[TEST-003 When] 부모 트랜잭션 롤백 설정");
+
+                return null;
+            });
+        } catch (Exception e) {
+            // 롤백으로 인한 예외 무시
+            System.out.println("[TEST-003 When] 부모 트랜잭션 롤백 완료 (예상된 동작)");
+        }
+
+        // ========== Then: 검증 ==========
+
+        // 검증 1: 부모 트랜잭션 롤백 후에도 DLQ 데이터가 유지되는지 확인 (REQUIRES_NEW 검증)
+        newTransactionTemplate.execute(status -> {
+            List<FailedCompensation> savedCompensations = compensationDLQ.getFailedCompensations(testOrderId);
+
+            assertFalse(savedCompensations.isEmpty(),
+                    "부모 트랜잭션 롤백 후에도 DLQ 데이터가 유지되어야 함 (REQUIRES_NEW)");
+            assertEquals(1, savedCompensations.size(),
+                    "저장된 DLQ 데이터는 1건이어야 함");
+
+            System.out.println("[TEST-003 Then-1] ✅ REQUIRES_NEW 트랜잭션 독립성 검증 완료");
+            return null;
+        });
+
+        // 검증 2: FailedCompensationEntity 필드 정확성 검증
+        newTransactionTemplate.execute(status -> {
+            List<FailedCompensation> savedCompensations = compensationDLQ.getFailedCompensations(testOrderId);
+            FailedCompensation saved = savedCompensations.get(0);
+
+            assertEquals(testOrderId, saved.getOrderId(), "orderId가 일치해야 함");
+            assertEquals(testUserId, saved.getUserId(), "userId가 일치해야 함");
+            assertEquals(testStepName, saved.getStepName(), "stepName이 일치해야 함");
+            assertEquals(testStepOrder, saved.getStepOrder(), "stepOrder가 일치해야 함");
+            assertEquals(testErrorMessage, saved.getErrorMessage(), "errorMessage가 일치해야 함");
+            assertEquals(testStackTrace, saved.getStackTrace(), "stackTrace가 일치해야 함");
+            assertEquals(testRetryCount, saved.getRetryCount(), "retryCount가 일치해야 함");
+            assertEquals(testContextSnapshot, saved.getContextSnapshot(), "contextSnapshot이 일치해야 함");
+            assertNotNull(saved.getFailedAt(), "failedAt이 null이 아니어야 함");
+
+            System.out.println("[TEST-003 Then-2] ✅ FailedCompensationEntity 필드 정확성 검증 완료");
+            return null;
+        });
+
+        // 검증 3: getAllFailed() 조회 검증
+        newTransactionTemplate.execute(status -> {
+            List<FailedCompensation> allFailed = compensationDLQ.getAllFailed();
+
+            assertFalse(allFailed.isEmpty(), "getAllFailed()는 최소 1건 이상 반환해야 함");
+
+            boolean hasTestData = allFailed.stream()
+                    .anyMatch(fc -> testOrderId.equals(fc.getOrderId()));
+            assertTrue(hasTestData, "getAllFailed() 결과에 테스트 데이터가 포함되어야 함");
+
+            System.out.println("[TEST-003 Then-3] ✅ getAllFailed() 조회 검증 완료 (총 " + allFailed.size() + "건)");
+            return null;
+        });
+
+        // 검증 4: markAsResolved() 호출 및 상태 전환 확인
+        newTransactionTemplate.execute(status -> {
+            // PENDING → RESOLVED 상태 전환
+            compensationDLQ.markAsResolved(testOrderId);
+
+            System.out.println("[TEST-003 Then-4] markAsResolved() 호출 완료");
+            return null;
+        });
+
+        // 검증 5: RESOLVED 상태로 변경되었는지 확인
+        newTransactionTemplate.execute(status -> {
+            // RESOLVED 상태의 데이터는 getAllFailed()에 포함되지 않아야 함
+            List<FailedCompensation> pendingCompensations = compensationDLQ.getAllFailed();
+
+            boolean hasPendingTestData = pendingCompensations.stream()
+                    .anyMatch(fc -> testOrderId.equals(fc.getOrderId()));
+            assertFalse(hasPendingTestData,
+                    "markAsResolved() 호출 후 getAllFailed()에 해당 데이터가 없어야 함 (PENDING → RESOLVED)");
+
+            System.out.println("[TEST-003 Then-5] ✅ PENDING → RESOLVED 상태 전환 검증 완료");
+            return null;
+        });
+
+        // 검증 6: DB에서 직접 조회하여 RESOLVED 상태 확인
+        newTransactionTemplate.execute(status -> {
+            // Repository를 통해 직접 조회
+            List<FailedCompensationEntity> entities = failedCompensationRepository.findByOrderId(testOrderId);
+
+            assertFalse(entities.isEmpty(), "DB에 저장된 데이터가 있어야 함");
+            assertEquals(1, entities.size(), "1건의 데이터가 저장되어 있어야 함");
+
+            FailedCompensationEntity entity = entities.get(0);
+            assertEquals(com.hhplus.ecommerce.domain.order.FailedCompensationStatus.RESOLVED, entity.getStatus(),
+                    "상태가 RESOLVED여야 함");
+            assertNotNull(entity.getResolvedAt(), "resolvedAt이 null이 아니어야 함");
+
+            System.out.println("[TEST-003 Then-6] ✅ DB 상태 확인 완료: RESOLVED, resolvedAt=" + entity.getResolvedAt());
+            return null;
+        });
+
+        System.out.println("[TEST-003] ✅ 테스트 완료: 모든 검증 통과");
     }
 }
