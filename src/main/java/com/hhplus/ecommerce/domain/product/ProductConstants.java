@@ -40,6 +40,9 @@ public class ProductConstants {
     /** 상품 옵션 차감 최소 수량 */
     public static final int MIN_DEDUCT_QUANTITY = 1;
 
+    /** 재고 부족 임계값 (이 값 이하이면 재고 부족 알림 발송) */
+    public static final int LOW_STOCK_THRESHOLD = 10;
+
     // ========== Product Status Constants ==========
 
     /** 상품 상태: 재고 있음 */

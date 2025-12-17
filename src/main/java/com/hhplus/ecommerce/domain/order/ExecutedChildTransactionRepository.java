@@ -68,6 +68,26 @@ public interface ExecutedChildTransactionRepository {
     Optional<ExecutedChildTransaction> findByIdempotencyToken(String idempotencyToken);
 
     /**
+     * 멱등성 토큰으로 조회 (비관적 락)
+     * 동시성 제어를 위한 비관적 락 적용
+     *
+     * SELECT ... FOR UPDATE를 사용하여:
+     * - 동일 토큰으로 동시 요청이 들어올 경우
+     * - 첫 번째 트랜잭션이 락을 획득하고 처리
+     * - 두 번째 트랜잭션은 첫 번째가 완료될 때까지 대기
+     * - 중복 실행 완전 차단
+     *
+     * 사용 시나리오:
+     * - 클라이언트 네트워크 재시도로 동일 토큰 중복 요청
+     * - API Gateway나 프록시 레벨에서 중복 요청 발생
+     * - 멀티 스레드 환경에서 동시 처리 시도
+     *
+     * @param idempotencyToken 멱등성 토큰
+     * @return 락이 걸린 Execution (트랜잭션 커밋 시까지 다른 트랜잭션 차단)
+     */
+    Optional<ExecutedChildTransaction> findByIdempotencyTokenForUpdate(String idempotencyToken);
+
+    /**
      * 주문별 모든 실행 기록 조회
      * 주문의 모든 Child TX 실행 히스토리
      *

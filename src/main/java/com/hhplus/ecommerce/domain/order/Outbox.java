@@ -52,6 +52,9 @@ public class Outbox {
     @Column(name = "message_type", nullable = false)
     private String messageType;
 
+    @Column(name = "payload", columnDefinition = "TEXT")
+    private String payload;
+
     @Column(name = "status", nullable = false)
     private String status;
 
@@ -79,6 +82,24 @@ public class Outbox {
                 .orderId(orderId)
                 .userId(userId)
                 .messageType(messageType)
+                .status("PENDING")
+                .retryCount(0)
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * Outbox 메시지 생성 (payload 포함)
+     *
+     * 호출 시점: OutboxEventPublisher.publishWithOutbox() 내
+     * 특징: 외부 시스템 전송 데이터를 JSON 형태로 저장
+     */
+    public static Outbox createOutboxWithPayload(Long orderId, Long userId, String messageType, String payload) {
+        return Outbox.builder()
+                .orderId(orderId)
+                .userId(userId)
+                .messageType(messageType)
+                .payload(payload)
                 .status("PENDING")
                 .retryCount(0)
                 .createdAt(LocalDateTime.now())

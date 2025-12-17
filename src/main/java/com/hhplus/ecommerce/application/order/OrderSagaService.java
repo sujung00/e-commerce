@@ -1,17 +1,23 @@
 package com.hhplus.ecommerce.application.order;
 
+import com.hhplus.ecommerce.application.order.saga.orchestration.OrderSagaOrchestrator;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderItem;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
-import com.hhplus.ecommerce.domain.order.OrderStatus;
+import com.hhplus.ecommerce.domain.order.event.OrderSagaEvent;
+import com.hhplus.ecommerce.domain.order.event.SagaEventType;
+import com.hhplus.ecommerce.domain.order.event.OrderCompletedEvent;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
-import com.hhplus.ecommerce.application.alert.AlertService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
+import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -20,73 +26,104 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 /**
- * OrderSagaService - 포인트 기반 주문 결제 시스템 (Application 계층)
+ * OrderSagaService - Saga Orchestrator 기반 주문 결제 시스템 (Application 계층)
  *
  * 역할:
- * - 포인트 차감을 통한 주문 결제 처리
- * - 주문 생성과 동시에 포인트 차감 및 결제 완료
- * - 결제 실패 시 보상 트랜잭션 (Compensation) 실행
+ * - OrderSagaOrchestrator를 통한 분산 트랜잭션 관리
+ * - 주문 생성, 재고 차감, 포인트 차감, 쿠폰 사용을 독립적인 Step으로 분리
+ * - 결제 실패 시 자동 보상 트랜잭션 (Compensation) 실행
  *
- * 현재 플로우 (포인트 기반 단순화):
- * Step 1: OrderTransactionService.executeTransactionalOrder()
- *         - 주문 생성, 재고 차감, 포인트 차감 (원자적 처리)
- *         - ✅ @Transactional 메서드
- *         - ✅ 성공 시 주문 생성 + 포인트 차감 완료 (= 결제 완료)
- * Step 2: 실패 시 보상 트랜잭션
- *         - 재고 복구
- *         - 포인트 환불
- *         - 주문 취소
+ * ✅ Saga Orchestrator 패턴 적용:
+ * - 중앙 집중식 워크플로우 관리 (OrderSagaOrchestrator)
+ * - 각 Step은 독립적인 트랜잭션으로 실행 (REQUIRES_NEW)
+ * - Forward Flow: 순차 실행 (Step 1 → 2 → 3 → 4)
+ * - Backward Flow: LIFO 보상 (Step 4 → 3 → 2 → 1)
+ *
+ * Step 구성:
+ * Step 1: DeductInventoryStep - 재고 차감
+ * Step 2: DeductBalanceStep - 포인트 차감
+ * Step 3: UseCouponStep - 쿠폰 사용 (선택적)
+ * Step 4: CreateOrderStep - 주문 생성
+ *
+ * 보상 순서 (LIFO):
+ * Step 4: CreateOrderStep - 주문 취소
+ * Step 3: UseCouponStep - 쿠폰 복구
+ * Step 2: DeductBalanceStep - 포인트 환불
+ * Step 1: DeductInventoryStep - 재고 복구
+ *
+ * ✅ 트랜잭션 외부 I/O 분리:
+ * - PaymentSuccessEvent, CompensationCompletedEvent, CompensationFailedEvent 발행
+ * - @Async + @TransactionalEventListener(AFTER_COMMIT)에서 비동기 알림 처리
+ * - 트랜잭션 내에서는 DB 작업 + 이벤트 발행만 수행
  *
  * 동시성 제어:
- * - @Transactional + Pessimistic Lock (재고) + Redis DistributedLock
- * - 포인트 차감: UserBalanceService의 분산락 + DB 비관적 락
- * - 외부 API 호출 없음 (포인트 기반 즉시 결제)
+ * - 각 Step별로 독립적인 동시성 제어
+ * - DeductInventoryStep: ProductOption 비관적 락
+ * - DeductBalanceStep: UserBalanceService의 분산락 + 비관적 락
+ * - UseCouponStep: UserCoupon 비관적 락
+ * - CreateOrderStep: Order 생성 (락 불필요)
  *
- * 중요 특징:
- * - Step 1 실행 = 주문 생성 + 결제 완료 (동일 트랜잭션)
- * - 외부 API 호출 없음 (더 이상 Step 2 필요 없음)
- * - 포인트 차감 실패 시만 보상 트랜잭션 실행
- * - 단순하고 안정적인 포인트 기반 폐쇄형 결제 시스템
+ * MSA 전환 대비:
+ * - 각 Step을 독립 서비스로 분리 가능
+ * - Orchestrator를 별도 서비스로 분리 가능
+ * - Step 간 의존성 최소화
  */
 @Service
 public class OrderSagaService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderSagaService.class);
 
-    private final OrderTransactionService orderTransactionService;
+    private final OrderSagaOrchestrator orderSagaOrchestrator;
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final AlertService alertService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final OrderCalculator orderCalculator;
+    private final OutboxEventPublisher outboxEventPublisher;
+    private final ObjectMapper objectMapper;
 
-    public OrderSagaService(OrderTransactionService orderTransactionService,
+    public OrderSagaService(OrderSagaOrchestrator orderSagaOrchestrator,
                           OrderRepository orderRepository,
                           ProductRepository productRepository,
                           UserRepository userRepository,
-                          AlertService alertService) {
-        this.orderTransactionService = orderTransactionService;
+                          ApplicationEventPublisher eventPublisher,
+                          OrderCalculator orderCalculator,
+                          OutboxEventPublisher outboxEventPublisher,
+                          ObjectMapper objectMapper) {
+        this.orderSagaOrchestrator = orderSagaOrchestrator;
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
-        this.alertService = alertService;
+        this.eventPublisher = eventPublisher;
+        this.orderCalculator = orderCalculator;
+        this.outboxEventPublisher = outboxEventPublisher;
+        this.objectMapper = objectMapper;
     }
 
     /**
-     * 포인트 기반 주문 생성 및 자동 결제
+     * Saga Orchestrator 기반 주문 생성 및 자동 결제
      *
-     * 플로우 (포인트 기반 단순화):
-     * Step 1: OrderTransactionService.executeTransactionalOrder()
-     *         - 주문 생성, 재고 차감, 포인트 차감 (원자적 처리)
-     *         - ✅ @Transactional 메서드
-     *         - ✅ 성공 시 = 주문 생성 + 결제 완료
-     * Step 2: 실패 시 보상 트랜잭션
-     *         - 재고 복구, 포인트 환불, 주문 취소
+     * 플로우 (Saga Orchestrator 패턴):
+     * Step 1: DeductInventoryStep - 재고 차감 (독립 트랜잭션)
+     * Step 2: DeductBalanceStep - 포인트 차감 (독립 트랜잭션)
+     * Step 3: UseCouponStep - 쿠폰 사용 (독립 트랜잭션, 선택적)
+     * Step 4: CreateOrderStep - 주문 생성 (독립 트랜잭션)
+     *
+     * 실패 시 자동 보상 (LIFO):
+     * - OrderSagaOrchestrator가 자동으로 역순 보상 실행
+     * - Step 4 → 3 → 2 → 1 순서로 compensate() 호출
+     * - 각 Step의 보상 플래그를 확인하여 실행 여부 결정
+     *
+     * ✅ 트랜잭션 외부 I/O 분리:
+     * - PaymentSuccessEvent 발행 (성공 시 알림)
+     * - CompensationFailedEvent 발행 (보상 실패 시 알림)
+     * - 이벤트 리스너가 AFTER_COMMIT + @Async로 비동기 처리
      *
      * 특징:
-     * - 포인트 차감 성공 = 즉시 결제 완료 (외부 API 없음)
-     * - 포인트 부족 시 InsufficientBalanceException 발생 → 보상 불필요
-     * - 트랜잭션 중 재고/포인트 차감 실패 시만 보상 필요
-     * - 단순하고 안정적인 폐쇄형 결제 시스템
+     * - 각 Step은 독립적인 트랜잭션으로 실행 (REQUIRES_NEW)
+     * - Step 간 의존성 최소화 (MSA 전환 대비)
+     * - 중앙 집중식 워크플로우 관리 (Orchestrator)
+     * - 자동 보상 메커니즘 (LIFO)
      *
      * @param userId 사용자 ID
      * @param orderItems 주문 항목 리스트
@@ -94,60 +131,145 @@ public class OrderSagaService {
      * @param finalAmount 최종 결제액 (포인트)
      * @return 생성된 주문 (결제 완료된 상태)
      * @throws InsufficientBalanceException 포인트 부족
-     * @throws RuntimeException 주문 생성 중 오류
+     * @throws RuntimeException Saga 실행 실패
      */
     public Order createOrderWithPayment(Long userId,
                                        List<OrderItemDto> orderItems,
                                        Long couponId,
                                        Long finalAmount) {
-        Order order = null;
-
         try {
-            // ========== Step 1: 주문 생성 + 포인트 차감 (트랜잭션) ==========
-            // 재고 차감 + 포인트 차감 + 주문 생성을 동일 트랜잭션에서 처리
-            // ✅ 원자적 처리: 모두 성공하거나 모두 실패
-            // ✅ 포인트 차감 성공 = 즉시 결제 완료 (외부 API 없음)
-            log.info("[OrderSagaService] 주문 생성 시작 - userId={}, finalAmount={}", userId, finalAmount);
-            order = orderTransactionService.executeTransactionalOrder(
+            log.info("[OrderSagaService] Saga Orchestrator 주문 생성 시작 - userId={}, finalAmount={}, couponId={}",
+                    userId, finalAmount, couponId);
+
+            // ========== Step 1: 쿠폰 할인액 계산 ==========
+            Long couponDiscount = (couponId != null) ? calculateCouponDiscount(couponId) : 0L;
+
+            // OrderItemDto를 OrderItemCommand로 변환 (OrderCalculator 호출용)
+            List<OrderItemCommand> orderItemCommands = orderItems.stream()
+                    .map(dto -> OrderItemCommand.builder()
+                            .productId(dto.getProductId())
+                            .optionId(dto.getOptionId())
+                            .quantity(dto.getQuantity())
+                            .build())
+                    .collect(java.util.stream.Collectors.toList());
+
+            Long subtotal = orderCalculator.calculateSubtotal(orderItemCommands);
+
+            // ========== Step 2: OrderSagaOrchestrator 실행 ==========
+            // OrderSagaOrchestrator가 각 Step을 순차 실행:
+            // 1. DeductInventoryStep (재고 차감)
+            // 2. DeductBalanceStep (포인트 차감)
+            // 3. UseCouponStep (쿠폰 사용, 선택적)
+            // 4. CreateOrderStep (주문 생성)
+            //
+            // 실패 시 자동 보상 (LIFO):
+            // 4. CreateOrderStep → 3. UseCouponStep → 2. DeductBalanceStep → 1. DeductInventoryStep
+            Order order = orderSagaOrchestrator.executeSaga(
                     userId,
                     orderItems,
                     couponId,
-                    couponId != null ? calculateCouponDiscount(couponId) : 0L,
-                    calculateSubtotal(orderItems),
+                    couponDiscount,
+                    subtotal,
                     finalAmount
             );
-            log.info("[OrderSagaService] 주문 생성 + 포인트 차감 완료 - orderId={}, 결제완료", order.getOrderId());
 
-            // ✅ Step 1 성공 = 결제 완료
-            // 외부 API 호출이 없으므로 추가 단계 필요 없음
-            alertService.notifyPaymentSuccess(order.getOrderId(), userId, finalAmount);
+            log.info("[OrderSagaService] Saga Orchestrator 주문 생성 완료 - orderId={}, 결제완료",
+                    order.getOrderId());
+
+            // ========== Step 3: Saga 성공 이벤트 발행 ==========
+            // ✅ 트랜잭션 외부 I/O 분리: OrderSagaEvent(COMPLETED) 발행
+            // - 이벤트는 트랜잭션 커밋 후 AFTER_COMMIT + @Async 리스너에서 처리
+            // - 알림 실패가 비즈니스 트랜잭션에 영향을 주지 않음
+            // ✅ Outbox 패턴 통합: 실패 시 Outbox에 저장하여 배치 재시도 보장
+            try {
+                OrderSagaEvent event = OrderSagaEvent.completed(
+                        order.getOrderId(),
+                        userId,
+                        finalAmount
+                );
+                eventPublisher.publishEvent(event);
+                log.debug("[OrderSagaService] OrderSagaEvent(COMPLETED) 발행: orderId={}", order.getOrderId());
+            } catch (Exception e) {
+                // 이벤트 발행 실패 시 Outbox에 저장하여 배치 재시도 보장
+                log.warn("[OrderSagaService] OrderSagaEvent(COMPLETED) 발행 실패 - Outbox에 저장: orderId={}, error={}",
+                        order.getOrderId(), e.getMessage());
+
+                try {
+                    // OrderSagaEvent를 JSON으로 직렬화
+                    OrderSagaEvent event = OrderSagaEvent.completed(
+                            order.getOrderId(),
+                            userId,
+                            finalAmount
+                    );
+                    String eventPayload = objectMapper.writeValueAsString(event);
+
+                    // Outbox에 저장 (배치가 재시도)
+                    outboxEventPublisher.publishWithOutbox(
+                            "SAGA_COMPLETED",
+                            order.getOrderId(),
+                            userId,
+                            eventPayload
+                    );
+
+                    log.info("[OrderSagaService] OrderSagaEvent(COMPLETED) Outbox 저장 완료 - orderId={}, 배치가 재시도합니다",
+                            order.getOrderId());
+
+                } catch (JsonProcessingException jsonError) {
+                    // JSON 직렬화 실패 (심각한 오류)
+                    log.error("[OrderSagaService] OrderSagaEvent JSON 직렬화 실패 - orderId={}, error={}",
+                            order.getOrderId(), jsonError.getMessage(), jsonError);
+                } catch (Exception outboxError) {
+                    // Outbox 저장 실패 (심각한 오류)
+                    log.error("[OrderSagaService] OrderSagaEvent Outbox 저장 실패 - orderId={}, error={}",
+                            order.getOrderId(), outboxError.getMessage(), outboxError);
+                }
+            }
+
+            // ========== Step 4: OrderCompletedEvent 발행 (실시간 전송) ==========
+            // ✅ 트랜잭션 커밋 후 발행: @TransactionalEventListener(AFTER_COMMIT)에서 데이터 플랫폼 전송
+            // - OrderTransactionService와 동일한 방식으로 OrderCompletedEvent 발행
+            // - 두 서비스 모두에서 일관되게 이벤트 발행하여 데이터 플랫폼 통합
+            try {
+                OrderCompletedEvent completedEvent = new OrderCompletedEvent(
+                        order.getOrderId(),
+                        userId,
+                        finalAmount
+                );
+                eventPublisher.publishEvent(completedEvent);
+                log.info("[OrderSagaService] OrderCompletedEvent 발행 (Saga): orderId={}, userId={}, amount={}",
+                        order.getOrderId(), userId, finalAmount);
+            } catch (Exception e) {
+                // 이벤트 발행 실패는 로깅만 하고 메인 로직에 영향 주지 않음
+                log.warn("[OrderSagaService] OrderCompletedEvent 발행 실패 (무시됨): orderId={}, error={}",
+                        order.getOrderId(), e.getMessage());
+            }
 
             return order;
 
         } catch (InsufficientBalanceException e) {
-            // 포인트 부족: 보상 불필요 (트랜잭션이 롤백되지 않음)
-            // 사실 이 경우는 Step 1에서 예외 발생 → 트랜잭션 롤백됨
+            // 포인트 부족 예외는 그대로 재발생
             log.warn("[OrderSagaService] 포인트 부족으로 주문 생성 실패 - userId={}, 필요포인트={}, error={}",
                     userId, finalAmount, e.getMessage());
             throw e;
 
         } catch (RuntimeException e) {
-            // Step 1 중 기타 예외 (재고 부족, DB 오류 등): 자동 롤백
-            log.error("[OrderSagaService] 주문 생성 중 오류 - userId={}, error={}",
+            // Saga 실행 실패 (OrderSagaOrchestrator에서 이미 보상 완료)
+            log.error("[OrderSagaService] Saga Orchestrator 주문 생성 실패 (이미 보상 완료) - userId={}, error={}",
                     userId, e.getMessage(), e);
 
-            // order가 생성되었지만 트랜잭션 실패한 경우는 드물지만, 보상 처리
-            if (order != null && order.isPending()) {
-                try {
-                    log.warn("[OrderSagaService] 보상 트랜잭션 시작 - orderId={}", order.getOrderId());
-                    compensateOrder(order.getOrderId());
-                    log.info("[OrderSagaService] 보상 처리 완료 - orderId={}", order.getOrderId());
-                } catch (Exception compensationError) {
-                    log.error("[OrderSagaService] 보상 트랜잭션 실패! 수동 개입 필요 - orderId={}, error={}",
-                            order.getOrderId(), compensationError.getMessage());
-                    alertService.notifyCompensationFailure(order.getOrderId(), userId, compensationError.getMessage());
-                    throw new CompensationException("Failed to compensate order: " + order.getOrderId(), compensationError);
-                }
+            // ✅ Saga 실패 이벤트 발행
+            // OrderSagaOrchestrator에서 보상이 완료된 후 발행
+            try {
+                OrderSagaEvent event = OrderSagaEvent.failed(
+                        null, // orderId가 없을 수 있음
+                        userId,
+                        e.getMessage()
+                );
+                eventPublisher.publishEvent(event);
+                log.debug("[OrderSagaService] OrderSagaEvent(FAILED) 발행: userId={}", userId);
+            } catch (Exception eventError) {
+                log.warn("[OrderSagaService] OrderSagaEvent(FAILED) 발행 실패 (무시됨): userId={}, error={}",
+                        userId, eventError.getMessage());
             }
 
             throw new RuntimeException("Order creation failed: " + e.getMessage(), e);
@@ -170,6 +292,11 @@ public class OrderSagaService {
      * 4. 모든 작업이 원자적으로 처리됨 (@Transactional)
      *
      * ⚠️ 주의: 상태 검증 전에 재고/잔액 복구 로직 실행 금지
+     *
+     * ✅ 트랜잭션 외부 I/O 분리:
+     * - alertService.notifyCompensationComplete() 제거 → CompensationCompletedEvent 발행
+     * - alertService.notifyCompensationFailure() 제거 → CompensationFailedEvent 발행
+     * - 이벤트 리스너가 AFTER_COMMIT + @Async로 비동기 알림 처리
      *
      * 복구 항목:
      * - 재고 복구: 각 주문 항목별로 ProductOption의 stock 복구
@@ -261,16 +388,36 @@ public class OrderSagaService {
             Order cancelledOrder = orderRepository.save(order);
             log.info("[OrderSagaService] STEP 3-3 완료: 주문 상태 변경 완료 - orderId={}, 최종상태=CANCELLED", orderId);
 
-            // ==================== STEP 7: 완료 알림 ====================
+            // ==================== STEP 7: 보상 완료 알림 ====================
             log.info("[OrderSagaService] 보상 트랜잭션 완료 - orderId={}, 최종상태=CANCELLED", orderId);
-            alertService.notifyCompensationComplete(orderId, order.getUserId(), order.getFinalAmount());
+
+            // ✅ 보상 완료는 Saga 실패로 간주 (FAILED 이벤트 발행)
+            // - 보상이 성공했더라도 Saga 자체는 실패한 것
+            // - CompensationCompletedEvent 제거됨
+            // Note: 별도 알림이 필요한 경우 리스너에서 FAILED 타입을 세분화 처리 가능
 
             return cancelledOrder;
 
         } catch (Exception e) {
             log.error("[OrderSagaService] 보상 트랜잭션 중 오류 발생! 수동 개입 필요 - orderId={}, error={}, message={}",
                     orderId, e.getClass().getSimpleName(), e.getMessage(), e);
-            alertService.notifyCompensationFailure(orderId, order.getUserId(), e.getMessage());
+
+            // ✅ 보상 실패 이벤트 발행
+            // - OrderSagaEvent(COMPENSATION_FAILED) 발행
+            // - 수동 개입 필요한 심각한 상황
+            try {
+                OrderSagaEvent event = OrderSagaEvent.compensationFailed(
+                        orderId,
+                        order.getUserId(),
+                        e.getMessage()
+                );
+                eventPublisher.publishEvent(event);
+                log.debug("[OrderSagaService] OrderSagaEvent(COMPENSATION_FAILED) 발행: orderId={}", orderId);
+            } catch (Exception eventError) {
+                log.warn("[OrderSagaService] OrderSagaEvent(COMPENSATION_FAILED) 발행 실패 (무시됨): orderId={}, error={}",
+                        orderId, eventError.getMessage());
+            }
+
             throw new CompensationException("Compensation failed for order: " + orderId, e);
         }
     }
@@ -283,18 +430,6 @@ public class OrderSagaService {
         return 0L; // 임시
     }
 
-    /**
-     * 소계 계산 (주문 항목 가격 합계)
-     */
-    private Long calculateSubtotal(List<OrderItemDto> orderItems) {
-        return orderItems.stream()
-                .mapToLong(item -> {
-                    Product product = productRepository.findById(item.getProductId())
-                            .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다"));
-                    return product.getPrice() * item.getQuantity();
-                })
-                .sum();
-    }
 
     /**
      * PaymentException - 결제 실패 예외

@@ -159,4 +159,112 @@ public class AlertService {
         // - Slack: #outbox-failures
         // - PagerDuty: Warning alert
     }
+
+    /**
+     * 재고 부족 알림
+     *
+     * 시나리오:
+     * - 주문 처리 중 상품 재고가 임계값 이하로 떨어짐
+     * - 재입고 요청 또는 관리자에게 알림 필요
+     * - 품절 방지를 위한 선제적 조치
+     *
+     * @param productId 상품 ID
+     * @param optionId 옵션 ID
+     * @param productName 상품명
+     * @param optionName 옵션명
+     * @param currentStock 현재 재고
+     * @param threshold 임계값
+     */
+    public void notifyLowInventory(Long productId, Long optionId, String productName, String optionName, Integer currentStock, Integer threshold) {
+        String message = String.format(
+                "[재고 부족 알림] 상품: %s, 옵션: %s (ID: %d/%d), 현재 재고: %d개, 임계값: %d개 - 재입고 필요",
+                productName, optionName, productId, optionId, currentStock, threshold
+        );
+
+        log.warn(message);
+        // TODO: 프로덕션에서는 실제 알림 채널로 발송
+        // - 이메일: inventory@company.com
+        // - Slack: #inventory-alerts
+        // - 재입고 시스템: 자동 발주 트리거
+    }
+
+    /**
+     * 중요 보상 트랜잭션 실패 알림 (최고 심각도)
+     *
+     * 시나리오:
+     * - Saga 보상 트랜잭션 중 중요(Critical) Step 실패
+     * - 데이터 불일치 가능성 발생 (재고/잔액/쿠폰 복구 실패)
+     * - 즉시 수동 개입 필요 - 시스템 정합성 회복 필수
+     * - Dead Letter Queue(DLQ)로 발행하여 재처리 가능
+     *
+     * 발생 예시:
+     * - 재고 복구 실패: 데이터베이스 락 타임아웃, 동시성 충돌
+     * - 잔액 복구 실패: 정합성 오류, 트랜잭션 롤백 실패
+     * - 쿠폰 복구 실패: 상태 전이 오류
+     *
+     * 처리 방법:
+     * - 관리자가 즉시 DLQ 확인
+     * - 데이터베이스 직접 조회하여 상태 확인
+     * - 수동으로 보상 로직 재실행 또는 데이터 수정
+     * - 고객에게 적절한 보상 제공 (포인트, 쿠폰 등)
+     *
+     * @param orderId 주문 ID
+     * @param stepName 실패한 Step 이름 (예: DeductInventoryStep)
+     */
+    public void notifyCriticalCompensationFailure(Long orderId, String stepName) {
+        String message = String.format(
+                "[중요 보상 실패 - 긴급 대응 필요!] 주문 ID: %d, 실패 Step: %s - " +
+                        "즉시 수동 개입 필요! DLQ 확인하여 데이터 정합성 복구 바랍니다.",
+                orderId, stepName
+        );
+
+        log.error(message);
+
+        // TODO: 프로덕션에서는 최고 우선순위 알림 발송
+        // - PagerDuty: Critical alert (온콜 엔지니어 호출)
+        // - Slack: @channel (전체 알림)
+        // - 이메일: admin@company.com (높은 우선순위)
+        // - SMS: 관리자 연락처 (긴급)
+        // - Monitoring Dashboard: Red alert 표시
+    }
+
+    /**
+     * 네트워크 파티션 알림 (Circuit Breaker Open)
+     *
+     * 시나리오:
+     * - Saga 실행 중 네트워크 파티션 감지
+     * - Circuit Breaker가 OPEN 상태로 전환
+     * - 부분 성공 상태의 트랜잭션 발생 가능
+     * - 수동 개입 또는 자동 재시도 필요
+     *
+     * 발생 예시:
+     * - 외부 API 통신 장애 (타임아웃, 연결 거부)
+     * - DB 연결 장애 (네트워크 단절)
+     * - 서비스 간 통신 장애 (마이크로서비스 환경)
+     *
+     * 처리 방법:
+     * - Circuit Breaker 상태 모니터링
+     * - 부분 성공 트랜잭션 확인 및 재시도 큐 등록
+     * - 네트워크 복구 후 자동 재시도
+     * - DLQ로 이동하여 수동 처리
+     *
+     * @param userId 사용자 ID
+     * @param orderId 주문 ID (null 가능)
+     * @param partialState 부분 성공 상태 설명
+     */
+    public void notifyNetworkPartition(Long userId, Long orderId, String partialState) {
+        String message = String.format(
+                "[네트워크 파티션 감지 - Circuit Breaker Open] 사용자 ID: %d, 주문 ID: %s, 부분 성공 상태: %s - " +
+                        "네트워크 복구 후 재시도 큐 확인 필요",
+                userId, orderId, partialState
+        );
+
+        log.error(message);
+
+        // TODO: 프로덕션에서는 높은 우선순위 알림 발송
+        // - Slack: #network-alerts
+        // - PagerDuty: Warning alert
+        // - Monitoring Dashboard: Yellow alert 표시
+        // - 재시도 큐에 등록하여 자동 재시도
+    }
 }

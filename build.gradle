@@ -53,6 +53,12 @@ dependencies {
 
     // Redisson - Redis 분산락 구현
     implementation 'org.redisson:redisson-spring-boot-starter:3.18.0'
+
+    // Resilience4J - Circuit Breaker 및 Fault Tolerance
+    implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.1.0'
+    implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.1.0'
+    implementation 'io.github.resilience4j:resilience4j-timelimiter:2.1.0'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
 }
 
 tasks.named('test') {
