@@ -3,6 +3,8 @@ package com.hhplus.ecommerce.application.order.saga.steps;
 import com.hhplus.ecommerce.application.order.saga.SagaContext;
 import com.hhplus.ecommerce.application.order.saga.SagaStep;
 import com.hhplus.ecommerce.application.user.UserBalanceService;
+import com.hhplus.ecommerce.domain.order.Order;
+import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,9 +52,12 @@ public class DeductBalanceStep implements SagaStep {
     private static final Logger log = LoggerFactory.getLogger(DeductBalanceStep.class);
 
     private final UserBalanceService userBalanceService;
+    private final OrderRepository orderRepository;
 
-    public DeductBalanceStep(UserBalanceService userBalanceService) {
+    public DeductBalanceStep(UserBalanceService userBalanceService,
+                            OrderRepository orderRepository) {
         this.userBalanceService = userBalanceService;
+        this.orderRepository = orderRepository;
     }
 
     @Override
@@ -104,58 +109,69 @@ public class DeductBalanceStep implements SagaStep {
         log.info("[{}] 포인트 차감 완료 - userId={}, 차감금액={}, 남은잔액={}",
                 getName(), userId, finalAmount, user.getBalance());
 
-        // ========== Step 2: SagaContext에 메타데이터 기록 (보상용) ==========
-        context.setDeductedAmount(finalAmount);
-
-        // ========== Step 3: 보상 플래그 설정 ==========
-        context.setBalanceDeducted(true);
-
         log.info("[{}] 포인트 차감 Step 완료 - userId={}, 차감금액={}",
                 getName(), userId, finalAmount);
     }
 
     /**
-     * 포인트 환불 (Backward Flow / Compensation)
+     * 포인트 환불 (Backward Flow / Compensation) - 리팩토링 버전
      *
      * 처리 로직:
-     * 1. context.isBalanceDeducted() 확인
-     * 2. true이면 포인트 환불 실행, false이면 skip
-     * 3. context.getDeductedAmount()에서 환불할 금액 조회
+     * 1. Step 실행 여부 확인 (context.hasExecutedStep으로 체크)
+     * 2. DB에서 Order 조회 (orderId 사용)
+     * 3. Order.finalAmount에서 환불할 금액 획득
      * 4. UserBalanceService.refundBalance() 호출 (포인트 복구)
+     *
+     * 변경 사항:
+     * - context.isBalanceDeducted() 제거 → context.hasExecutedStep(getName()) 사용
+     * - context.getDeductedAmount() 제거 → Order.getFinalAmount()에서 정보 획득
+     * - 메타데이터 의존 제거 → DB 조회 기반으로 전환
      *
      * Best Effort 보상:
      * - 보상 실패 시 예외를 발생시키지 말고 로깅만 수행
      * - Orchestrator가 다음 보상을 계속 진행할 수 있도록 함
      *
-     * @param context Saga 실행 컨텍스트 (보상 메타데이터 포함)
+     * @param context Saga 실행 컨텍스트 (orderId 포함)
      * @throws Exception 보상 중 치명적 오류 발생 시
      */
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void compensate(SagaContext context) throws Exception {
-        // ========== Step 1: 보상 플래그 확인 ==========
-        if (!context.isBalanceDeducted()) {
-            log.info("[{}] 포인트 차감이 실행되지 않았으므로 보상 skip", getName());
+        // ========== Step 1: Step 실행 여부 확인 (Step 이름 기반) ==========
+        if (!context.hasExecutedStep(getName())) {
+            log.info("[{}] Step이 실행되지 않았으므로 보상 skip", getName());
             return;
         }
 
-        Long userId = context.getUserId();
-        Long deductedAmount = context.getDeductedAmount();
+        // ========== Step 2: DB에서 Order 조회 ==========
+        Long orderId = context.getOrderId();
+        if (orderId == null) {
+            log.warn("[{}] orderId가 null이므로 보상 skip (주문 생성 전 실패)", getName());
+            return;
+        }
 
-        log.warn("[{}] 포인트 환불 시작 - userId={}, 환불금액={}",
-                getName(), userId, deductedAmount);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "보상 중 Order를 찾을 수 없습니다: orderId=" + orderId));
+
+        // ========== Step 3: Order에서 환불 금액 획득 ==========
+        Long userId = context.getUserId();
+        Long refundAmount = order.getFinalAmount();
+
+        log.warn("[{}] 포인트 환불 시작 - userId={}, orderId={}, 환불금액={}",
+                getName(), userId, orderId, refundAmount);
 
         try {
-            // ========== Step 2: 포인트 환불 (UserBalanceService) ==========
-            User user = userBalanceService.refundBalance(userId, deductedAmount);
+            // ========== Step 4: 포인트 환불 (UserBalanceService) ==========
+            User user = userBalanceService.refundBalance(userId, refundAmount);
 
             log.warn("[{}] 포인트 환불 완료 - userId={}, 환불금액={}, 환불후잔액={}",
-                    getName(), userId, deductedAmount, user.getBalance());
+                    getName(), userId, refundAmount, user.getBalance());
 
         } catch (Exception e) {
             // 환불 실패는 로깅만 하고 예외를 전파하지 않음 (Best Effort)
             log.error("[{}] 포인트 환불 실패 (무시하고 계속) - userId={}, 환불금액={}, error={}",
-                    getName(), userId, deductedAmount, e.getMessage(), e);
+                    getName(), userId, refundAmount, e.getMessage(), e);
         }
     }
 }

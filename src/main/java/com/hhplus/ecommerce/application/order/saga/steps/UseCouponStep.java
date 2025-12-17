@@ -136,75 +136,79 @@ public class UseCouponStep implements SagaStep {
         log.info("[{}] 쿠폰 사용 처리 완료 - userId={}, couponId={}, status={}",
                 getName(), userId, couponId, userCoupon.getStatus());
 
-        // ========== Step 6: SagaContext에 메타데이터 기록 (보상용) ==========
-        context.setUsedCouponId(couponId);
-
-        // ========== Step 7: 보상 플래그 설정 ==========
-        context.setCouponUsed(true);
-
         log.info("[{}] 쿠폰 사용 Step 완료 - userId={}, couponId={}",
                 getName(), userId, couponId);
     }
 
     /**
-     * 쿠폰 복구 (Backward Flow / Compensation)
+     * 쿠폰 복구 (Backward Flow / Compensation) - 리팩토링 버전
      *
      * 처리 로직:
-     * 1. context.isCouponUsed() 확인
-     * 2. true이면 쿠폰 복구 실행, false이면 skip
-     * 3. context.getUsedCouponId()에서 복구할 쿠폰 ID 조회
-     * 4. UserCoupon 조회 (비관적 락)
-     * 5. 상태를 UNUSED로 변경, usedAt을 null로 설정
-     * 6. DB 저장
+     * 1. Step 실행 여부 확인 (context.hasExecutedStep으로 체크)
+     * 2. context.getCouponId()에서 복구할 쿠폰 ID 획득
+     * 3. UserCoupon 조회 (비관적 락)
+     * 4. 상태를 UNUSED로 변경, usedAt을 null로 설정
+     * 5. DB 저장
+     *
+     * 변경 사항:
+     * - context.isCouponUsed() 제거 → context.hasExecutedStep(getName()) 사용
+     * - context.getUsedCouponId() 제거 → context.getCouponId() 사용 (입력 데이터)
+     * - 메타데이터 의존 제거 → 입력 파라미터 활용
      *
      * Best Effort 보상:
      * - 보상 실패 시 예외를 발생시키지 말고 로깅만 수행
      * - Orchestrator가 다음 보상을 계속 진행할 수 있도록 함
      *
-     * @param context Saga 실행 컨텍스트 (보상 메타데이터 포함)
+     * @param context Saga 실행 컨텍스트 (couponId 포함)
      * @throws Exception 보상 중 치명적 오류 발생 시
      */
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void compensate(SagaContext context) throws Exception {
-        // ========== Step 1: 보상 플래그 확인 ==========
-        if (!context.isCouponUsed()) {
-            log.info("[{}] 쿠폰 사용이 실행되지 않았으므로 보상 skip", getName());
+        // ========== Step 1: Step 실행 여부 확인 (Step 이름 기반) ==========
+        if (!context.hasExecutedStep(getName())) {
+            log.info("[{}] Step이 실행되지 않았으므로 보상 skip", getName());
+            return;
+        }
+
+        // ========== Step 2: couponId 확인 (입력 데이터에서 획득) ==========
+        Long couponId = context.getCouponId();
+        if (couponId == null) {
+            log.info("[{}] couponId가 null이므로 보상 skip (쿠폰 미사용)", getName());
             return;
         }
 
         Long userId = context.getUserId();
-        Long usedCouponId = context.getUsedCouponId();
 
         log.warn("[{}] 쿠폰 복구 시작 - userId={}, couponId={}",
-                getName(), userId, usedCouponId);
+                getName(), userId, couponId);
 
         try {
-            // ========== Step 2: UserCoupon 조회 (비관적 락) ==========
-            UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponIdForUpdate(userId, usedCouponId)
+            // ========== Step 3: UserCoupon 조회 (비관적 락) ==========
+            UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponIdForUpdate(userId, couponId)
                     .orElseThrow(() -> new IllegalArgumentException(
-                            "쿠폰 복구 중 사용자 쿠폰을 찾을 수 없습니다: userId=" + userId + ", couponId=" + usedCouponId));
+                            "쿠폰 복구 중 사용자 쿠폰을 찾을 수 없습니다: userId=" + userId + ", couponId=" + couponId));
 
             log.info("[{}] UserCoupon 조회 완료 (비관적 락 획득) - userCouponId={}, 현재상태={}",
                     getName(), userCoupon.getUserCouponId(), userCoupon.getStatus());
 
-            // ========== Step 3: 쿠폰 상태를 UNUSED로 복구 ==========
+            // ========== Step 4: 쿠폰 상태를 UNUSED로 복구 ==========
             userCoupon.setStatus(UserCouponStatus.UNUSED);
             userCoupon.setUsedAt(null);
 
             log.info("[{}] 쿠폰 상태 복구 (USED → UNUSED) - userCouponId={}",
                     getName(), userCoupon.getUserCouponId());
 
-            // ========== Step 4: DB에 저장 ==========
+            // ========== Step 5: DB에 저장 ==========
             userCouponRepository.update(userCoupon);
 
             log.warn("[{}] 쿠폰 복구 완료 - userId={}, couponId={}, status={}",
-                    getName(), userId, usedCouponId, userCoupon.getStatus());
+                    getName(), userId, couponId, userCoupon.getStatus());
 
         } catch (Exception e) {
             // 쿠폰 복구 실패는 로깅만 하고 예외를 전파하지 않음 (Best Effort)
             log.error("[{}] 쿠폰 복구 실패 (무시하고 계속) - userId={}, couponId={}, error={}",
-                    getName(), userId, usedCouponId, e.getMessage(), e);
+                    getName(), userId, couponId, e.getMessage(), e);
         }
     }
 }

@@ -173,11 +173,8 @@ public class CreateOrderStep implements SagaStep {
                 getName(), savedOrder.getOrderId(), userId,
                 savedOrder.getOrderStatus(), finalAmount);
 
-        // ========== Step 5: SagaContext에 생성된 Order 저장 ==========
-        context.setOrder(savedOrder);
-
-        // ========== Step 6: 보상 플래그 설정 ==========
-        context.setOrderCreated(true);
+        // ========== Step 5: SagaContext에 orderId만 저장 (Order 객체 아님) ==========
+        context.setOrderId(savedOrder.getOrderId());
 
         log.info("[{}] 주문 생성 Step 완료 - orderId={}, orderItems={}개",
                 getName(), savedOrder.getOrderId(), orderItems.size());
@@ -185,21 +182,26 @@ public class CreateOrderStep implements SagaStep {
     }
 
     /**
-     * 주문 취소 (Backward Flow / Compensation)
+     * 주문 취소 (Backward Flow / Compensation) - 리팩토링 버전
      *
-     * 처리 로직:
-     * 1. context.isOrderCreated() 확인
-     * 2. true이면 주문 취소 실행, false이면 skip
-     * 3. context.getOrder()에서 주문 조회
+     * 처리 로직 (Phase 2 변경):
+     * 1. Step 실행 여부 확인 (context.hasExecutedStep으로 체크)
+     * 2. context.getOrderId()에서 주문 ID 획득
+     * 3. DB에서 Order 조회 (비관적 락)
      * 4. order.markAsFailed() 호출 (PENDING → FAILED)
      * 5. order.cancel() 호출 (FAILED → CANCELLED)
      * 6. DB 저장
+     *
+     * 변경 사항:
+     * - context.isOrderCreated() 제거 → context.hasExecutedStep(getName()) 사용
+     * - context.getOrder() 제거 → context.getOrderId()로 ID만 획득 후 DB 조회
+     * - 메타데이터 의존 제거 → DB 조회 기반으로 전환
      *
      * Best Effort 보상:
      * - 보상 실패 시 예외를 발생시키지 말고 로깅만 수행
      * - Orchestrator가 다음 보상을 계속 진행할 수 있도록 함
      *
-     * @param context Saga 실행 컨텍스트 (보상 메타데이터 포함)
+     * @param context Saga 실행 컨텍스트 (orderId 포함)
      * @throws Exception 보상 중 치명적 오류 발생 시
      */
     @Override
@@ -218,25 +220,24 @@ public class CreateOrderStep implements SagaStep {
             throw new IllegalStateException("보상 트랜잭션이 활성화되지 않았습니다");
         }
 
-        // ========== Step 1: 보상 플래그 확인 ==========
-        if (!context.isOrderCreated()) {
-            log.info("[{}] 주문 생성이 실행되지 않았으므로 보상 skip", getName());
+        // ========== Step 1: Step 실행 여부 확인 (Step 이름 기반) ==========
+        if (!context.hasExecutedStep(getName())) {
+            log.info("[{}] Step이 실행되지 않았으므로 보상 skip", getName());
             return;
         }
 
-        Order order = context.getOrder();
-        if (order == null) {
-            log.warn("[{}] Order가 null이므로 보상 skip", getName());
+        // ========== Step 2: orderId 획득 ==========
+        Long orderId = context.getOrderId();
+        if (orderId == null) {
+            log.warn("[{}] orderId가 null이므로 보상 skip", getName());
             return;
         }
 
-        Long orderId = order.getOrderId();
-
-        log.warn("[{}] 주문 취소 시작 - orderId={}, 현재상태={}",
-                getName(), orderId, order.getOrderStatus());
+        log.warn("[{}] 주문 취소 시작 - orderId={}",
+                getName(), orderId);
 
         try {
-            // ========== Step 2: Order 조회 (비관적 락) ==========
+            // ========== Step 3: Order 조회 (비관적 락) ==========
             Order dbOrder = orderRepository.findByIdForUpdate(orderId)
                     .orElseThrow(() -> new IllegalArgumentException(
                             "주문 취소 중 Order를 찾을 수 없습니다: orderId=" + orderId));
@@ -244,7 +245,7 @@ public class CreateOrderStep implements SagaStep {
             log.info("[{}] Order 조회 완료 (비관적 락 획득) - orderId={}, 현재상태={}",
                     getName(), orderId, dbOrder.getOrderStatus());
 
-            // ========== Step 3: 주문 상태 변경 (PENDING → FAILED → CANCELLED) ==========
+            // ========== Step 4: 주문 상태 변경 (PENDING → FAILED → CANCELLED) ==========
             if (dbOrder.isPending()) {
                 // PENDING → FAILED
                 dbOrder.markAsFailed();
@@ -256,7 +257,7 @@ public class CreateOrderStep implements SagaStep {
                 log.info("[{}] 주문 상태 변경 (FAILED → CANCELLED) - orderId={}",
                         getName(), orderId);
 
-                // ========== Step 4: DB에 저장 ==========
+                // ========== Step 5: DB에 저장 ==========
                 orderRepository.save(dbOrder);
 
                 log.warn("[{}] 주문 취소 완료 - orderId={}, 최종상태={}",

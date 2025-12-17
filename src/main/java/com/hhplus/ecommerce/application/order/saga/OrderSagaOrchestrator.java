@@ -3,14 +3,19 @@ package com.hhplus.ecommerce.application.order.saga;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.order.saga.compensation.CompensationFailureContext;
 import com.hhplus.ecommerce.application.order.saga.compensation.SagaCompensationHandler;
+import com.hhplus.ecommerce.application.order.saga.context.SagaExecutionSnapshot;
 import com.hhplus.ecommerce.domain.order.Order;
+import com.hhplus.ecommerce.domain.order.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -65,6 +70,12 @@ public class OrderSagaOrchestrator {
     private final List<SagaStep> steps;
 
     /**
+     * Step 이름 → Step 객체 매핑 (보상 시 사용)
+     * - 보상 시 step 이름으로 step 객체를 빠르게 찾기 위한 Map
+     */
+    private final Map<String, SagaStep> stepMap;
+
+    /**
      * 보상 실패 처리 Handler
      * - 보상 실패 시 처리 전략을 Handler에 위임
      * - Critical 여부 판단, 알림, DLQ 발행 담당
@@ -72,19 +83,34 @@ public class OrderSagaOrchestrator {
     private final SagaCompensationHandler compensationHandler;
 
     /**
+     * Order 조회용 Repository
+     * - Saga 실행 완료 후 Order 조회에 사용
+     */
+    private final OrderRepository orderRepository;
+
+    /**
      * 생성자 주입
      *
      * @param steps 모든 SagaStep 구현체 (Spring이 자동 주입)
      * @param compensationHandler 보상 실패 처리 Handler
+     * @param orderRepository Order 조회용 Repository
      */
     public OrderSagaOrchestrator(List<SagaStep> steps,
-                                SagaCompensationHandler compensationHandler) {
+                                SagaCompensationHandler compensationHandler,
+                                OrderRepository orderRepository) {
         // getOrder() 순서대로 정렬
         this.steps = steps.stream()
                 .sorted(Comparator.comparingInt(SagaStep::getOrder))
                 .collect(Collectors.toList());
 
+        // Step 이름 → Step 객체 매핑 생성
+        this.stepMap = new HashMap<>();
+        for (SagaStep step : this.steps) {
+            this.stepMap.put(step.getName(), step);
+        }
+
         this.compensationHandler = compensationHandler;
+        this.orderRepository = orderRepository;
 
         log.info("[OrderSagaOrchestrator] Saga Steps 초기화 완료 (총 {}개)", steps.size());
         this.steps.forEach(step ->
@@ -142,18 +168,23 @@ public class OrderSagaOrchestrator {
                 // Step 실행
                 step.execute(context);
 
-                // 실행 이력 추가 (LIFO 보상용)
-                context.addExecutedStep(step);
+                // 실행 이력 추가 (LIFO 보상용) - Step 이름만 저장
+                context.addExecutedStepName(step.getName());
 
                 log.info("[OrderSagaOrchestrator] Step 실행 완료: {} (order={})",
                         step.getName(), step.getOrder());
             }
 
-            // ========== Step 3: 성공 - Order 반환 ==========
-            Order order = context.getOrder();
-            if (order == null) {
-                throw new IllegalStateException("Saga 실행 완료했지만 Order가 null입니다 (CreateOrderStep 실행 안됨?)");
+            // ========== Step 3: 성공 - Order 조회 후 반환 ==========
+            Long orderId = context.getOrderId();
+            if (orderId == null) {
+                throw new IllegalStateException("Saga 실행 완료했지만 orderId가 null입니다 (CreateOrderStep 실행 안됨?)");
             }
+
+            // DB에서 Order 조회 (CreateOrderStep에서 orderId만 저장했으므로)
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Saga 실행 완료했지만 Order를 찾을 수 없습니다: orderId=" + orderId));
 
             log.info("[OrderSagaOrchestrator] Saga 실행 성공 - orderId={}, 실행된 Step={}개",
                     order.getOrderId(), context.getExecutedStepCount());
@@ -204,34 +235,38 @@ public class OrderSagaOrchestrator {
         log.warn("[OrderSagaOrchestrator] 보상 트랜잭션 시작 (LIFO) - 실행된 Step={}개",
                 context.getExecutedStepCount());
 
-        // ========== Step 1: executedSteps를 역순으로 가져오기 (LIFO) ==========
-        List<SagaStep> executedSteps = context.getExecutedSteps();
-        Collections.reverse(executedSteps);
+        // ========== Step 1: executedStepNames를 역순으로 가져오기 (LIFO) ==========
+        List<String> executedStepNames = context.getExecutedStepNamesCopy();
+        Collections.reverse(executedStepNames);
 
         log.info("[OrderSagaOrchestrator] 보상 순서: {}",
-                executedSteps.stream()
-                        .map(SagaStep::getName)
-                        .collect(Collectors.joining(" → "))
-        );
+                String.join(" → ", executedStepNames));
 
         // ========== Step 2: orderId와 userId 추출 ==========
-        Long orderId = context.getOrder() != null ? context.getOrder().getOrderId() : null;
+        Long orderId = context.getOrderId();
         Long userId = context.getUserId();
 
-        // ========== Step 3: 각 Step 보상 실행 ==========
-        for (SagaStep step : executedSteps) {
+        // ========== Step 3: 각 Step 보상 실행 (Step 이름으로 Step 조회) ==========
+        for (String stepName : executedStepNames) {
+            // stepMap에서 Step 객체 조회
+            SagaStep step = stepMap.get(stepName);
+            if (step == null) {
+                log.error("[OrderSagaOrchestrator] ⚠️ Step을 찾을 수 없습니다: stepName={}", stepName);
+                continue;
+            }
+
             try {
-                log.info("[OrderSagaOrchestrator] 보상 실행 시작: {}", step.getName());
+                log.info("[OrderSagaOrchestrator] 보상 실행 시작: {}", stepName);
 
                 // 보상 실행
                 step.compensate(context);
 
-                log.info("[OrderSagaOrchestrator] 보상 실행 완료: {}", step.getName());
+                log.info("[OrderSagaOrchestrator] 보상 실행 완료: {}", stepName);
 
             } catch (Exception compensationError) {
                 // ========== 보상 실패 처리: Handler에 위임 ==========
                 log.error("[OrderSagaOrchestrator] 보상 실패 - Handler에 위임: Step={}, error={}",
-                        step.getName(), compensationError.getMessage());
+                        stepName, compensationError.getMessage());
 
                 // CompensationFailureContext 생성
                 CompensationFailureContext failureContext = CompensationFailureContext.from(
@@ -249,7 +284,7 @@ public class OrderSagaOrchestrator {
 
         // ========== Step 4: 보상 완료 로깅 ==========
         log.info("[OrderSagaOrchestrator] ✅ 보상 트랜잭션 완료 - 총 {}개 Step 보상 처리",
-                executedSteps.size());
+                executedStepNames.size());
     }
 
     /**

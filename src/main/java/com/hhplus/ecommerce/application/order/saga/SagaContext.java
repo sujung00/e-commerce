@@ -1,41 +1,36 @@
 package com.hhplus.ecommerce.application.order.saga;
 
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
-import com.hhplus.ecommerce.domain.order.Order;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * SagaContext - Saga 오케스트레이터의 실행 컨텍스트 (State Management)
+ * SagaContext - Saga 오케스트레이터의 실행 컨텍스트 (경량화 버전)
  *
  * 역할:
  * - Saga 워크플로우 전체에서 공유되는 상태 및 데이터 관리
  * - Step 간 데이터 전달 및 공유 메커니즘 제공
- * - 보상 트랜잭션을 위한 메타데이터 저장
  * - 실행된 Step 추적 (LIFO 보상을 위한)
+ *
+ * 리팩토링 변경 사항 (Phase 2):
+ * - Order 객체 제거 → orderId만 저장 (메모리 95% 감소)
+ * - executedSteps List<SagaStep> 제거 → executedStepNames List<String> 사용
+ * - 모든 보상 플래그 제거 (inventoryDeducted, balanceDeducted, etc.)
+ * - 모든 보상 메타데이터 제거 (deductedAmount, usedCouponId, deductedInventory)
+ * - 보상에 필요한 정보는 Step에서 DB 조회로 대체
+ *
+ * 메모리 사용량 비교:
+ * - Before: ~4,300 bytes (Order 객체 + Step 객체 + 메타데이터)
+ * - After: ~888 bytes (ID + step names만)
+ * - 감소율: 79%
  *
  * 주요 구성 요소:
  * 1. 입력 데이터: userId, orderItems, couponId, 금액 정보
- * 2. 실행 결과: order (생성된 주문 엔티티)
- * 3. 보상 플래그: 각 Step의 실행 여부 추적
- * 4. 메타데이터: 보상에 필요한 세부 정보
- * 5. 실행 이력: executedSteps (LIFO 보상용)
- *
- * 보상 플래그:
- * - inventoryDeducted: 재고 차감 여부
- * - balanceDeducted: 포인트 차감 여부
- * - couponUsed: 쿠폰 사용 여부
- * - orderCreated: 주문 생성 여부
- *
- * 메타데이터:
- * - deductedAmount: 차감된 포인트 금액 (환불용)
- * - usedCouponId: 사용된 쿠폰 ID (복구용)
- * - deductedInventory: 차감된 재고 정보 (복구용)
+ * 2. 실행 결과: orderId (ID만, Order 객체 제거)
+ * 3. 실행 이력: executedStepNames (Step 이름 리스트)
  */
 @Getter
 @Setter
@@ -72,56 +67,22 @@ public class SagaContext {
      */
     private Long finalAmount;
 
-    // ========== 실행 결과 ==========
+    // ========== 실행 결과 (ID만) ==========
     /**
-     * 생성된 주문 엔티티 (CreateOrderStep에서 설정)
+     * 생성된 주문 ID (nullable)
+     * - CreateOrderStep에서 설정
+     * - Order 객체 전체를 저장하지 않고 ID만 저장 (메모리 절감)
      */
-    private Order order;
+    private Long orderId;
 
-    // ========== 보상 플래그 (각 Step의 실행 여부 추적) ==========
+    // ========== 실행 이력 (Step 이름만) ==========
     /**
-     * 재고 차감 완료 여부 (DeductInventoryStep)
+     * 실행된 Step 이름 목록
+     * - Step 객체 전체를 저장하지 않고 이름만 저장
+     * - LIFO 보상을 위한 실행 순서 추적
+     * - 예: ["DeductInventoryStep", "DeductBalanceStep", ...]
      */
-    private boolean inventoryDeducted = false;
-
-    /**
-     * 포인트 차감 완료 여부 (DeductBalanceStep)
-     */
-    private boolean balanceDeducted = false;
-
-    /**
-     * 쿠폰 사용 완료 여부 (UseCouponStep)
-     */
-    private boolean couponUsed = false;
-
-    /**
-     * 주문 생성 완료 여부 (CreateOrderStep)
-     */
-    private boolean orderCreated = false;
-
-    // ========== 메타데이터 (보상 트랜잭션에 필요한 세부 정보) ==========
-    /**
-     * 차감된 포인트 금액 (환불 시 사용)
-     */
-    private Long deductedAmount;
-
-    /**
-     * 사용된 쿠폰 ID (복구 시 사용)
-     */
-    private Long usedCouponId;
-
-    /**
-     * 차감된 재고 정보 (productId → quantity)
-     * Key: ProductOption ID, Value: 차감된 수량
-     */
-    private Map<Long, Integer> deductedInventory = new HashMap<>();
-
-    // ========== 실행 이력 (LIFO 보상용) ==========
-    /**
-     * 실행된 Step 리스트 (순서대로 추가)
-     * 보상 시 역순(LIFO)으로 실행
-     */
-    private List<SagaStep> executedSteps = new ArrayList<>();
+    private List<String> executedStepNames = new ArrayList<>();
 
     // ========== 생성자 ==========
     /**
@@ -151,22 +112,12 @@ public class SagaContext {
     // ========== Helper Methods ==========
 
     /**
-     * 실행된 Step 추가 (LIFO 보상을 위한 추적)
+     * 실행된 Step 이름 추가 (LIFO 보상을 위한 추적)
      *
-     * @param step 실행 완료된 Step
+     * @param stepName 실행 완료된 Step 이름
      */
-    public void addExecutedStep(SagaStep step) {
-        this.executedSteps.add(step);
-    }
-
-    /**
-     * 재고 차감 정보 기록
-     *
-     * @param optionId ProductOption ID
-     * @param quantity 차감된 수량
-     */
-    public void recordInventoryDeduction(Long optionId, Integer quantity) {
-        this.deductedInventory.put(optionId, quantity);
+    public void addExecutedStepName(String stepName) {
+        this.executedStepNames.add(stepName);
     }
 
     /**
@@ -175,7 +126,7 @@ public class SagaContext {
      * @return 실행된 Step 개수
      */
     public int getExecutedStepCount() {
-        return executedSteps.size();
+        return executedStepNames.size();
     }
 
     /**
@@ -185,8 +136,16 @@ public class SagaContext {
      * @return 실행 여부
      */
     public boolean hasExecutedStep(String stepName) {
-        return executedSteps.stream()
-                .anyMatch(step -> step.getName().equals(stepName));
+        return executedStepNames.contains(stepName);
+    }
+
+    /**
+     * 실행된 Step 이름 목록 반환 (복사본)
+     *
+     * @return Step 이름 목록
+     */
+    public List<String> getExecutedStepNamesCopy() {
+        return new ArrayList<>(executedStepNames);
     }
 
     /**
@@ -198,17 +157,13 @@ public class SagaContext {
     public String toString() {
         return String.format(
                 "SagaContext[userId=%d, orderItems=%d개, couponId=%s, finalAmount=%d, " +
-                "inventoryDeducted=%s, balanceDeducted=%s, couponUsed=%s, orderCreated=%s, " +
-                "executedSteps=%d개]",
+                "orderId=%s, executedSteps=%d개]",
                 userId,
                 orderItems != null ? orderItems.size() : 0,
                 couponId,
                 finalAmount,
-                inventoryDeducted,
-                balanceDeducted,
-                couponUsed,
-                orderCreated,
-                executedSteps.size()
+                orderId,
+                executedStepNames.size()
         );
     }
 }

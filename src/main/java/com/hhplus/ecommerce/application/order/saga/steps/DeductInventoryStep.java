@@ -3,6 +3,9 @@ package com.hhplus.ecommerce.application.order.saga.steps;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.order.saga.SagaContext;
 import com.hhplus.ecommerce.application.order.saga.SagaStep;
+import com.hhplus.ecommerce.domain.order.Order;
+import com.hhplus.ecommerce.domain.order.OrderItem;
+import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import org.slf4j.Logger;
@@ -49,9 +52,12 @@ public class DeductInventoryStep implements SagaStep {
     private static final Logger log = LoggerFactory.getLogger(DeductInventoryStep.class);
 
     private final ProductRepository productRepository;
+    private final OrderRepository orderRepository;
 
-    public DeductInventoryStep(ProductRepository productRepository) {
+    public DeductInventoryStep(ProductRepository productRepository,
+                               OrderRepository orderRepository) {
         this.productRepository = productRepository;
+        this.orderRepository = orderRepository;
     }
 
     @Override
@@ -71,7 +77,11 @@ public class DeductInventoryStep implements SagaStep {
      * 1. 각 주문 항목별로 ProductOption 조회
      * 2. decreaseStock() 호출 (재고 차감, 재고 부족 시 예외)
      * 3. DB 저장
-     * 4. SagaContext에 메타데이터 기록 (보상용)
+     *
+     * 변경 사항:
+     * - SagaContext 메타데이터 기록 제거 (recordInventoryDeduction 제거)
+     * - 보상 플래그 설정 제거 (setInventoryDeducted 제거)
+     * - 보상 시 DB에서 Order/OrderItems를 조회하여 정보 획득
      *
      * 예외 처리:
      * - ProductOption 조회 실패: IllegalArgumentException
@@ -118,13 +128,7 @@ public class DeductInventoryStep implements SagaStep {
 
             log.info("[{}] 재고 차감 완료 - optionId={}, 차감수량={}, 남은재고={}",
                     getName(), item.getOptionId(), item.getQuantity(), option.getStock());
-
-            // ========== Step 4: SagaContext에 메타데이터 기록 (보상용) ==========
-            context.recordInventoryDeduction(item.getOptionId(), item.getQuantity());
         }
-
-        // ========== Step 5: 보상 플래그 설정 ==========
-        context.setInventoryDeducted(true);
 
         log.info("[{}] 재고 차감 완료 - 총 {}개 옵션 처리",
                 getName(), context.getOrderItems().size());
@@ -132,20 +136,25 @@ public class DeductInventoryStep implements SagaStep {
     }
 
     /**
-     * 재고 복구 (Backward Flow / Compensation)
+     * 재고 복구 (Backward Flow / Compensation) - 리팩토링 버전
      *
-     * 처리 로직:
-     * 1. context.isInventoryDeducted() 확인
-     * 2. true이면 재고 복구 실행, false이면 skip
-     * 3. context.getDeductedInventory()에서 복구할 수량 조회
-     * 4. restoreStock() 호출 (재고 복구)
+     * 처리 로직 (Phase 2 변경):
+     * 1. Step 실행 여부 확인 (context.hasExecutedStep으로 체크)
+     * 2. DB에서 Order 조회 (orderId 사용)
+     * 3. Order의 OrderItems에서 복구할 재고 정보 획득
+     * 4. 각 OrderItem별로 재고 복구 실행
      * 5. DB 저장
+     *
+     * 변경 사항:
+     * - context.isInventoryDeducted() 제거 → context.hasExecutedStep(getName()) 사용
+     * - context.getDeductedInventory() 제거 → Order.getOrderItems()에서 정보 획득
+     * - 메타데이터 의존 제거 → DB 조회 기반으로 전환
      *
      * Best Effort 보상:
      * - 보상 실패 시 예외를 발생시키지 말고 로깅만 수행
      * - Orchestrator가 다음 보상을 계속 진행할 수 있도록 함
      *
-     * @param context Saga 실행 컨텍스트 (보상 메타데이터 포함)
+     * @param context Saga 실행 컨텍스트 (orderId 포함)
      * @throws Exception 보상 중 치명적 오류 발생 시
      */
     @Override
@@ -164,19 +173,30 @@ public class DeductInventoryStep implements SagaStep {
             throw new IllegalStateException("보상 트랜잭션이 활성화되지 않았습니다");
         }
 
-        // ========== Step 1: 보상 플래그 확인 ==========
-        if (!context.isInventoryDeducted()) {
-            log.info("[{}] 재고 차감이 실행되지 않았으므로 보상 skip", getName());
+        // ========== Step 1: Step 실행 여부 확인 (Step 이름 기반) ==========
+        if (!context.hasExecutedStep(getName())) {
+            log.info("[{}] Step이 실행되지 않았으므로 보상 skip", getName());
             return;
         }
 
-        log.warn("[{}] 재고 복구 시작 - 복구할 옵션 {}개",
-                getName(), context.getDeductedInventory().size());
+        // ========== Step 2: DB에서 Order 조회 ==========
+        Long orderId = context.getOrderId();
+        if (orderId == null) {
+            log.warn("[{}] orderId가 null이므로 보상 skip (주문 생성 전 실패)", getName());
+            return;
+        }
 
-        // ========== Step 2: 각 옵션별로 재고 복구 ==========
-        for (var entry : context.getDeductedInventory().entrySet()) {
-            Long optionId = entry.getKey();
-            Integer quantity = entry.getValue();
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "보상 중 Order를 찾을 수 없습니다: orderId=" + orderId));
+
+        log.warn("[{}] 재고 복구 시작 - orderId={}, 복구할 항목 {}개",
+                getName(), orderId, order.getOrderItems().size());
+
+        // ========== Step 3: 각 OrderItem별로 재고 복구 ==========
+        for (OrderItem orderItem : order.getOrderItems()) {
+            Long optionId = orderItem.getOptionId();
+            Integer quantity = orderItem.getQuantity();
 
             try {
                 // ProductOption 조회
@@ -187,10 +207,10 @@ public class DeductInventoryStep implements SagaStep {
                 log.info("[{}] 재고 복구 중 - optionId={}, optionName={}, 복구수량={}, 현재재고={}",
                         getName(), optionId, option.getName(), quantity, option.getStock());
 
-                // ========== Step 3: 재고 복구 (domain 로직) ==========
+                // ========== Step 4: 재고 복구 (domain 로직) ==========
                 option.restoreStock(quantity);
 
-                // ========== Step 4: DB 저장 ==========
+                // ========== Step 5: DB 저장 ==========
                 productRepository.saveOption(option);
 
                 log.info("[{}] 재고 복구 완료 - optionId={}, 복구수량={}, 복구후재고={}",
@@ -204,7 +224,7 @@ public class DeductInventoryStep implements SagaStep {
         }
 
         log.warn("[{}] 재고 복구 완료 - 총 {}개 옵션 복구 시도",
-                getName(), context.getDeductedInventory().size());
+                getName(), order.getOrderItems().size());
         log.warn("[{}] ========== 재고 복구 트랜잭션 종료 (커밋 예정) ==========", getName());
     }
 }
