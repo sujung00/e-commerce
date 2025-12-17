@@ -9,6 +9,9 @@ import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.TransientDataAccessException;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -133,6 +136,11 @@ public class OrderSagaOrchestrator {
      * 2. executedSteps를 역순(LIFO)으로 보상
      * 3. 보상 완료 후 예외 재발생
      *
+     * Retry 전략:
+     * - 일시적 DB 오류(TransientDataAccessException)에 대해 재시도
+     * - 최대 3회 재시도 (초기 실행 포함 총 3번)
+     * - 재시도 간격: 1초 → 2초 (지수 백오프, multiplier=2)
+     *
      * @param userId 사용자 ID
      * @param orderItems 주문 항목 리스트
      * @param couponId 쿠폰 ID (nullable)
@@ -142,6 +150,11 @@ public class OrderSagaOrchestrator {
      * @return 생성된 주문 (결제 완료된 상태)
      * @throws RuntimeException Saga 실행 실패 시
      */
+    @Retryable(
+            value = { TransientDataAccessException.class },
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 1000, multiplier = 2)
+    )
     public Order executeSaga(Long userId,
                             List<OrderItemDto> orderItems,
                             Long couponId,
