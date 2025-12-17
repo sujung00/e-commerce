@@ -1,7 +1,7 @@
 package com.hhplus.ecommerce.application.order.saga.steps;
 
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
-import com.hhplus.ecommerce.application.order.saga.SagaContext;
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.integration.BaseIntegrationTest;
@@ -23,10 +23,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * DeductBalanceStep 보상 로직 테스트
  *
  * 검증 포인트:
- * 1. SagaContext 플래그 기반 skip 로직
- * 2. 정상 보상 처리 (포인트 환불)
- * 3. 보상 실패 시 Best Effort 동작
- * 4. DB 상태 변화 검증
+ * 1. 정상 보상 처리 (포인트 환불)
+ * 2. 보상 실패 시 Best Effort 동작
+ * 3. DB 상태 변화 검증
  */
 @SpringBootTest
 @DisplayName("DeductBalanceStep 보상 로직 테스트")
@@ -94,13 +93,11 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
         // When - Forward Flow (포인트 차감)
         deductBalanceStep.execute(context);
 
-        // Then - Forward Flow 검증
+        // Then - Forward Flow 검증 (DB 상태로 검증)
         User afterDeduct = newTransactionTemplate.execute(status ->
             userRepository.findById(userId).orElseThrow()
         );
         assertEquals(initialBalance - deductAmount, afterDeduct.getBalance(), "포인트가 정상 차감되어야 함");
-        assertTrue(context.isBalanceDeducted(), "balanceDeducted 플래그가 true여야 함");
-        assertEquals(deductAmount, context.getDeductedAmount(), "차감된 금액이 기록되어야 함");
 
         // When - Backward Flow (포인트 환불)
         deductBalanceStep.compensate(context);
@@ -113,7 +110,7 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("[DeductBalanceStep] 보상 skip - balanceDeducted=false인 경우")
+    @DisplayName("[DeductBalanceStep] 보상 skip - Step이 실행되지 않은 경우")
     void testCompensate_Skip_WhenBalanceNotDeducted() throws Exception {
         // Given - 테스트 데이터 준비
         String testId = UUID.randomUUID().toString().substring(0, 8);
@@ -138,7 +135,7 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
 
         long userId = userIdArray[0];
 
-        // SagaContext 생성 (balanceDeducted=false)
+        // SagaContext 생성 (Step 실행하지 않음)
         SagaContext context = new SagaContext(
                 userId,
                 List.of(new OrderItemDto(1L, 1L, 1)),
@@ -148,7 +145,7 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
                 10000L  // finalAmount
         );
 
-        // When - Backward Flow (보상 시도)
+        // When - Backward Flow (보상 시도 - Step이 실행되지 않았으므로 skip됨)
         deductBalanceStep.compensate(context);
 
         // Then - 포인트 변화 없음 (skip 되어야 함)
@@ -172,10 +169,6 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
                 10000L, // subtotal
                 10000L  // finalAmount
         );
-
-        // 보상 플래그 설정 (환불 시도하도록)
-        context.setBalanceDeducted(true);
-        context.setDeductedAmount(10000L);
 
         // When & Then - 보상 실패해도 예외 발생하지 않음 (Best Effort)
         assertDoesNotThrow(() -> deductBalanceStep.compensate(context),
@@ -223,18 +216,15 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
         assertThrows(Exception.class, () -> deductBalanceStep.execute(context),
             "포인트 부족 시 예외가 발생해야 함");
 
-        // 포인트 변화 없음
+        // Then - 포인트 변화 없음 (DB 검증)
         User afterFail = newTransactionTemplate.execute(status ->
             userRepository.findById(userId).orElseThrow()
         );
         assertEquals(initialBalance, afterFail.getBalance(), "실패 시 포인트가 변하지 않아야 함");
-
-        // 보상 플래그 false
-        assertFalse(context.isBalanceDeducted(), "실패 시 balanceDeducted 플래그가 false여야 함");
     }
 
     @Test
-    @DisplayName("[DeductBalanceStep] 환불 후 포인트 초과 시나리오")
+    @DisplayName("[DeductBalanceStep] 환불 후 포인트 복구 시나리오")
     void testCompensate_Success_BalanceIncrease() throws Exception {
         // Given - 테스트 데이터 준비
         String testId = UUID.randomUUID().toString().substring(0, 8);
@@ -273,7 +263,7 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
         // When - Forward Flow (포인트 차감)
         deductBalanceStep.execute(context);
 
-        // 차감 후 포인트 확인
+        // Then - 차감 후 포인트 확인 (DB 검증)
         long balanceAfterDeduct = newTransactionTemplate.execute(status -> {
             User user = userRepository.findById(userId).orElseThrow();
             return user.getBalance();
@@ -283,7 +273,7 @@ class DeductBalanceStepTest extends BaseIntegrationTest {
         // When - Backward Flow (포인트 환불)
         deductBalanceStep.compensate(context);
 
-        // Then - 환불 후 포인트 확인
+        // Then - 환불 후 포인트 확인 (DB 검증)
         User afterCompensate = newTransactionTemplate.execute(status ->
             userRepository.findById(userId).orElseThrow()
         );

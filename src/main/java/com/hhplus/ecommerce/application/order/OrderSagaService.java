@@ -1,6 +1,6 @@
 package com.hhplus.ecommerce.application.order;
 
-import com.hhplus.ecommerce.application.order.saga.OrderSagaOrchestrator;
+import com.hhplus.ecommerce.application.order.saga.orchestration.OrderSagaOrchestrator;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderItem;
 import com.hhplus.ecommerce.domain.order.OrderRepository;

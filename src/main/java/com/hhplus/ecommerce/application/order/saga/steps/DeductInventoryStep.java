@@ -1,8 +1,8 @@
 package com.hhplus.ecommerce.application.order.saga.steps;
 
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
-import com.hhplus.ecommerce.application.order.saga.SagaContext;
-import com.hhplus.ecommerce.application.order.saga.SagaStep;
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
+import com.hhplus.ecommerce.application.order.saga.orchestration.SagaStep;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderItem;
 import com.hhplus.ecommerce.domain.order.OrderRepository;

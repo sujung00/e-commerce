@@ -1,7 +1,7 @@
 package com.hhplus.ecommerce.application.order.saga.steps;
 
-import com.hhplus.ecommerce.application.order.saga.SagaContext;
-import com.hhplus.ecommerce.application.order.saga.SagaStep;
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
+import com.hhplus.ecommerce.application.order.saga.orchestration.SagaStep;
 import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.domain.coupon.UserCouponStatus;

@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.application.order.saga;
+package com.hhplus.ecommerce.application.order.saga.context;
 
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import lombok.Getter;

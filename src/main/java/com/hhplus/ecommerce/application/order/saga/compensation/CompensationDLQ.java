@@ -1,4 +1,4 @@
-package com.hhplus.ecommerce.application.order.saga;
+package com.hhplus.ecommerce.application.order.saga.compensation;
 
 import com.hhplus.ecommerce.domain.order.FailedCompensationEntity;
 import com.hhplus.ecommerce.domain.order.FailedCompensationRepository;

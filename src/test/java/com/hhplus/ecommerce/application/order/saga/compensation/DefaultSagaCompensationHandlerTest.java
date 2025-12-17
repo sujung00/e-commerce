@@ -1,10 +1,7 @@
 package com.hhplus.ecommerce.application.order.saga.compensation;
 
 import com.hhplus.ecommerce.application.alert.AlertService;
-import com.hhplus.ecommerce.application.order.saga.CompensationDLQ;
-import com.hhplus.ecommerce.application.order.saga.FailedCompensation;
-import com.hhplus.ecommerce.application.order.saga.SagaContext;
-import com.hhplus.ecommerce.application.order.saga.SagaStep;
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
 import com.hhplus.ecommerce.common.exception.CompensationException;
 import com.hhplus.ecommerce.common.exception.CriticalException;
 import com.hhplus.ecommerce.common.exception.ErrorCode;

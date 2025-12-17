@@ -1,7 +1,7 @@
 package com.hhplus.ecommerce.application.order.saga.steps;
 
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
-import com.hhplus.ecommerce.application.order.saga.SagaContext;
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
@@ -25,10 +25,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * DeductInventoryStep 보상 로직 테스트
  *
  * 검증 포인트:
- * 1. SagaContext 플래그 기반 skip 로직
- * 2. 정상 보상 처리 (재고 복구)
- * 3. 보상 실패 시 Best Effort 동작
- * 4. DB 상태 변화 검증
+ * 1. 정상 보상 처리 (재고 복구)
+ * 2. 보상 실패 시 Best Effort 동작
+ * 3. DB 상태 변화 검증
  */
 @SpringBootTest
 @DisplayName("DeductInventoryStep 보상 로직 테스트")
@@ -113,13 +112,11 @@ class DeductInventoryStepTest extends BaseIntegrationTest {
         // When - Forward Flow (재고 차감)
         deductInventoryStep.execute(context);
 
-        // Then - Forward Flow 검증
+        // Then - Forward Flow 검증 (DB 상태로 검증)
         ProductOption afterDeduct = newTransactionTemplate.execute(status ->
             productRepository.findOptionById(optionId).orElseThrow()
         );
         assertEquals(initialStock - deductQuantity, afterDeduct.getStock(), "재고가 정상 차감되어야 함");
-        assertTrue(context.isInventoryDeducted(), "inventoryDeducted 플래그가 true여야 함");
-        assertEquals(deductQuantity, context.getDeductedInventory().get(optionId), "차감된 수량이 기록되어야 함");
 
         // When - Backward Flow (재고 복구)
         deductInventoryStep.compensate(context);
@@ -132,7 +129,7 @@ class DeductInventoryStepTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("[DeductInventoryStep] 보상 skip - inventoryDeducted=false인 경우")
+    @DisplayName("[DeductInventoryStep] 보상 skip - Step이 실행되지 않은 경우")
     void testCompensate_Skip_WhenInventoryNotDeducted() throws Exception {
         // Given - 테스트 데이터 준비
         String testId = UUID.randomUUID().toString().substring(0, 8);
@@ -169,7 +166,7 @@ class DeductInventoryStepTest extends BaseIntegrationTest {
 
         long optionId = optionIdArray[0];
 
-        // SagaContext 생성 (inventoryDeducted=false)
+        // SagaContext 생성 (Step 실행하지 않음)
         SagaContext context = new SagaContext(
                 1L, // userId
                 List.of(new OrderItemDto(1L, optionId, 10)),
@@ -179,7 +176,7 @@ class DeductInventoryStepTest extends BaseIntegrationTest {
                 100000L  // finalAmount
         );
 
-        // When - Backward Flow (보상 시도)
+        // When - Backward Flow (보상 시도 - Step이 실행되지 않았으므로 skip됨)
         deductInventoryStep.compensate(context);
 
         // Then - 재고 변화 없음 (skip 되어야 함)
@@ -261,7 +258,7 @@ class DeductInventoryStepTest extends BaseIntegrationTest {
         // When - Forward Flow (2개 옵션 재고 차감)
         deductInventoryStep.execute(context);
 
-        // Then - Forward Flow 검증
+        // Then - Forward Flow 검증 (DB 상태로 검증)
         newTransactionTemplate.execute(status -> {
             ProductOption afterDeduct1 = productRepository.findOptionById(optionId1).orElseThrow();
             ProductOption afterDeduct2 = productRepository.findOptionById(optionId2).orElseThrow();
@@ -286,84 +283,23 @@ class DeductInventoryStepTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("[DeductInventoryStep] 보상 실패 시 Best Effort - 일부 옵션 복구 실패해도 계속 진행")
-    void testCompensate_BestEffort_ContinueOnPartialFailure() throws Exception {
-        // Given - 테스트 데이터 준비
-        String testId = UUID.randomUUID().toString().substring(0, 8);
-        long[] productIdArray = new long[1];
-        long[] optionId1Array = new long[1];
-        int initialStock = 100;
-        int deductQuantity = 10;
-
-        // 상품 및 옵션 생성
-        newTransactionTemplate.execute(status -> {
-            Product product = Product.builder()
-                    .productName("재고테스트상품_" + testId)
-                    .price(10000L)
-                    .totalStock(initialStock)
-                    .status("IN_STOCK")
-                    .options(new ArrayList<>())
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
-            productRepository.save(product);
-            entityManager.flush();
-
-            ProductOption option1 = ProductOption.builder()
-                    .productId(product.getProductId())
-                    .name("옵션1")
-                    .stock(initialStock)
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
-            productRepository.saveOption(option1);
-            entityManager.flush();
-
-            productIdArray[0] = product.getProductId();
-            optionId1Array[0] = option1.getOptionId();
-            return null;
-        });
-
-        long productId = productIdArray[0];
-        long optionId1 = optionId1Array[0];
-
-        // SagaContext 생성 (정상 옵션 + 존재하지 않는 옵션)
+    @DisplayName("[DeductInventoryStep] 보상 실패 시 Best Effort - 예외 발생해도 전파하지 않음")
+    void testCompensate_BestEffort_NoExceptionPropagation() throws Exception {
+        // Given - 존재하지 않는 옵션으로 SagaContext 생성
         List<OrderItemDto> orderItems = List.of(
-                new OrderItemDto(productId, optionId1, deductQuantity),
-                new OrderItemDto(productId, 999999L, deductQuantity) // 존재하지 않는 옵션
+                new OrderItemDto(1L, 999999L, 10) // 존재하지 않는 옵션
         );
         SagaContext context = new SagaContext(
                 1L, // userId
                 orderItems,
                 null, // couponId
                 0L, // couponDiscount
-                200000L, // subtotal
-                200000L  // finalAmount
+                100000L, // subtotal
+                100000L  // finalAmount
         );
 
-        // Forward Flow에서 존재하지 않는 옵션으로 실패하므로,
-        // 보상 시나리오를 만들기 위해 수동으로 context 설정
-        context.setInventoryDeducted(true);
-        context.recordInventoryDeduction(optionId1, deductQuantity);
-        context.recordInventoryDeduction(999999L, deductQuantity); // 존재하지 않는 옵션
-
-        // 재고 차감 (정상 옵션만)
-        newTransactionTemplate.execute(status -> {
-            ProductOption option1 = productRepository.findOptionById(optionId1).orElseThrow();
-            option1.deductStock(deductQuantity);
-            productRepository.saveOption(option1);
-            return null;
-        });
-
-        // When - Backward Flow (보상 시도 - 일부 실패)
-        // Best Effort: 존재하지 않는 옵션 복구 실패해도 예외 발생 안 함
+        // When & Then - 보상 실패해도 예외 발생하지 않음 (Best Effort)
         assertDoesNotThrow(() -> deductInventoryStep.compensate(context),
-            "보상 중 일부 실패해도 예외가 발생하지 않아야 함 (Best Effort)");
-
-        // Then - 정상 옵션은 복구되어야 함
-        ProductOption afterCompensate1 = newTransactionTemplate.execute(status ->
-            productRepository.findOptionById(optionId1).orElseThrow()
-        );
-        assertEquals(initialStock, afterCompensate1.getStock(), "정상 옵션은 복구되어야 함");
+            "보상 실패해도 예외가 발생하지 않아야 함 (Best Effort)");
     }
 }

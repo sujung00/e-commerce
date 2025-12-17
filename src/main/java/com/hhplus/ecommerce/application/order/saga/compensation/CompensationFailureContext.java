@@ -1,7 +1,7 @@
 package com.hhplus.ecommerce.application.order.saga.compensation;
 
-import com.hhplus.ecommerce.application.order.saga.SagaContext;
-import com.hhplus.ecommerce.application.order.saga.SagaStep;
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
+import com.hhplus.ecommerce.application.order.saga.orchestration.SagaStep;
 import lombok.Builder;
 import lombok.Getter;
 

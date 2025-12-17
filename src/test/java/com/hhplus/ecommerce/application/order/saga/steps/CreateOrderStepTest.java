@@ -1,7 +1,7 @@
 package com.hhplus.ecommerce.application.order.saga.steps;
 
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
-import com.hhplus.ecommerce.application.order.saga.SagaContext;
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
 import com.hhplus.ecommerce.domain.order.OrderStatus;
@@ -28,10 +28,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * CreateOrderStep 보상 로직 테스트
  *
  * 검증 포인트:
- * 1. SagaContext 플래그 기반 skip 로직
- * 2. 정상 보상 처리 (주문 상태 PENDING → FAILED → CANCELLED)
- * 3. 비관적 락 획득 및 동시성 제어
- * 4. DB 상태 변화 검증
+ * 1. 정상 보상 처리 (주문 상태 PENDING → CANCELLED)
+ * 2. 비관적 락 획득 및 동시성 제어
+ * 3. DB 상태 변화 검증
  */
 @SpringBootTest
 @DisplayName("CreateOrderStep 보상 로직 테스트")
@@ -118,34 +117,28 @@ class CreateOrderStepTest extends BaseIntegrationTest {
         // When - Forward Flow (주문 생성)
         createOrderStep.execute(context);
 
-        // Then - Forward Flow 검증
-        Order createdOrder = context.getOrder();
-        assertNotNull(createdOrder, "주문이 생성되어야 함");
-        assertNotNull(createdOrder.getOrderId(), "주문 ID가 할당되어야 함");
-        assertEquals(OrderStatus.PENDING, createdOrder.getOrderStatus(), "주문 상태가 PENDING이어야 함");
-        assertTrue(context.isOrderCreated(), "orderCreated 플래그가 true여야 함");
-
-        // DB에서 주문 조회
-        Order dbOrder = newTransactionTemplate.execute(status ->
-            orderRepository.findById(createdOrder.getOrderId()).orElseThrow()
+        // Then - Forward Flow 검증 (DB 상태로 검증)
+        assertNotNull(context.getOrderId(), "주문 ID가 context에 설정되어야 함");
+        Order createdOrder = newTransactionTemplate.execute(status ->
+            orderRepository.findById(context.getOrderId()).orElseThrow()
         );
-        assertEquals(OrderStatus.PENDING, dbOrder.getOrderStatus(), "DB의 주문 상태가 PENDING이어야 함");
+        assertEquals(OrderStatus.PENDING, createdOrder.getOrderStatus(), "주문 상태가 PENDING이어야 함");
 
         // When - Backward Flow (주문 취소)
         createOrderStep.compensate(context);
 
         // Then - Backward Flow 검증 (주문 상태 CANCELLED)
         Order cancelledOrder = newTransactionTemplate.execute(status ->
-            orderRepository.findById(createdOrder.getOrderId()).orElseThrow()
+            orderRepository.findById(context.getOrderId()).orElseThrow()
         );
         assertEquals(OrderStatus.CANCELLED, cancelledOrder.getOrderStatus(),
             "주문 상태가 CANCELLED로 변경되어야 함");
     }
 
     @Test
-    @DisplayName("[CreateOrderStep] 보상 skip - orderCreated=false인 경우")
+    @DisplayName("[CreateOrderStep] 보상 skip - orderId가 null인 경우")
     void testCompensate_Skip_WhenOrderNotCreated() throws Exception {
-        // Given - SagaContext 생성 (orderCreated=false)
+        // Given - SagaContext 생성 (orderId=null)
         SagaContext context = new SagaContext(
                 1L, // userId
                 List.of(new OrderItemDto(1L, 1L, 1)),
@@ -158,39 +151,13 @@ class CreateOrderStepTest extends BaseIntegrationTest {
         // When - Backward Flow (보상 시도)
         // Then - skip 되어야 함 (예외 발생하지 않음)
         assertDoesNotThrow(() -> createOrderStep.compensate(context),
-            "orderCreated=false일 때 보상이 skip 되어야 함");
-    }
-
-    @Test
-    @DisplayName("[CreateOrderStep] 보상 skip - Order가 null인 경우")
-    void testCompensate_Skip_WhenOrderIsNull() throws Exception {
-        // Given - SagaContext 생성 (order=null)
-        SagaContext context = new SagaContext(
-                1L, // userId
-                List.of(new OrderItemDto(1L, 1L, 1)),
-                null, // couponId
-                0L, // couponDiscount
-                10000L, // subtotal
-                10000L  // finalAmount
-        );
-        context.setOrderCreated(true); // 플래그는 true지만 Order는 null
-
-        // When - Backward Flow (보상 시도)
-        // Then - skip 되어야 함 (예외 발생하지 않음)
-        assertDoesNotThrow(() -> createOrderStep.compensate(context),
-            "Order가 null일 때 보상이 skip 되어야 함");
+            "orderId가 null일 때 보상이 skip 되어야 함");
     }
 
     @Test
     @DisplayName("[CreateOrderStep] 보상 실패 시 Best Effort - 예외 발생해도 전파하지 않음")
     void testCompensate_BestEffort_NoExceptionPropagation() throws Exception {
-        // Given - 존재하지 않는 주문으로 SagaContext 생성
-        Order fakeOrder = Order.builder()
-                .orderId(999999L) // 존재하지 않는 ID
-                .userId(1L)
-                .orderStatus(OrderStatus.PENDING)
-                .build();
-
+        // Given - 존재하지 않는 주문 ID로 SagaContext 생성
         SagaContext context = new SagaContext(
                 1L, // userId
                 List.of(new OrderItemDto(1L, 1L, 1)),
@@ -199,8 +166,7 @@ class CreateOrderStepTest extends BaseIntegrationTest {
                 10000L, // subtotal
                 10000L  // finalAmount
         );
-        context.setOrderCreated(true);
-        context.setOrder(fakeOrder);
+        context.setOrderId(999999L); // 존재하지 않는 orderId 설정
 
         // When & Then - 보상 실패해도 예외 발생하지 않음 (Best Effort)
         assertDoesNotThrow(() -> createOrderStep.compensate(context),
@@ -208,8 +174,8 @@ class CreateOrderStepTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("[CreateOrderStep] 주문 상태 전이 검증 - PENDING → FAILED → CANCELLED")
-    void testCompensate_StateTransition_PendingToFailedToCancelled() throws Exception {
+    @DisplayName("[CreateOrderStep] 주문 상태 전이 검증 - PENDING → CANCELLED")
+    void testCompensate_StateTransition_PendingToCancelled() throws Exception {
         // Given - 테스트 데이터 준비
         String testId = UUID.randomUUID().toString().substring(0, 8);
         long[] productIdArray = new long[1];
@@ -263,8 +229,10 @@ class CreateOrderStepTest extends BaseIntegrationTest {
         // When - Forward Flow (주문 생성)
         createOrderStep.execute(context);
 
-        // Then - 초기 상태 PENDING
-        Order createdOrder = context.getOrder();
+        // Then - 초기 상태 PENDING (DB 검증)
+        Order createdOrder = newTransactionTemplate.execute(status ->
+            orderRepository.findById(context.getOrderId()).orElseThrow()
+        );
         assertEquals(OrderStatus.PENDING, createdOrder.getOrderStatus(), "초기 상태는 PENDING이어야 함");
 
         // When - Backward Flow (주문 취소)
@@ -272,7 +240,7 @@ class CreateOrderStepTest extends BaseIntegrationTest {
 
         // Then - 최종 상태 CANCELLED
         Order cancelledOrder = newTransactionTemplate.execute(status ->
-            orderRepository.findById(createdOrder.getOrderId()).orElseThrow()
+            orderRepository.findById(context.getOrderId()).orElseThrow()
         );
         assertEquals(OrderStatus.CANCELLED, cancelledOrder.getOrderStatus(),
             "최종 상태는 CANCELLED이어야 함");
@@ -335,9 +303,9 @@ class CreateOrderStepTest extends BaseIntegrationTest {
         createOrderStep.execute(context);
 
         // 주문 상태를 수동으로 PAID로 변경
-        Order createdOrder = context.getOrder();
+        Long orderId = context.getOrderId();
         newTransactionTemplate.execute(status -> {
-            Order dbOrder = orderRepository.findById(createdOrder.getOrderId()).orElseThrow();
+            Order dbOrder = orderRepository.findById(orderId).orElseThrow();
             dbOrder.markAsPaid(); // PENDING → PAID
             orderRepository.save(dbOrder);
             return null;
@@ -348,7 +316,7 @@ class CreateOrderStepTest extends BaseIntegrationTest {
 
         // Then - PAID 상태 유지 (보상 skip)
         Order afterCompensate = newTransactionTemplate.execute(status ->
-            orderRepository.findById(createdOrder.getOrderId()).orElseThrow()
+            orderRepository.findById(orderId).orElseThrow()
         );
         assertEquals(OrderStatus.PAID, afterCompensate.getOrderStatus(),
             "PENDING이 아닌 경우 보상이 skip 되어 상태가 유지되어야 함");
@@ -423,15 +391,11 @@ class CreateOrderStepTest extends BaseIntegrationTest {
         // When - Forward Flow (주문 생성)
         createOrderStep.execute(context);
 
-        // Then - 2개의 OrderItem이 생성되어야 함
-        Order createdOrder = context.getOrder();
-        assertNotNull(createdOrder, "주문이 생성되어야 함");
-        assertEquals(2, createdOrder.getOrderItems().size(), "2개의 OrderItem이 생성되어야 함");
-
-        // DB에서 주문 및 OrderItem 조회
-        Order dbOrder = newTransactionTemplate.execute(status ->
-            orderRepository.findById(createdOrder.getOrderId()).orElseThrow()
+        // Then - 2개의 OrderItem이 생성되어야 함 (DB 검증)
+        assertNotNull(context.getOrderId(), "주문 ID가 context에 설정되어야 함");
+        Order createdOrder = newTransactionTemplate.execute(status ->
+            orderRepository.findById(context.getOrderId()).orElseThrow()
         );
-        assertEquals(2, dbOrder.getOrderItems().size(), "DB에 2개의 OrderItem이 저장되어야 함");
+        assertEquals(2, createdOrder.getOrderItems().size(), "2개의 OrderItem이 생성되어야 함");
     }
 }

@@ -1,4 +1,6 @@
-package com.hhplus.ecommerce.application.order.saga;
+package com.hhplus.ecommerce.application.order.saga.orchestration;
+
+import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
 
 /**
  * SagaStep - Saga 오케스트레이터 패턴의 개별 Step 인터페이스
