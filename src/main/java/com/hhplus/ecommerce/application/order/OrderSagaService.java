@@ -4,9 +4,8 @@ import com.hhplus.ecommerce.application.order.saga.OrderSagaOrchestrator;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderItem;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
-import com.hhplus.ecommerce.domain.order.event.CompensationCompletedEvent;
-import com.hhplus.ecommerce.domain.order.event.CompensationFailedEvent;
-import com.hhplus.ecommerce.domain.order.event.PaymentSuccessEvent;
+import com.hhplus.ecommerce.domain.order.event.OrderSagaEvent;
+import com.hhplus.ecommerce.domain.order.event.SagaEventType;
 import com.hhplus.ecommerce.domain.order.event.OrderCompletedEvent;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
@@ -177,27 +176,27 @@ public class OrderSagaService {
             log.info("[OrderSagaService] Saga Orchestrator 주문 생성 완료 - orderId={}, 결제완료",
                     order.getOrderId());
 
-            // ========== Step 3: 성공 이벤트 발행 ==========
-            // ✅ 트랜잭션 외부 I/O 분리: PaymentSuccessEvent 발행
+            // ========== Step 3: Saga 성공 이벤트 발행 ==========
+            // ✅ 트랜잭션 외부 I/O 분리: OrderSagaEvent(COMPLETED) 발행
             // - 이벤트는 트랜잭션 커밋 후 AFTER_COMMIT + @Async 리스너에서 처리
             // - 알림 실패가 비즈니스 트랜잭션에 영향을 주지 않음
             // ✅ Outbox 패턴 통합: 실패 시 Outbox에 저장하여 배치 재시도 보장
             try {
-                PaymentSuccessEvent event = new PaymentSuccessEvent(
+                OrderSagaEvent event = OrderSagaEvent.completed(
                         order.getOrderId(),
                         userId,
                         finalAmount
                 );
                 eventPublisher.publishEvent(event);
-                log.debug("[OrderSagaService] PaymentSuccessEvent 발행: orderId={}", order.getOrderId());
+                log.debug("[OrderSagaService] OrderSagaEvent(COMPLETED) 발행: orderId={}", order.getOrderId());
             } catch (Exception e) {
                 // 이벤트 발행 실패 시 Outbox에 저장하여 배치 재시도 보장
-                log.warn("[OrderSagaService] PaymentSuccessEvent 발행 실패 - Outbox에 저장: orderId={}, error={}",
+                log.warn("[OrderSagaService] OrderSagaEvent(COMPLETED) 발행 실패 - Outbox에 저장: orderId={}, error={}",
                         order.getOrderId(), e.getMessage());
 
                 try {
-                    // PaymentSuccessEvent를 JSON으로 직렬화
-                    PaymentSuccessEvent event = new PaymentSuccessEvent(
+                    // OrderSagaEvent를 JSON으로 직렬화
+                    OrderSagaEvent event = OrderSagaEvent.completed(
                             order.getOrderId(),
                             userId,
                             finalAmount
@@ -206,22 +205,22 @@ public class OrderSagaService {
 
                     // Outbox에 저장 (배치가 재시도)
                     outboxEventPublisher.publishWithOutbox(
-                            "PAYMENT_SUCCESS",
+                            "SAGA_COMPLETED",
                             order.getOrderId(),
                             userId,
                             eventPayload
                     );
 
-                    log.info("[OrderSagaService] PaymentSuccessEvent Outbox 저장 완료 - orderId={}, 배치가 재시도합니다",
+                    log.info("[OrderSagaService] OrderSagaEvent(COMPLETED) Outbox 저장 완료 - orderId={}, 배치가 재시도합니다",
                             order.getOrderId());
 
                 } catch (JsonProcessingException jsonError) {
                     // JSON 직렬화 실패 (심각한 오류)
-                    log.error("[OrderSagaService] PaymentSuccessEvent JSON 직렬화 실패 - orderId={}, error={}",
+                    log.error("[OrderSagaService] OrderSagaEvent JSON 직렬화 실패 - orderId={}, error={}",
                             order.getOrderId(), jsonError.getMessage(), jsonError);
                 } catch (Exception outboxError) {
                     // Outbox 저장 실패 (심각한 오류)
-                    log.error("[OrderSagaService] PaymentSuccessEvent Outbox 저장 실패 - orderId={}, error={}",
+                    log.error("[OrderSagaService] OrderSagaEvent Outbox 저장 실패 - orderId={}, error={}",
                             order.getOrderId(), outboxError.getMessage(), outboxError);
                 }
             }
@@ -258,17 +257,18 @@ public class OrderSagaService {
             log.error("[OrderSagaService] Saga Orchestrator 주문 생성 실패 (이미 보상 완료) - userId={}, error={}",
                     userId, e.getMessage(), e);
 
-            // ✅ 보상 실패 이벤트 발행 (OrderSagaOrchestrator에서 보상 실패 시)
+            // ✅ Saga 실패 이벤트 발행
+            // OrderSagaOrchestrator에서 보상이 완료된 후 발행
             try {
-                CompensationFailedEvent event = new CompensationFailedEvent(
+                OrderSagaEvent event = OrderSagaEvent.failed(
                         null, // orderId가 없을 수 있음
                         userId,
                         e.getMessage()
                 );
                 eventPublisher.publishEvent(event);
-                log.debug("[OrderSagaService] CompensationFailedEvent 발행: userId={}", userId);
+                log.debug("[OrderSagaService] OrderSagaEvent(FAILED) 발행: userId={}", userId);
             } catch (Exception eventError) {
-                log.warn("[OrderSagaService] CompensationFailedEvent 발행 실패 (무시됨): userId={}, error={}",
+                log.warn("[OrderSagaService] OrderSagaEvent(FAILED) 발행 실패 (무시됨): userId={}, error={}",
                         userId, eventError.getMessage());
             }
 
@@ -388,25 +388,13 @@ public class OrderSagaService {
             Order cancelledOrder = orderRepository.save(order);
             log.info("[OrderSagaService] STEP 3-3 완료: 주문 상태 변경 완료 - orderId={}, 최종상태=CANCELLED", orderId);
 
-            // ==================== STEP 7: 완료 알림 ====================
+            // ==================== STEP 7: 보상 완료 알림 ====================
             log.info("[OrderSagaService] 보상 트랜잭션 완료 - orderId={}, 최종상태=CANCELLED", orderId);
 
-            // ✅ 트랜잭션 외부 I/O 분리: CompensationCompletedEvent 발행
-            // - alertService 호출 제거 (외부 I/O)
-            // - 이벤트는 트랜잭션 커밋 후 AFTER_COMMIT + @Async 리스너에서 처리
-            try {
-                CompensationCompletedEvent event = new CompensationCompletedEvent(
-                        orderId,
-                        order.getUserId(),
-                        order.getFinalAmount()
-                );
-                eventPublisher.publishEvent(event);
-                log.debug("[OrderSagaService] CompensationCompletedEvent 발행: orderId={}", orderId);
-            } catch (Exception e) {
-                // 이벤트 발행 실패는 로깅만 하고 메인 로직에 영향 주지 않음
-                log.warn("[OrderSagaService] CompensationCompletedEvent 발행 실패 (무시됨): orderId={}, error={}",
-                        orderId, e.getMessage());
-            }
+            // ✅ 보상 완료는 Saga 실패로 간주 (FAILED 이벤트 발행)
+            // - 보상이 성공했더라도 Saga 자체는 실패한 것
+            // - CompensationCompletedEvent 제거됨
+            // Note: 별도 알림이 필요한 경우 리스너에서 FAILED 타입을 세분화 처리 가능
 
             return cancelledOrder;
 
@@ -414,18 +402,19 @@ public class OrderSagaService {
             log.error("[OrderSagaService] 보상 트랜잭션 중 오류 발생! 수동 개입 필요 - orderId={}, error={}, message={}",
                     orderId, e.getClass().getSimpleName(), e.getMessage(), e);
 
-            // ✅ 트랜잭션 외부 I/O 분리: CompensationFailedEvent 발행
-            // - alertService 호출 제거 (외부 I/O)
+            // ✅ 보상 실패 이벤트 발행
+            // - OrderSagaEvent(COMPENSATION_FAILED) 발행
+            // - 수동 개입 필요한 심각한 상황
             try {
-                CompensationFailedEvent event = new CompensationFailedEvent(
+                OrderSagaEvent event = OrderSagaEvent.compensationFailed(
                         orderId,
                         order.getUserId(),
                         e.getMessage()
                 );
                 eventPublisher.publishEvent(event);
-                log.debug("[OrderSagaService] CompensationFailedEvent 발행: orderId={}", orderId);
+                log.debug("[OrderSagaService] OrderSagaEvent(COMPENSATION_FAILED) 발행: orderId={}", orderId);
             } catch (Exception eventError) {
-                log.warn("[OrderSagaService] CompensationFailedEvent 발행 실패 (무시됨): orderId={}, error={}",
+                log.warn("[OrderSagaService] OrderSagaEvent(COMPENSATION_FAILED) 발행 실패 (무시됨): orderId={}, error={}",
                         orderId, eventError.getMessage());
             }
 
