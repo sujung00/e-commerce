@@ -43,6 +43,7 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers:1.21.3'
     testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
     testImplementation 'org.testcontainers:mysql:1.21.3'
+    testImplementation 'org.testcontainers:kafka:1.21.3'
     // Redis는 GenericContainer로 사용하므로 별도 의존성 불필요
     // Redis 이미지: redis:7.0은 Docker Hub에서 자동 다운로드
 
@@ -59,6 +60,13 @@ dependencies {
     implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.1.0'
     implementation 'io.github.resilience4j:resilience4j-timelimiter:2.1.0'
     implementation 'org.springframework.boot:spring-boot-starter-aop'
+
+    // Kafka - 메시지 브로커 (Producer/Consumer)
+    implementation 'org.springframework.kafka:spring-kafka'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+
+    // Awaitility - 비동기 테스트 대기 (Kafka Consumer 처리 대기)
+    testImplementation 'org.awaitility:awaitility:4.2.0'
 }
 
 tasks.named('test') {

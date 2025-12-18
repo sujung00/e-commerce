@@ -1,6 +1,7 @@
 package com.hhplus.ecommerce.application.order.listener;
 
 import com.hhplus.ecommerce.domain.order.event.OrderCompletedEvent;
+import com.hhplus.ecommerce.infrastructure.kafka.OrderEventProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -12,14 +13,14 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * DataPlatformEventListener - 데이터 플랫폼 실시간 전송 이벤트 리스너
  *
  * 역할:
- * - 주문 완료 시점에 실시간으로 주문 정보를 데이터 플랫폼으로 전송
+ * - 주문 완료 시점에 실시간으로 주문 정보를 Kafka로 발행
  * - 트랜잭션 커밋 후 비동기로 실행하여 트랜잭션과 관심사 분리
- * - 전송 실패 시에도 주문 트랜잭션에 영향 없음
+ * - Kafka 전송 실패 시에도 주문 트랜잭션에 영향 없음
  *
  * 트랜잭션 분리 이유:
- * - 데이터 플랫폼 전송은 외부 I/O 작업 (HTTP, Kafka 등)
+ * - Kafka 메시지 발행은 외부 I/O 작업 (네트워크 통신)
  * - 트랜잭션 내부에서 실행 시 성능 저하 및 트랜잭션 지연
- * - 전송 실패가 비즈니스 트랜잭션에 영향을 주지 않아야 함
+ * - Kafka 전송 실패가 비즈니스 트랜잭션에 영향을 주지 않아야 함
  *
  * 이벤트 처리 시점: AFTER_COMMIT
  * - 트랜잭션 커밋 성공 후에만 실행
@@ -32,15 +33,23 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *
  * 백업 메커니즘:
  * - Outbox 패턴과 병행 (배치 기반 재전송 보장)
- * - 실시간 전송 실패 시 Outbox 배치가 재전송
+ * - Kafka 전송 실패 시 Outbox 배치가 재전송
+ *
+ * Kafka 전송:
+ * - Topic: order.events
+ * - Key: orderId (파티션 분배 기준)
+ * - Value: OrderCompletedEvent (JSON)
  */
 @Component
 public class DataPlatformEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(DataPlatformEventListener.class);
 
-    // TODO: 실제 구현 시 DataPlatformClient 주입
-    // private final DataPlatformClient dataPlatformClient;
+    private final OrderEventProducer orderEventProducer;
+
+    public DataPlatformEventListener(OrderEventProducer orderEventProducer) {
+        this.orderEventProducer = orderEventProducer;
+    }
 
     /**
      * 주문 완료 이벤트 리스너
@@ -78,48 +87,35 @@ public class DataPlatformEventListener {
     }
 
     /**
-     * 데이터 플랫폼으로 주문 정보 전송
+     * 데이터 플랫폼으로 주문 정보 전송 (Kafka 기반)
      *
-     * 전송 방법 (실제 구현 시 선택):
-     * 1. HTTP 방식:
-     *    - RestTemplate 또는 WebClient 사용
-     *    - POST http://data-platform.example.com/api/orders
+     * Kafka 전송:
+     * - OrderEventProducer를 통해 order.events 토픽으로 발행
+     * - Key: orderId (파티션 분배 기준)
+     * - Value: OrderCompletedEvent (JSON 직렬화)
      *
-     * 2. Kafka 방식:
-     *    - KafkaTemplate 사용
-     *    - kafkaTemplate.send("order.completed", event).get();
+     * 비동기 전송:
+     * - KafkaTemplate.send()는 CompletableFuture 반환
+     * - 즉시 반환되며 별도 스레드에서 전송 수행
+     * - 콜백으로 성공/실패 처리 (OrderEventProducer 내부)
      *
-     * 3. 메시지 큐 방식:
-     *    - RabbitMQ, AWS SQS 등
+     * 실패 처리:
+     * - Kafka 전송 실패 시 OrderEventProducer에서 에러 로깅
+     * - Outbox 테이블에 이미 저장되어 있으므로 배치 재전송 보장
      *
      * @param event 주문 완료 이벤트
-     * @throws Exception 전송 실패 시
+     * @throws Exception 전송 실패 시 (재시도는 KafkaConfig의 retries 설정)
      */
     private void sendToDataPlatform(OrderCompletedEvent event) throws Exception {
-        // TODO: 실제 구현
-        // 방법 1: HTTP 전송
-        // OrderPlatformDto dto = new OrderPlatformDto(
-        //     event.getOrderId(),
-        //     event.getUserId(),
-        //     event.getTotalAmount(),
-        //     event.getOccurredAt()
-        // );
-        // dataPlatformClient.sendOrder(dto);
-        //
-        // 방법 2: Kafka 전송
-        // kafkaTemplate.send("order.completed",
-        //                   String.valueOf(event.getOrderId()),
-        //                   event).get();
-
-        // 현재: 로깅만 수행 (프로토타입)
-        log.info("[DataPlatformEventListener] >>> 데이터 플랫폼으로 전송 <<<");
+        log.info("[DataPlatformEventListener] >>> Kafka로 주문 이벤트 발행 <<<");
         log.info("[DataPlatformEventListener]     - orderId: {}", event.getOrderId());
         log.info("[DataPlatformEventListener]     - userId: {}", event.getUserId());
         log.info("[DataPlatformEventListener]     - totalAmount: {}", event.getTotalAmount());
         log.info("[DataPlatformEventListener]     - occurredAt: {}", event.getOccurredAt());
-        log.info("[DataPlatformEventListener] >>> 전송 완료 (시뮬레이션) <<<");
 
-        // 실패 테스트용 시뮬레이션:
-        // throw new Exception("Data platform connection timeout");
+        // Kafka 메시지 발행 (비동기)
+        orderEventProducer.publishOrderCompletedEvent(event);
+
+        log.info("[DataPlatformEventListener] >>> Kafka 발행 완료 (비동기 전송 중) <<<");
     }
 }
