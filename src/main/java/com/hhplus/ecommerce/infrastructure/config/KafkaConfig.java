@@ -15,6 +15,8 @@ import org.springframework.kafka.core.*;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.common.config.TopicConfig;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -268,5 +270,44 @@ public class KafkaConfig {
         factory.setConcurrency(10);
 
         return factory;
+    }
+
+    /**
+     * Coupon Issue Requests Topic 설정
+     *
+     * 설계 문서 기준:
+     * - Partition 수: 10 (초기) → 50 (중기) → 500 (대규모)
+     * - Replication Factor: 3 (가용성 보장, 최소 2개 ISR 유지)
+     * - Retention: 7일 (168시간) - 재처리 여유 기간
+     * - Compression: snappy - 네트워크 대역폭 절약
+     *
+     * 단계별 확장:
+     * - Phase 1 (초기): 10 Partitions → 200 req/s 처리
+     * - Phase 2 (중기): 50 Partitions → 1,000 req/s 처리
+     * - Phase 3 (대규모): 500 Partitions → 10,000 req/s 처리
+     *
+     * 주의사항:
+     * - Partition 수는 증가만 가능 (감소 불가)
+     * - Consumer 수 = Partition 수 (최대 병렬도)
+     * - Replication Factor는 Broker 수 이하로 설정
+     *
+     * @return NewTopic Bean
+     */
+    @Bean
+    public NewTopic couponIssueRequestsTopic() {
+        NewTopic topic = new NewTopic(
+            "coupon.issue.requests",  // Topic 이름
+            10,                        // Partition 수 (Phase 1: 초기 설정)
+            (short) 3                  // Replication Factor (가용성 보장)
+        );
+
+        // Topic 상세 설정
+        Map<String, String> configs = new HashMap<>();
+        configs.put(TopicConfig.RETENTION_MS_CONFIG, "604800000");     // 7일 (7 * 24 * 60 * 60 * 1000)
+        configs.put(TopicConfig.COMPRESSION_TYPE_CONFIG, "snappy");    // snappy 압축
+        configs.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, "2");     // 최소 ISR 2개 (데이터 안정성)
+        topic.configs(configs);
+
+        return topic;
     }
 }
