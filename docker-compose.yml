@@ -5,12 +5,15 @@ services:
   # Kafka KRaft Mode (Single Broker)
   # ================================
   kafka:
-    image: confluentinc/cp-kafka:7.6.1  # 최신 안정 버전 (2024년 기준)
+    image: confluentinc/cp-kafka:7.6.1
     container_name: kafka-kraft
     hostname: kafka
+
     ports:
-      - "9092:9092"   # 외부 접속용 (localhost:9092)
-      - "9093:9093"   # 컨트롤러 통신용
+      - "9092:9092"   # 호스트(터미널, 앱) 접속용
+      - "9093:9093"   # 컨트롤러 통신
+      - "29092:29092" # 컨테이너(Kafka UI) 내부 통신용
+
     environment:
       # ========== KRaft 모드 기본 설정 ==========
       # 노드 ID (KRaft 클러스터 내 고유 식별자)
@@ -25,16 +28,26 @@ services:
 
       # ========== 리스너 설정 ==========
       # 리스너 구성: PLAINTEXT(외부), CONTROLLER(내부 컨트롤러 통신)
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
+        PLAINTEXT:PLAINTEXT,
+        INTERNAL:PLAINTEXT,
+        CONTROLLER:PLAINTEXT
 
       # Kafka가 바인딩할 주소 (컨테이너 내부)
       # - PLAINTEXT: 외부 클라이언트용 (9092)
       # - CONTROLLER: 컨트롤러 통신용 (9093)
-      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093'
+      KAFKA_LISTENERS: >
+        PLAINTEXT://0.0.0.0:9092,
+        INTERNAL://0.0.0.0:29092,
+        CONTROLLER://0.0.0.0:9093
 
       # 클라이언트가 접속할 주소 (외부 공개 주소)
       # - localhost:9092 = 호스트 머신에서 접속 시
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092'
+      KAFKA_ADVERTISED_LISTENERS: >
+        PLAINTEXT://localhost:9092,
+        INTERNAL://kafka:29092
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
 
       # ========== 컨트롤러 설정 ==========
       # 컨트롤러 쿼럼 투표자 목록 (node_id@host:port)
@@ -114,7 +127,7 @@ services:
 
       # Kafka 클러스터 자동 연결 설정
       KAFKA_CLUSTERS_0_NAME: 'local-kraft'
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka:9092'
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka:29092'
 
       # UI 설정
       KAFKA_CLUSTERS_0_READONLY: 'false'  # 읽기 전용 모드 비활성화 (토픽 생성/삭제 가능)
