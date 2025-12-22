@@ -1,0 +1,154 @@
+version: '3.8'
+
+services:
+  # ================================
+  # Kafka KRaft Mode (Single Broker)
+  # ================================
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka-kraft
+    hostname: kafka
+
+    ports:
+      - "9092:9092"   # 호스트(터미널, 앱) 접속용
+      - "9093:9093"   # 컨트롤러 통신
+      - "29092:29092" # 컨테이너(Kafka UI) 내부 통신용
+
+    environment:
+      # ========== KRaft 모드 기본 설정 ==========
+      # 노드 ID (KRaft 클러스터 내 고유 식별자)
+      KAFKA_NODE_ID: 1
+
+      # 노드 역할: broker(메시지 처리) + controller(메타데이터 관리)
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+
+      # 클러스터 ID (KRaft 필수, 고유해야 함)
+      # 실무에서는 kafka-storage.sh random-uuid로 생성하지만, 여기서는 고정값 사용
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+
+      # ========== 리스너 설정 ==========
+      # 리스너 구성: PLAINTEXT(외부), CONTROLLER(내부 컨트롤러 통신)
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
+        PLAINTEXT:PLAINTEXT,
+        INTERNAL:PLAINTEXT,
+        CONTROLLER:PLAINTEXT
+
+      # Kafka가 바인딩할 주소 (컨테이너 내부)
+      # - PLAINTEXT: 외부 클라이언트용 (9092)
+      # - CONTROLLER: 컨트롤러 통신용 (9093)
+      KAFKA_LISTENERS: >
+        PLAINTEXT://0.0.0.0:9092,
+        INTERNAL://0.0.0.0:29092,
+        CONTROLLER://0.0.0.0:9093
+
+      # 클라이언트가 접속할 주소 (외부 공개 주소)
+      # - localhost:9092 = 호스트 머신에서 접속 시
+      KAFKA_ADVERTISED_LISTENERS: >
+        PLAINTEXT://localhost:9092,
+        INTERNAL://kafka:29092
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      # ========== 컨트롤러 설정 ==========
+      # 컨트롤러 쿼럼 투표자 목록 (node_id@host:port)
+      # 단일 노드이므로 자기 자신만 포함
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+
+      # 컨트롤러 리스너 이름
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+
+      # ========== 로그 및 스토리지 설정 ==========
+      # Kafka 데이터 저장 경로
+      KAFKA_LOG_DIRS: '/var/lib/kafka/data'
+
+      # ========== 성능 및 운영 설정 ==========
+      # 자동 토픽 생성 허용 (개발 환경에서 편의성)
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+
+      # 기본 파티션 수
+      KAFKA_NUM_PARTITIONS: 3
+
+      # 기본 복제 계수 (단일 브로커이므로 1)
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+
+      # 최소 In-Sync Replica (단일 브로커이므로 1)
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+
+      # 로그 보존 시간 (7일)
+      KAFKA_LOG_RETENTION_HOURS: 168
+
+      # 로그 세그먼트 크기 (1GB)
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+
+      # ========== 기타 설정 ==========
+      # 오프셋 토픽 파티션 수
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+
+      # 오프셋 토픽 복제 계수
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # 트랜잭션 상태 로그 파티션 수
+      KAFKA_TRANSACTION_STATE_LOG_NUM_PARTITIONS: 1
+
+      # 트랜잭션 상태 로그 복제 계수
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      # 최소 트랜잭션 ISR
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # 그룹 초기 리밸런싱 지연 (테스트 환경에서 빠른 시작)
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+    volumes:
+      # Kafka 데이터 영속화 (컨테이너 재시작 시에도 데이터 유지)
+      - kafka-data:/var/lib/kafka/data
+
+    networks:
+      - kafka-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ================================
+  # Kafka UI (Web Interface)
+  # ================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"   # 웹 UI 접속 포트
+    environment:
+      # Kafka UI 동적 설정 모드 활성화
+      DYNAMIC_CONFIG_ENABLED: 'true'
+
+      # Kafka 클러스터 자동 연결 설정
+      KAFKA_CLUSTERS_0_NAME: 'local-kraft'
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'kafka:29092'
+
+      # UI 설정
+      KAFKA_CLUSTERS_0_READONLY: 'false'  # 읽기 전용 모드 비활성화 (토픽 생성/삭제 가능)
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    networks:
+      - kafka-network
+
+# ================================
+# Volume 정의
+# ================================
+volumes:
+  kafka-data:
+    driver: local
+
+# ================================
+# Network 정의
+# ================================
+networks:
+  kafka-network:
+    driver: bridge
