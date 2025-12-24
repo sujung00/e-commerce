@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,6 +44,16 @@ public class MySQLOutboxRepository implements OutboxRepository {
     @Override
     public List<Outbox> findAllByStatus(String status) {
         return outboxJpaRepository.findByStatus(status);
+    }
+
+    @Override
+    public List<Outbox> findByStatusIn(List<String> statuses) {
+        return outboxJpaRepository.findByStatusIn(statuses);
+    }
+
+    @Override
+    public List<Outbox> findStuckPublishingMessages(LocalDateTime threshold) {
+        return outboxJpaRepository.findStuckPublishingMessages(threshold);
     }
 
     @Override

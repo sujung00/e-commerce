@@ -10,16 +10,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 /**
- * OutboxPollingService - Outbox 메시지 배치 처리 서비스
+ * OutboxPollingService - Outbox 메시지 배치 처리 서비스 (중복 발행 방지 개선)
  *
  * 역할:
- * - 주기적으로 PENDING 상태의 Outbox 메시지를 조회
+ * - 주기적으로 PENDING/FAILED 상태의 Outbox 메시지를 조회 (PUBLISHING 제외!)
  * - 각 메시지를 외부 시스템에 발행 시도
  * - 성공/실패에 따라 메시지 상태 업데이트
  * - 최대 재시도 횟수 초과 시 ABANDONED 상태로 전환
+ * - PUBLISHING 타임아웃 메시지 처리 (멈춰있는 메시지 복구)
+ *
+ * 중복 발행 방지 메커니즘:
+ * - PUBLISHING 상태의 메시지는 조회하지 않음
+ * - 따라서 발행 성공 후 상태 업데이트 실패 시에도 재발행되지 않음
+ * - PUBLISHING 상태가 일정 시간(5분) 이상 지속되면 타임아웃 처리
  *
  * 실행:
  * - @Scheduled(fixedRate = 5000): 5초마다 실행
@@ -41,15 +48,22 @@ public class OutboxPollingService {
 
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_SECONDS = 60;  // 1분 후 재시도
+    private static final long PUBLISHING_TIMEOUT_MINUTES = 5;  // PUBLISHING 타임아웃 (5분)
 
     /**
-     * 5초마다 실행되는 배치 작업
+     * 5초마다 실행되는 배치 작업 (중복 발행 방지 개선)
      *
-     * 처리 흐름:
-     * 1. PENDING 상태의 모든 Outbox 메시지 조회
-     * 2. 각 메시지별로 외부 시스템 발행 시도
-     * 3. 성공 → SENT로 업데이트
-     * 4. 실패 → retryCount 증가, 최대 초과 시 ABANDONED로 변경
+     * 처리 흐름 (개선):
+     * 1. PENDING과 FAILED 상태의 메시지만 조회 (PUBLISHING 제외!)
+     * 2. PUBLISHING 타임아웃 메시지 처리 (5분 이상 멈춰있는 메시지)
+     * 3. 각 메시지별로 외부 시스템 발행 시도
+     * 4. 성공 → PUBLISHED로 업데이트
+     * 5. 실패 → retryCount 증가, 최대 초과 시 ABANDONED로 변경
+     *
+     * 중복 발행 방지:
+     * - PUBLISHING 상태의 메시지는 조회하지 않음
+     * - 발행 성공 후 상태 업데이트 실패 시에도 PUBLISHING 상태 유지
+     * - 따라서 배치가 재발행하지 않음 → 중복 발행 방지!
      */
     @Scheduled(fixedRate = 5000)
     @Transactional
@@ -57,18 +71,36 @@ public class OutboxPollingService {
         try {
             log.debug("[OutboxPollingService] Outbox 메시지 폴링 시작...");
 
-            // STEP 1: PENDING 상태의 모든 메시지 조회
-            List<Outbox> pendingMessages = outboxRepository.findAllByStatus("PENDING");
+            // STEP 1: PENDING과 FAILED 상태의 메시지만 조회 (PUBLISHING 제외)
+            List<Outbox> retryableMessages = outboxRepository.findByStatusIn(
+                Arrays.asList("PENDING", "FAILED")
+            );
 
-            if (pendingMessages.isEmpty()) {
-                log.debug("[OutboxPollingService] 전송할 PENDING 메시지 없음");
+            // STEP 2: PUBLISHING 타임아웃 메시지 처리 (멈춰있는 메시지 복구)
+            LocalDateTime timeoutThreshold = LocalDateTime.now().minusMinutes(PUBLISHING_TIMEOUT_MINUTES);
+            List<Outbox> stuckMessages = outboxRepository.findStuckPublishingMessages(timeoutThreshold);
+
+            if (retryableMessages.isEmpty() && stuckMessages.isEmpty()) {
+                log.debug("[OutboxPollingService] 전송할 메시지 없음 (PENDING/FAILED/STUCK)");
                 return;
             }
 
-            log.info("[OutboxPollingService] {} 개의 PENDING 메시지 발견", pendingMessages.size());
+            log.info("[OutboxPollingService] 발견된 메시지 - PENDING/FAILED: {}, STUCK PUBLISHING: {}",
+                retryableMessages.size(), stuckMessages.size());
 
-            // STEP 2: 각 메시지별로 외부 시스템에 발행 시도
-            for (Outbox message : pendingMessages) {
+            // STEP 3: PUBLISHING 타임아웃 메시지를 FAILED로 변경 (재시도 대상으로 전환)
+            for (Outbox stuck : stuckMessages) {
+                log.warn("[OutboxPollingService] PUBLISHING 타임아웃 감지 - messageId={}, orderId={}, lastAttempt={}",
+                    stuck.getMessageId(), stuck.getOrderId(), stuck.getLastAttempt());
+
+                stuck.setStatus("FAILED");
+                outboxRepository.update(stuck);
+
+                log.info("[OutboxPollingService] PUBLISHING → FAILED 전환 완료 - messageId={}", stuck.getMessageId());
+            }
+
+            // STEP 4: 각 메시지별로 외부 시스템에 발행 시도
+            for (Outbox message : retryableMessages) {
                 processMessage(message);
             }
 
@@ -80,7 +112,13 @@ public class OutboxPollingService {
     }
 
     /**
-     * 개별 Outbox 메시지 처리
+     * 개별 Outbox 메시지 처리 (중복 발행 방지 개선)
+     *
+     * 처리 흐름:
+     * 1. PUBLISHING 상태로 변경 (발행 중 표시)
+     * 2. 외부 시스템에 메시지 발행
+     * 3. 성공 → PUBLISHED 상태로 업데이트
+     * 4. 실패 → FAILED 상태로 업데이트
      *
      * @param message 처리할 Outbox 메시지
      */
@@ -89,15 +127,21 @@ public class OutboxPollingService {
             log.info("[OutboxPollingService] 메시지 발행 시작 - messageId={}, orderId={}, type={}",
                     message.getMessageId(), message.getOrderId(), message.getMessageType());
 
-            // STEP 3a: 외부 시스템에 메시지 발행
-            eventPublisher.publish(message);
-
-            // STEP 3b: 성공 - SENT 상태로 업데이트
-            message.markAsSent();
-            message.setSentAt(LocalDateTime.now());
+            // STEP 1: PUBLISHING 상태로 변경 (중복 발행 방지)
+            message.markAsPublishing();
             outboxRepository.update(message);
 
-            log.info("[OutboxPollingService] 메시지 발행 성공 - messageId={}, orderId={}, status=SENT",
+            log.info("[OutboxPollingService] 발행 시작 - messageId={}, status=PUBLISHING",
+                    message.getMessageId());
+
+            // STEP 2: 외부 시스템에 메시지 발행
+            eventPublisher.publish(message);
+
+            // STEP 3: 성공 - PUBLISHED 상태로 업데이트
+            message.markAsPublished();
+            outboxRepository.update(message);
+
+            log.info("[OutboxPollingService] 메시지 발행 성공 - messageId={}, orderId={}, status=PUBLISHED",
                     message.getMessageId(), message.getOrderId());
 
         } catch (Exception e) {

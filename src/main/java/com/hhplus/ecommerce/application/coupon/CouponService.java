@@ -14,8 +14,12 @@ import com.hhplus.ecommerce.domain.order.ChildTransactionEventRepository;
 import com.hhplus.ecommerce.domain.order.ChildTxType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hhplus.ecommerce.presentation.coupon.response.AvailableCouponResponse;
+import com.hhplus.ecommerce.presentation.coupon.response.CouponIssueAsyncResponse;
+import com.hhplus.ecommerce.presentation.coupon.response.GetAvailableCouponsResponse;
+import com.hhplus.ecommerce.presentation.coupon.response.GetUserCouponsResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.UserCouponResponse;
+import com.hhplus.ecommerce.infrastructure.kafka.CouponIssueProducer;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -69,19 +73,22 @@ public class CouponService {
     private final ChildTransactionEventRepository childTransactionEventRepository;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final CouponIssueProducer couponIssueProducer;
 
     public CouponService(CouponRepository couponRepository,
                          UserCouponRepository userCouponRepository,
                          UserRepository userRepository,
                          ChildTransactionEventRepository childTransactionEventRepository,
                          ObjectMapper objectMapper,
-                         ApplicationEventPublisher eventPublisher) {
+                         ApplicationEventPublisher eventPublisher,
+                         CouponIssueProducer couponIssueProducer) {
         this.couponRepository = couponRepository;
         this.userCouponRepository = userCouponRepository;
         this.userRepository = userRepository;
         this.childTransactionEventRepository = childTransactionEventRepository;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.couponIssueProducer = couponIssueProducer;
     }
 
     /**
@@ -336,11 +343,20 @@ public class CouponService {
      * - Redis 캐시: TTL 5분으로 조회 성능 10배 향상
      * - 캐시 무효화: 쿠폰 발급/사용 시 자동 무효화
      *
+     * ✅ 캐시 스탬피드 방지 (sync=true):
+     * - 동일 사용자의 캐시 만료 시 첫 번째 스레드만 DB 조회
+     * - 나머지 스레드는 캐시 갱신 완료까지 대기
+     * - 동시 요청 시 DB 부하 방지
+     *
+     * 컨트롤러에서 이동된 비즈니스 로직:
+     * - 응답 DTO 생성 (GetUserCouponsResponse)
+     *
      * 비즈니스 로직:
      * 1. 사용자 존재 검증
      * 2. status별 필터링 (기본값: UNUSED)
      * 3. 사용자의 쿠폰 목록을 Fetch Join으로 조회 (N+1 해결)
      * 4. UserCoupon + Coupon 정보 결합하여 Response 생성
+     * 5. GetUserCouponsResponse로 래핑하여 반환
      *
      * 캐시 전략:
      * - key: "userId:status" (예: "123:UNUSED")
@@ -349,15 +365,16 @@ public class CouponService {
      *
      * @param userId 사용자 ID
      * @param status 쿠폰 상태 (UNUSED | USED | EXPIRED | CANCELLED)
-     * @return 사용자 쿠폰 목록
+     * @return 사용자 쿠폰 응답 DTO
      * @throws UserNotFoundException 사용자를 찾을 수 없음
      */
     @Cacheable(
             value = "userCouponsCache",
             key = "#userId + ':' + (#status != null && !#status.isEmpty() ? #status : 'UNUSED')",
-            unless = "#result == null || #result.isEmpty()"
+            unless = "#result == null || #result.userCoupons == null || #result.userCoupons.isEmpty()",
+            sync = true
     )
-    public List<UserCouponResponse> getUserCoupons(Long userId, String status) {
+    public GetUserCouponsResponse getUserCoupons(Long userId, String status) {
         // 1. 사용자 존재 검증
         if (!userRepository.existsById(userId)) {
             throw new UserNotFoundException(userId);
@@ -375,13 +392,18 @@ public class CouponService {
         // 4. UserCoupon + Coupon 정보 결합
         // ✅ 주의: UserCoupon에는 coupon 관계가 없으므로 개별 조회는 피할 수 없음
         // 하지만 Fetch Join이 적용된 쿼리면 메모리에서 빠르게 처리됨
-        return userCoupons.stream()
+        List<UserCouponResponse> userCouponResponses = userCoupons.stream()
                 .map(uc -> {
                     Coupon coupon = couponRepository.findById(uc.getCouponId())
                             .orElseThrow(() -> new CouponNotFoundException(uc.getCouponId()));
                     return UserCouponResponse.from(uc, coupon);
                 })
                 .collect(Collectors.toList());
+
+        // 5. GetUserCouponsResponse로 래핑하여 반환
+        return GetUserCouponsResponse.builder()
+                .userCoupons(userCouponResponses)
+                .build();
     }
 
     /**
@@ -392,44 +414,119 @@ public class CouponService {
      * TTL: 30분 (Redis로 자동 관리)
      * 예상 효과: TPS 300 → 2000 (6배 향상)
      *
+     * ✅ 캐시 스탬피드 방지 (sync=true):
+     * - 캐시 만료 시 첫 번째 스레드만 DB 조회
+     * - 나머지 스레드는 캐시 갱신 완료까지 대기
+     * - 동시 100개 요청 → 1개 DB 조회로 감소
+     *
+     * 컨트롤러에서 이동된 비즈니스 로직:
+     * - 응답 DTO 생성 (GetAvailableCouponsResponse)
+     *
      * 비즈니스 로직:
      * 1. 발급 가능한 쿠폰 조회 (is_active=true, 유효기간 내, remaining_qty > 0)
      * 2. Response로 변환
+     * 3. GetAvailableCouponsResponse로 래핑하여 반환
      *
      * 필터링 조건:
      * - is_active = true
      * - valid_from <= NOW <= valid_until
      * - remaining_qty > 0
      *
-     * @return 발급 가능한 쿠폰 목록
-     */
-    /**
      * 캐시 이름: couponListCache
      * 캐시 키: cache:coupon:list (고정)
+     *
+     * @return 발급 가능한 쿠폰 응답 DTO
      */
-    @Cacheable(value = "couponListCache", key = "'cache:coupon:list'")
-    public List<AvailableCouponResponse> getAvailableCoupons() {
+    @Cacheable(value = "couponListCache", key = "'cache:coupon:list'", sync = true)
+    public GetAvailableCouponsResponse getAvailableCoupons() {
         // 1. 발급 가능한 쿠폰 조회
         List<Coupon> availableCoupons = couponRepository.findAllAvailable();
 
         // 2. Response로 변환
-        return availableCoupons.stream()
+        List<AvailableCouponResponse> coupons = availableCoupons.stream()
                 .map(AvailableCouponResponse::from)
                 .collect(Collectors.toList());
+
+        // 3. GetAvailableCouponsResponse로 래핑하여 반환
+        return GetAvailableCouponsResponse.builder()
+                .coupons(coupons)
+                .build();
+    }
+
+    /**
+     * 쿠폰 발급 (Kafka 기반 비동기)
+     *
+     * 컨트롤러에서 이동된 비즈니스 로직:
+     * 1. 기본 입력 검증
+     * 2. 캐시에서 쿠폰 존재 여부 확인
+     * 3. Kafka로 쿠폰 발급 요청 발행
+     * 4. 응답 DTO 생성
+     * 5. 예외 처리
+     *
+     * 특징:
+     * - Kafka 기반 비동기 처리
+     * - 즉시 응답 (< 10ms, 202 Accepted)
+     * - userId 기반 파티셔닝으로 순서 보장
+     * - 10개 파티션 + 10개 Consumer = 병렬 처리
+     * - 성능: 200 req/s (P=10)
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
+     * @return Kafka 비동기 발급 응답 (requestId 포함)
+     */
+    public CouponIssueAsyncResponse issueCouponKafka(Long userId, Long couponId) {
+        // 1. 기본 입력 검증
+        if (userId == null || userId <= 0) {
+            log.warn("[CouponService] 잘못된 사용자 ID: userId={}", userId);
+            throw new IllegalArgumentException("유효하지 않은 사용자 ID입니다");
+        }
+        if (couponId == null || couponId <= 0) {
+            log.warn("[CouponService] 잘못된 쿠폰 ID: couponId={}", couponId);
+            throw new IllegalArgumentException("유효하지 않은 쿠폰 ID입니다");
+        }
+
+        // 2. 캐시에서 쿠폰 존재 여부 빠르게 확인
+        AvailableCouponResponse couponFromCache = getAvailableCouponFromCache(couponId);
+        if (couponFromCache == null) {
+            log.warn("[CouponService] 쿠폰을 찾을 수 없음: couponId={}", couponId);
+            throw new IllegalArgumentException("쿠폰을 찾을 수 없습니다");
+        }
+
+        try {
+            // 3. Kafka로 쿠폰 발급 요청 발행
+            String requestId = couponIssueProducer.sendCouponIssueRequest(userId, couponId);
+
+            log.info("[CouponService] Kafka 쿠폰 발급 요청 발행 완료: " +
+                    "requestId={}, userId={}, couponId={}",
+                    requestId, userId, couponId);
+
+            // 4. 202 Accepted 응답 생성
+            return CouponIssueAsyncResponse.builder()
+                    .requestId(requestId)
+                    .status("PENDING")
+                    .message("쿠폰 발급 요청이 Kafka로 전송되었습니다. Consumer가 비동기로 처리합니다.")
+                    .build();
+
+        } catch (Exception e) {
+            // 5. 예외 처리
+            log.error("[CouponService] Kafka 발행 실패: userId={}, couponId={}, error={}",
+                    userId, couponId, e.getMessage(), e);
+            throw new RuntimeException("쿠폰 발급 요청 발행 실패: " + e.getMessage(), e);
+        }
     }
 
     /**
      * 특정 쿠폰을 캐시에서 조회
      *
-     * CouponController에서 기본 검증용으로 사용
+     * CouponQueueService에서 기본 검증용으로 사용
      *
      * @param couponId 쿠폰 ID
      * @return 쿠폰 정보 (없으면 null)
      */
     public AvailableCouponResponse getAvailableCouponFromCache(Long couponId) {
         try {
-            List<AvailableCouponResponse> coupons = getAvailableCoupons();
-            return coupons.stream()
+            GetAvailableCouponsResponse response = getAvailableCoupons();
+            return response.getCoupons().stream()
                 .filter(c -> c.getCouponId().equals(couponId))
                 .findFirst()
                 .orElse(null);

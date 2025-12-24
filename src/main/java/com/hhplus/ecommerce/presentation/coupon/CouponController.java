@@ -3,21 +3,16 @@ package com.hhplus.ecommerce.presentation.coupon;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.coupon.CouponQueueService;
 import com.hhplus.ecommerce.application.coupon.dto.CouponIssueStatusResponse;
-import com.hhplus.ecommerce.infrastructure.kafka.CouponIssueProducer;
 import com.hhplus.ecommerce.presentation.coupon.request.IssueCouponRequest;
-import com.hhplus.ecommerce.presentation.coupon.response.AvailableCouponResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.CouponIssueAsyncResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.GetAvailableCouponsResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.GetUserCouponsResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
-import com.hhplus.ecommerce.presentation.coupon.response.UserCouponResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 /**
  * CouponController - Presentation 계층
@@ -42,15 +37,12 @@ public class CouponController {
 
     private final CouponService couponService;
     private final CouponQueueService couponQueueService;
-    private final CouponIssueProducer couponIssueProducer;
 
     public CouponController(
             CouponService couponService,
-            CouponQueueService couponQueueService,
-            CouponIssueProducer couponIssueProducer) {
+            CouponQueueService couponQueueService) {
         this.couponService = couponService;
         this.couponQueueService = couponQueueService;
-        this.couponIssueProducer = couponIssueProducer;
     }
 
     /**
@@ -73,6 +65,11 @@ public class CouponController {
      * 4.1-async 쿠폰 발급 (비동기, FIFO 보장)
      * POST /api/coupons/issue/async
      *
+     * 역할 (Presentation 계층):
+     * - HTTP 요청 파라미터 추출
+     * - 서비스 호출
+     * - HTTP 상태 코드 설정
+     *
      * 특징:
      * - 즉시 응답 (< 10ms, 202 Accepted)
      * - Redis 큐에 요청 저장 (FIFO)
@@ -88,30 +85,7 @@ public class CouponController {
             @RequestHeader("X-USER-ID") Long userId,
             @RequestBody IssueCouponRequest request) {
 
-        // 기본 입력 검증
-        if (userId == null || userId <= 0) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (request.getCouponId() == null || request.getCouponId() <= 0) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        // 캐시에서 쿠폰 존재 여부 빠르게 확인
-        if (couponService.getAvailableCouponFromCache(request.getCouponId()) == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(CouponIssueAsyncResponse.error("쿠폰을 찾을 수 없습니다"));
-        }
-
-        // Redis 큐에 요청 추가
-        String requestId = couponQueueService.enqueueCouponRequest(userId, request.getCouponId());
-
-        // 202 Accepted 응답 (즉시 반환)
-        CouponIssueAsyncResponse response = CouponIssueAsyncResponse.builder()
-                .requestId(requestId)
-                .status("PENDING")
-                .message("쿠폰 발급 요청이 접수되었습니다. requestId로 상태를 확인하세요.")
-                .build();
-
+        CouponIssueAsyncResponse response = couponQueueService.issueCouponAsync(userId, request.getCouponId());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
@@ -119,75 +93,39 @@ public class CouponController {
      * 4.1-kafka 쿠폰 발급 (Kafka 기반 비동기)
      * POST /api/coupons/issue/kafka
      *
+     * 역할 (Presentation 계층):
+     * - HTTP 요청 파라미터 추출
+     * - 서비스 호출
+     * - HTTP 상태 코드 설정
+     *
      * 특징:
      * - Kafka 기반 비동기 처리
-     * - 즉시 응답 (< 10ms, 202 Accepted)
-     * - userId 기반 파티셔닝으로 순서 보장
-     * - 10개 파티션 + 10개 Consumer = 병렬 처리
-     * - 성능: 200 req/s (P=10)
-     *
-     * 흐름:
-     * 1. 기본 검증 (userId, couponId)
-     * 2. CouponIssueProducer.sendCouponIssueRequest() 호출
-     *    - Kafka Topic: coupon.issue.requests로 발행
-     *    - Key: userId (파티셔닝)
-     * 3. 202 Accepted 응답 (requestId 반환)
-     * 4. Consumer가 비동기로 처리
+     * - 동기 대기 후 응답 (< 5초, 202 Accepted)
+     * - couponId 기반 파티셔닝으로 선착순 보장 (✅ 개선: userId → couponId)
+     * - 10개 파티션 + 10개 Consumer = 쿠폰별 순차 처리
+     * - 순서 보장: 같은 쿠폰 요청은 순서대로 처리
      *
      * @param userId X-USER-ID 헤더 (사용자 ID)
      * @param request 쿠폰 발급 요청 (coupon_id)
-     * @return 요청 ID (202 Accepted)
+     * @return 요청 ID (202 Accepted) 또는 에러 (500 Internal Server Error)
      */
     @PostMapping("/issue/kafka")
     public ResponseEntity<CouponIssueAsyncResponse> issueCouponKafka(
             @RequestHeader("X-USER-ID") Long userId,
             @RequestBody IssueCouponRequest request) {
 
-        // 기본 입력 검증
-        if (userId == null || userId <= 0) {
-            log.warn("[CouponController] 잘못된 사용자 ID: userId={}", userId);
-            return ResponseEntity.badRequest().build();
-        }
-        if (request.getCouponId() == null || request.getCouponId() <= 0) {
-            log.warn("[CouponController] 잘못된 쿠폰 ID: couponId={}", request.getCouponId());
-            return ResponseEntity.badRequest().build();
-        }
-
-        // 캐시에서 쿠폰 존재 여부 빠르게 확인
-        if (couponService.getAvailableCouponFromCache(request.getCouponId()) == null) {
-            log.warn("[CouponController] 쿠폰을 찾을 수 없음: couponId={}", request.getCouponId());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(CouponIssueAsyncResponse.error("쿠폰을 찾을 수 없습니다"));
-        }
-
-        try {
-            // Kafka로 쿠폰 발급 요청 발행
-            String requestId = couponIssueProducer.sendCouponIssueRequest(userId, request.getCouponId());
-
-            log.info("[CouponController] Kafka 쿠폰 발급 요청 발행 완료: " +
-                    "requestId={}, userId={}, couponId={}",
-                    requestId, userId, request.getCouponId());
-
-            // 202 Accepted 응답 (즉시 반환)
-            CouponIssueAsyncResponse response = CouponIssueAsyncResponse.builder()
-                    .requestId(requestId)
-                    .status("PENDING")
-                    .message("쿠폰 발급 요청이 Kafka로 전송되었습니다. Consumer가 비동기로 처리합니다.")
-                    .build();
-
-            return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
-
-        } catch (Exception e) {
-            log.error("[CouponController] Kafka 발행 실패: userId={}, couponId={}, error={}",
-                    userId, request.getCouponId(), e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(CouponIssueAsyncResponse.error("쿠폰 발급 요청 발행 실패: " + e.getMessage()));
-        }
+        CouponIssueAsyncResponse response = couponService.issueCouponKafka(userId, request.getCouponId());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
     /**
      * 4.1-status 쿠폰 발급 상태 조회 (폴링용)
      * GET /api/coupons/issue/status/{requestId}
+     *
+     * 역할 (Presentation 계층):
+     * - HTTP 요청 파라미터 추출
+     * - 서비스 호출
+     * - HTTP 상태 코드 설정
      *
      * 상태:
      * - PENDING: 처리 대기 중
@@ -203,10 +141,6 @@ public class CouponController {
     public ResponseEntity<CouponIssueStatusResponse> getIssueStatus(
             @PathVariable String requestId) {
 
-        if (requestId == null || requestId.trim().isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-
         CouponIssueStatusResponse response = couponQueueService.getRequestStatus(requestId);
         return ResponseEntity.ok(response);
     }
@@ -214,6 +148,11 @@ public class CouponController {
     /**
      * 4.2 사용자가 보유한 쿠폰 조회
      * GET /api/coupons/issued?status=ACTIVE
+     *
+     * 역할 (Presentation 계층):
+     * - HTTP 요청 파라미터 추출
+     * - 서비스 호출
+     * - HTTP 상태 코드 설정
      *
      * @param userId X-USER-ID 헤더 (사용자 ID)
      * @param status 쿠폰 상태 (ACTIVE | USED | EXPIRED), 기본값: "ACTIVE"
@@ -223,10 +162,7 @@ public class CouponController {
     public ResponseEntity<GetUserCouponsResponse> getUserCoupons(
             @RequestHeader("X-USER-ID") Long userId,
             @RequestParam(required = false, defaultValue = "ACTIVE") String status) {
-        List<UserCouponResponse> userCoupons = couponService.getUserCoupons(userId, status);
-        GetUserCouponsResponse response = GetUserCouponsResponse.builder()
-                .userCoupons(userCoupons)
-                .build();
+        GetUserCouponsResponse response = couponService.getUserCoupons(userId, status);
         return ResponseEntity.ok(response);
     }
 
@@ -234,14 +170,16 @@ public class CouponController {
      * 4.3 사용 가능한 쿠폰 조회
      * GET /api/coupons
      *
+     * 역할 (Presentation 계층):
+     * - HTTP 요청 파라미터 추출
+     * - 서비스 호출
+     * - HTTP 상태 코드 설정
+     *
      * @return 발급 가능한 쿠폰 목록 (200 OK)
      */
     @GetMapping
     public ResponseEntity<GetAvailableCouponsResponse> getAvailableCoupons() {
-        List<AvailableCouponResponse> coupons = couponService.getAvailableCoupons();
-        GetAvailableCouponsResponse response = GetAvailableCouponsResponse.builder()
-                .coupons(coupons)
-                .build();
+        GetAvailableCouponsResponse response = couponService.getAvailableCoupons();
         return ResponseEntity.ok(response);
     }
 }

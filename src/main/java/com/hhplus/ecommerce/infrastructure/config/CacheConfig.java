@@ -32,15 +32,22 @@ import java.util.Map;
  *
  * 3. 기존 기능 유지: 모든 캐시 기능 동일하게 동작
  *
+ * 4. 캐시 스탬피드 방지 (sync=true):
+ *    - 캐시 만료 시 첫 번째 스레드만 DB 조회
+ *    - 나머지 스레드는 캐시 갱신 완료까지 대기
+ *    - 동시 100개 요청 → 1개 DB 조회로 감소
+ *    - 적용 대상: getAvailableCoupons(), getUserCoupons()
+ *
  * RedisCacheManager를 사용하여 Redis에서 캐시를 관리합니다.
  * 각 캐시별로 다른 TTL을 설정하여 성능 최적화를 달성합니다.
  *
  * 캐시 전략:
  * - productList: 상품 목록 조회 (TTL: 1시간, 빈도: 매우 높음)
- * - couponList: 쿠폰 목록 조회 (TTL: 30분, 빈도: 높음)
+ * - couponList: 쿠폰 목록 조회 (TTL: 30분, 빈도: 높음, sync=true)
  * - productDetail: 상품 상세 조회 (TTL: 2시간, 빈도: 높음)
  * - cartItems: 장바구니 아이템 (TTL: 30분, 빈도: 중간)
  * - popularProducts: 인기 상품 조회 (TTL: 1시간, 빈도: 높음)
+ * - userCoupons: 사용자 쿠폰 조회 (TTL: 5분, 빈도: 중간, sync=true)
  *
  * 예상 효과:
  * - Product 목록 조회: TPS 200 → 1000 (5배)
@@ -48,6 +55,7 @@ import java.util.Map;
  * - 응답시간 87% 감소
  * - 서버 인스턴스 간 캐시 공유 가능
  * - 캐시 무효화 일관성 보장
+ * - 캐시 스탬피드 방지로 DB 부하 99% 감소 (100 req → 1 DB query)
  */
 @Configuration
 @EnableCaching

@@ -139,11 +139,40 @@ services:
     networks:
       - kafka-network
 
+  # ================================
+  # Redis (Cache & Session Store)
+  # ================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    hostname: redis
+
+    ports:
+      - "6379:6379"   # Redis 기본 포트
+
+    command: redis-server --appendonly yes
+
+    volumes:
+      # Redis 데이터 영속화 (AOF 모드)
+      - redis-data:/data
+
+    networks:
+      - kafka-network
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
 # ================================
 # Volume 정의
 # ================================
 volumes:
   kafka-data:
+    driver: local
+  redis-data:
     driver: local
 
 # ================================
