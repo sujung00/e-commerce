@@ -1,0 +1,59 @@
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        # Circuit Breaker 기본 설정
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+        recordExceptions:
+          - java.lang.RuntimeException
+          - java.util.concurrent.TimeoutException
+          - com.hhplus.ecommerce.common.exception.SagaTimeoutException
+        ignoreExceptions:
+          - com.hhplus.ecommerce.common.exception.CompensationException
+
+    instances:
+      orderSaga:
+        # Order Saga Circuit Breaker 설정
+        baseConfig: default
+        slidingWindowSize: 20
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 50
+        slowCallRateThreshold: 50
+        slowCallDurationThreshold: 20s
+        waitDurationInOpenState: 10s
+
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 30s
+        cancelRunningFuture: true
+
+    instances:
+      orderSaga:
+        baseConfig: default
+        timeoutDuration: 30s
+
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 100ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.util.concurrent.TimeoutException
+        ignoreExceptions:
+          - com.hhplus.ecommerce.common.exception.CompensationException
+
+    instances:
+      orderSaga:
+        baseConfig: default
+        maxAttempts: 3

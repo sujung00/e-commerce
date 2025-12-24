@@ -37,7 +37,12 @@ out/
 .vscode/
 
 ### Spring Boot configuration files (security-sensitive) ###
-application.properties
-application.yml
-application-*.yml
-application-*.properties
+# application.properties
+# application.yml
+# application-*.yml
+# application-*.properties
+
+### Environment variables (secrets) ###
+.env
+.env.local
+.env.*.local

@@ -1,0 +1,13 @@
+# MySQL 문자셋 설정
+# 목적: MySQL 클라이언트 세션이 latin1로 잡히는 문제 해결
+# 효과: 모든 연결에서 utf8mb4 문자셋 강제 사용 (한글 깨짐 방지)
+
+[mysqld]
+character-set-server=utf8mb4
+collation-server=utf8mb4_0900_ai_ci
+
+[client]
+default-character-set=utf8mb4
+
+[mysql]
+default-character-set=utf8mb4

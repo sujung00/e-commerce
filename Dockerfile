@@ -1,16 +1,50 @@
-# Java 17 런타임 환경
-FROM eclipse-temurin:17-jre-jammy
+# ================================
+# Stage 1: Build Stage
+# ================================
+# Using eclipse-temurin (non-alpine) for reliable multi-architecture support
+FROM eclipse-temurin:17-jdk AS builder
 
-# 작업 디렉토리 설정
 WORKDIR /app
 
-# 로컬에서 빌드된 jar 파일을 컨테이너로 복사
-# Gradle 빌드 결과물 위치: build/libs/*.jar
-COPY build/libs/*.jar app.jar
+# Copy Gradle wrapper and build files
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle .
+COPY settings.gradle .
 
-# Spring Boot 기본 포트 노출
+# Make gradlew executable
+RUN chmod +x gradlew
+
+# Download dependencies (cached layer)
+RUN ./gradlew dependencies --no-daemon || true
+
+# Copy source code
+COPY src src
+
+# Build application (skip tests for faster build)
+RUN ./gradlew clean bootJar --no-daemon -x test
+
+
+# ================================
+# Stage 2: Runtime Stage
+# ================================
+FROM eclipse-temurin:17-jre
+
+WORKDIR /app
+
+# Create non-root user for security
+RUN groupadd -r spring && useradd -r -g spring spring
+USER spring:spring
+
+# Copy JAR from builder stage
+COPY --from=builder /app/build/libs/*.jar app.jar
+
+# Expose application port
 EXPOSE 8080
 
-# 애플리케이션 실행
-# -Djava.security.egd=file:/dev/./urandom: 빠른 시작을 위한 랜덤 소스 설정
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
+
+# Run application
+ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -1,8 +1,11 @@
 package com.hhplus.ecommerce.infrastructure.config;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
@@ -71,12 +74,24 @@ public class CacheConfig {
      * ObjectMapper를 통해 타입 정보를 포함하여 역직렬화할 수 있도록 설정합니다.
      *
      * ✅ 캐시 전용 ObjectMapper로 일반 RedisTemplate의 직렬화에 영향을 주지 않음
+     * ✅ JavaTimeModule 등록으로 LocalDateTime, Instant 등 Java 8 Date/Time API 지원
      *
      * @return 캐시 전용 ObjectMapper (타입 정보 포함)
      */
     @Bean
     public ObjectMapper cacheObjectMapper() {
         ObjectMapper mapper = new ObjectMapper();
+
+        // JavaTimeModule 등록 (LocalDateTime, Instant 등 Java 8 Date/Time API 지원)
+        mapper.registerModule(new JavaTimeModule());
+
+        // Instant/LocalDateTime를 ISO-8601 문자열로 직렬화 (타임스탬프 숫자 대신)
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        // 알 수 없는 JSON 속성 무시 (클라이언트가 추가 필드를 보내도 에러 안 남)
+        mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+        // 다형성 타입 처리 (캐시 역직렬화 시 타입 정보 보존)
         mapper.activateDefaultTyping(
                 BasicPolymorphicTypeValidator.builder()
                         .allowIfBaseType(Object.class)
@@ -84,6 +99,7 @@ public class CacheConfig {
                 ObjectMapper.DefaultTyping.NON_FINAL,
                 JsonTypeInfo.As.PROPERTY
         );
+
         return mapper;
     }
 
