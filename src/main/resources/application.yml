@@ -1,0 +1,101 @@
+spring:
+  application:
+    name: e-commerce
+
+  # Jackson - JSON 직렬화/역직렬화 설정
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false  # Instant를 ISO-8601 문자열로 직렬화
+    deserialization:
+      fail-on-unknown-properties: false  # 알 수 없는 필드 무시
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:mysql}:${DB_PORT:3306}/${DB_NAME:hhplus_ecommerce}?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_0900_ai_ci&characterSetResults=utf8mb4
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 5000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      auto-commit: true
+      leak-detection-threshold: 60000
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          batch_size: 25
+          fetch_size: 50
+        order_inserts: true
+        order_updates: true
+        use_sql_comments: false
+        dialect:
+          storage_engine: innodb
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      database: 0
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
+      cache-null-values: false
+      key-prefix: "cache:"
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:29092}
+    consumer:
+      group-id: ecommerce-order-consumer-group
+      coupon-group-id: ecommerce-coupon-consumer-group
+    topics:
+      order-events: order-events
+      coupon-issue-requests: coupon-issue-requests
+
+# ================================
+# Actuator Configuration
+# ================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+server:
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+services:
+  mysql:
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --character-set-client-handshake=FALSE
+      - --init-connect=SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci

@@ -1,0 +1,112 @@
+spring:
+  application:
+    name: e-commerce
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Testcontainers 프로퍼티 (자동으로 설정됨)
+  # ═══════════════════════════════════════════════════════════════════════
+  # BaseIntegrationTest.TestContainersInitializer에 의해 다음이 동적으로 설정됨:
+  #
+  # === MySQL 설정 ===
+  # - spring.datasource.url: 자동 할당 포트와 함께 생성
+  #   예: jdbc:mysql://localhost:32769/ecommerce_test
+  # - spring.datasource.username: testuser
+  # - spring.datasource.password: testpass
+  # - spring.datasource.driver-class-name: com.mysql.cj.jdbc.Driver
+  #
+  # === Redis 설정 ===
+  # - spring.redis.host: Docker 호스트 IP (자동 할당)
+  #   예: 172.17.0.2
+  # - spring.redis.port: 자동 할당 포트 (6379 → random port)
+  #   예: 32770
+  #
+  # === 캐시 설정 (테스트 환경) ===
+  # - spring.cache.type: redis (RedisCacheManager 사용)
+  # - spring.redis 설정: TestContainersInitializer가 주입
+
+  datasource:
+    # ⚠️ 주의: 아래 설정은 TestcontainersInitializer가 덮어씌움
+    # Testcontainers 사용 시 다음과 같이 동적으로 설정됨:
+    # url: jdbc:mysql://localhost:{RANDOM_PORT}/ecommerce_test
+    username: root
+    password: Happy0904*
+    # driver-class-name: com.mysql.cj.jdbc.Driver
+
+    # 대체 방법: Docker 데스크톱이 없는 경우 아래 주석 해제
+    # url: jdbc:mysql://localhost:3306/ecommerce_test?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8
+    # driver-class-name: com.mysql.cj.jdbc.Driver
+    # username: testuser
+    # password: testpass
+
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    # P6Spy 사용 시 Hibernate show-sql 비활성화 (P6Spy만 사용)
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+
+  sql:
+    init:
+      mode: never
+
+  test:
+    database:
+      replace: none
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Redis & 캐시 설정 (테스트 환경)
+  # ═══════════════════════════════════════════════════════════════════════
+  # 테스트 환경에서는 RedisCacheManager를 사용하여 실제 Redis 캐시 검증
+  # TestContainersInitializer가 spring.redis.host/port를 동적으로 주입
+  data:
+    redis:
+      # ⚠️ 주의: 아래 설정은 TestcontainersInitializer가 덮어씌움
+      # host: Docker 호스트 IP (자동 할당)
+      # port: 자동 할당 포트
+      timeout: 2000ms
+      database: 0
+      jedis:
+        pool:
+          max-active: 10
+          max-idle: 5
+          min-idle: 1
+
+  cache:
+    type: redis  # ✅ 테스트 환경에서 Redis 캐시 사용 (필수!)
+    redis:
+      time-to-live: 600000    # 기본 TTL: 10분 (밀리초)
+      cache-null-values: false # null 값 캐시 금지
+      key-prefix: "cache:"    # 모든 캐시 키에 prefix 추가
+
+# ═══════════════════════════════════════════════════════════════════════
+# P6Spy 로깅 설정 (SLF4J)
+# ═══════════════════════════════════════════════════════════════════════
+logging:
+  level:
+    root: INFO
+    com.hhplus.ecommerce: DEBUG
+    com.hhplus.ecommerce.infrastructure.lock: DEBUG
+    org.redisson: INFO
+    # P6Spy SQL 로깅 활성화
+    p6spy: DEBUG
+    # Hibernate SQL 로깅 비활성화 (P6Spy에서 로깅함)
+    org.hibernate.SQL: OFF
+    org.hibernate.orm.jdbc.bind: OFF
+    # Spring Cache 관련 로깅
+    org.springframework.cache: DEBUG

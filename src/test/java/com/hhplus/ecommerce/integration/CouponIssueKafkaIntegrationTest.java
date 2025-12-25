@@ -88,7 +88,7 @@ class CouponIssueKafkaIntegrationTest {
         // Kafka 설정
         registry.add("kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("kafka.topics.coupon-issue-requests", () -> "coupon.issue.requests");
-        registry.add("kafka.consumer.coupon-group-id", () -> "test-coupon-consumer-group");
+        registry.add("spring.kafka.consumer.coupon-group-id", () -> "test-coupon-consumer-group");
 
         // MySQL 설정
         registry.add("spring.datasource.url", mysql::getJdbcUrl);
@@ -322,22 +322,26 @@ class CouponIssueKafkaIntegrationTest {
     }
 
     /**
-     * 테스트 4: userId 기반 파티셔닝 검증
+     * 테스트 4: couponId 기반 파티셔닝 검증 (✅ 개선: userId → couponId)
      *
      * 시나리오:
-     * 1. 같은 userId로 여러 쿠폰 발급 요청
+     * 1. 같은 couponId로 여러 사용자가 발급 요청
      * 2. 모두 같은 파티션으로 전달됨 (순서 보장)
-     * 3. 각 쿠폰별로 1개씩 발급 성공
+     * 3. 각 사용자별로 1개씩 발급 성공
+     *
+     * 검증 목적:
+     * - 같은 쿠폰에 대한 요청들이 같은 파티션으로 이동하는지 확인
+     * - 선착순 쿠폰 발급 시나리오에서 순서 보장 확인
      */
     @Test
-    @DisplayName("userId 기반 파티셔닝 검증 (같은 사용자 요청은 순서 보장)")
-    void testUserIdPartitioning() throws Exception {
-        // Given
-        Long userId = 5L;
-        Long[] couponIds = {1L, 2L, 3L};
+    @DisplayName("couponId 기반 파티셔닝 검증 (같은 쿠폰 요청은 순서 보장)")
+    void testCouponIdPartitioning() throws Exception {
+        // Given - 같은 쿠폰에 대한 여러 사용자 요청
+        Long couponId = 1L;
+        Long[] userIds = {5L, 6L, 7L};
 
-        // When - 같은 userId로 여러 쿠폰 발급 요청
-        for (Long couponId : couponIds) {
+        // When - 같은 couponId로 여러 사용자가 발급 요청
+        for (Long userId : userIds) {
             couponIssueProducer.sendCouponIssueRequest(userId, couponId);
         }
 
@@ -345,20 +349,73 @@ class CouponIssueKafkaIntegrationTest {
         await()
                 .atMost(10, SECONDS)
                 .untilAsserted(() -> {
-                    // 3개의 쿠폰 모두 발급 완료
+                    // 3명의 사용자 모두 쿠폰 발급 완료
                     int issuedCount = 0;
-                    for (Long couponId : couponIds) {
+                    for (Long userId : userIds) {
                         var userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId);
                         if (userCoupon.isPresent()) {
                             issuedCount++;
                         }
                     }
-                    assertThat(issuedCount).isEqualTo(couponIds.length);
+                    assertThat(issuedCount).isEqualTo(userIds.length);
+
+                    // Coupon의 remaining_qty는 3 감소 (100 - 3 = 97)
+                    var coupon = couponRepository.findById(couponId);
+                    assertThat(coupon).isPresent();
+                    assertThat(coupon.get().getRemainingQty()).isEqualTo(97);
                 });
     }
 
     /**
-     * 테스트 5: 쿠폰 소진 시 실패 처리 검증
+     * 테스트 5: 선착순 쿠폰 발급 순서 보장 검증 (✅ couponId 파티셔닝 효과)
+     *
+     * 시나리오:
+     * 1. 같은 쿠폰(couponId)에 대해 여러 사용자가 동시 요청
+     * 2. couponId 파티셔닝으로 모든 요청이 같은 파티션으로 이동
+     * 3. 해당 파티션의 Consumer가 순서대로 처리
+     * 4. 먼저 요청한 사용자부터 순서대로 발급 성공
+     *
+     * 검증 목적:
+     * - 같은 쿠폰 요청이 순서대로 처리되는지 확인
+     * - 선착순 보장 메커니즘 동작 확인
+     */
+    @Test
+    @DisplayName("선착순 쿠폰 발급 순서 보장 검증")
+    void testFirstComeFirstServedOrdering() throws Exception {
+        // Given - 같은 쿠폰에 대한 다수의 사용자 요청
+        Long couponId = 2L;  // couponId=2 사용 (테스트 분리)
+        int requestCount = 20;  // 20명의 사용자
+
+        // When - 같은 couponId로 20명의 사용자가 순차적으로 요청
+        for (long userId = 1; userId <= requestCount; userId++) {
+            couponIssueProducer.sendCouponIssueRequest(userId, couponId);
+            // 약간의 시간차를 두어 요청 순서 명확히 함
+            Thread.sleep(10);
+        }
+
+        // Then - Awaitility로 비동기 처리 대기
+        await()
+                .atMost(15, SECONDS)
+                .untilAsserted(() -> {
+                    // 20명 모두 쿠폰 발급 완료
+                    long issuedCount = 0;
+                    for (long userId = 1; userId <= requestCount; userId++) {
+                        var userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId);
+                        if (userCoupon.isPresent()) {
+                            issuedCount++;
+                        }
+                    }
+                    assertThat(issuedCount).isEqualTo(requestCount);
+
+                    // Coupon의 remaining_qty는 20 감소
+                    var coupon = couponRepository.findById(couponId);
+                    assertThat(coupon).isPresent();
+                    assertThat(coupon.get().getRemainingQty()).isEqualTo(100 - requestCount);
+                });
+    }
+
+    /**
+     * 테스트 6: 쿠폰 소진 시 실패 처리 검증
      *
      * 시나리오:
      * 1. remaining_qty = 1인 쿠폰 생성

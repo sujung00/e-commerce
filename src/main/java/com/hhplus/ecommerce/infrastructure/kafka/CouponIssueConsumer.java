@@ -99,8 +99,8 @@ public class CouponIssueConsumer {
      * @param acknowledgment 수동 커밋 객체
      */
     @KafkaListener(
-        topics = "${kafka.topics.coupon-issue-requests}",
-        groupId = "${kafka.consumer.coupon-group-id}",
+        topics = "${spring.kafka.topics.coupon-issue-requests}",
+        groupId = "${spring.kafka.consumer.coupon-group-id}",
         containerFactory = "couponKafkaListenerContainerFactory"
     )
     public void listen(

@@ -47,7 +47,7 @@ public class OrderEventProducer {
 
     public OrderEventProducer(
             KafkaTemplate<String, OrderCompletedEvent> kafkaTemplate,
-            @Value("${kafka.topics.order-events}") String topicName) {
+            @Value("${spring.kafka.topics.order-events}") String topicName) {
         this.kafkaTemplate = kafkaTemplate;
         this.topicName = topicName;
     }

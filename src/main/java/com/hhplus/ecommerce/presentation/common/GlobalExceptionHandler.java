@@ -167,6 +167,34 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Kafka 발행 실패 등 런타임 오류 (500)
+     *
+     * API 명세:
+     * - Error Code: KAFKA_PUBLISH_FAILED (Kafka 발행 실패)
+     * - Error Code: INTERNAL_SERVER_ERROR (기타 런타임 오류)
+     * - HTTP Status: 500 Internal Server Error
+     * - 상황: Kafka 브로커 연결 실패, 타임아웃, 기타 시스템 오류
+     */
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException e) {
+        String errorCode = "INTERNAL_SERVER_ERROR";
+        String message = "서버 오류가 발생했습니다";
+
+        // Kafka 관련 오류 판별
+        if (e.getMessage() != null &&
+            (e.getMessage().contains("Kafka") || e.getMessage().contains("kafka"))) {
+            errorCode = "KAFKA_PUBLISH_FAILED";
+            message = e.getMessage();
+            logger.error("Kafka publishing failed: {}", message, e);
+        } else {
+            logger.error("Runtime exception occurred: ", e);
+        }
+
+        ErrorResponse errorResponse = ErrorResponse.of(errorCode, message);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+    }
+
+    /**
      * 서버 내부 오류 (500)
      *
      * API 명세:
