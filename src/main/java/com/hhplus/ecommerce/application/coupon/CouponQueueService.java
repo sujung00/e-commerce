@@ -2,6 +2,8 @@ package com.hhplus.ecommerce.application.coupon;
 
 import com.hhplus.ecommerce.application.coupon.dto.CouponRequest;
 import com.hhplus.ecommerce.application.coupon.dto.CouponIssueStatusResponse;
+import com.hhplus.ecommerce.presentation.coupon.response.AvailableCouponResponse;
+import com.hhplus.ecommerce.presentation.coupon.response.CouponIssueAsyncResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.infrastructure.config.RedisKeyType;
 import com.hhplus.ecommerce.infrastructure.constants.RetryConstants;
@@ -65,7 +67,49 @@ public class CouponQueueService {
     }
 
     /**
-     * 쿠폰 발급 요청을 Redis 큐에 추가
+     * 쿠폰 발급 (비동기, FIFO 보장)
+     *
+     * 컨트롤러에서 이동된 비즈니스 로직:
+     * 1. 기본 입력 검증
+     * 2. 캐시에서 쿠폰 존재 여부 확인
+     * 3. Redis 큐에 요청 저장
+     * 4. 응답 DTO 생성
+     *
+     * @param userId 사용자 ID
+     * @param couponId 쿠폰 ID
+     * @return 비동기 발급 응답 (requestId 포함)
+     */
+    public CouponIssueAsyncResponse issueCouponAsync(Long userId, Long couponId) {
+        // 1. 기본 입력 검증
+        if (userId == null || userId <= 0) {
+            log.warn("[CouponQueueService] 잘못된 사용자 ID: userId={}", userId);
+            throw new IllegalArgumentException("유효하지 않은 사용자 ID입니다");
+        }
+        if (couponId == null || couponId <= 0) {
+            log.warn("[CouponQueueService] 잘못된 쿠폰 ID: couponId={}", couponId);
+            throw new IllegalArgumentException("유효하지 않은 쿠폰 ID입니다");
+        }
+
+        // 2. 캐시에서 쿠폰 존재 여부 빠르게 확인
+        AvailableCouponResponse couponFromCache = couponService.getAvailableCouponFromCache(couponId);
+        if (couponFromCache == null) {
+            log.warn("[CouponQueueService] 쿠폰을 찾을 수 없음: couponId={}", couponId);
+            throw new IllegalArgumentException("쿠폰을 찾을 수 없습니다");
+        }
+
+        // 3. Redis 큐에 요청 추가
+        String requestId = enqueueCouponRequest(userId, couponId);
+
+        // 4. 202 Accepted 응답 생성
+        return CouponIssueAsyncResponse.builder()
+                .requestId(requestId)
+                .status("PENDING")
+                .message("쿠폰 발급 요청이 접수되었습니다. requestId로 상태를 확인하세요.")
+                .build();
+    }
+
+    /**
+     * 쿠폰 발급 요청을 Redis 큐에 추가 (내부 메서드)
      *
      * 동작:
      * 1. CouponRequest 객체 생성
@@ -77,7 +121,7 @@ public class CouponQueueService {
      * @param couponId 쿠폰 ID
      * @return 요청의 고유 ID (requestId)
      */
-    public String enqueueCouponRequest(Long userId, Long couponId) {
+    private String enqueueCouponRequest(Long userId, Long couponId) {
         CouponRequest request = CouponRequest.of(userId, couponId);
 
         try {
@@ -342,10 +386,20 @@ public class CouponQueueService {
     /**
      * 요청 상태 조회
      *
+     * 컨트롤러에서 이동된 비즈니스 로직:
+     * 1. 입력 검증
+     * 2. Redis에서 상태 조회
+     *
      * @param requestId 요청 ID
      * @return 상태 응답 (null이면 요청을 찾을 수 없음)
      */
     public CouponIssueStatusResponse getRequestStatus(String requestId) {
+        // 1. 입력 검증
+        if (requestId == null || requestId.trim().isEmpty()) {
+            log.warn("[CouponQueueService] 잘못된 requestId: {}", requestId);
+            throw new IllegalArgumentException("유효하지 않은 요청 ID입니다");
+        }
+
         try {
             String stateJson = redisTemplate.opsForValue()
                 .get(RedisKeyType.STATE_COUPON_REQUEST.buildKey(requestId));

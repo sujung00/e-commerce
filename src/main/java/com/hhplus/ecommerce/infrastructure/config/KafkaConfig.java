@@ -44,13 +44,13 @@ import java.util.Map;
 @Configuration
 public class KafkaConfig {
 
-    @Value("${kafka.bootstrap-servers}")
+    @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
-    @Value("${kafka.consumer.group-id}")
+    @Value("${spring.kafka.consumer.group-id}")
     private String consumerGroupId;
 
-    @Value("${kafka.consumer.coupon-group-id}")
+    @Value("${spring.kafka.consumer.coupon-group-id}")
     private String couponConsumerGroupId;
 
     /**

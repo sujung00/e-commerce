@@ -81,7 +81,7 @@ Kafka는 **분산 이벤트 스트리밍 플랫폼**입니다. 쉽게 말해, �
 
 | 비교 항목 | 단일 브로커 | 클러스터 (3 브로커) |
 |---------|-----------|-------------------|
-| **가용성** | Broker 장애 → 전체 중단 ❌ | 1-2개 Broker 장애 → 서비스 유지 ✅ |
+| **가용성** | Broker 장애 → 전체 중단 ❌ | 1개 Broker 장애 → 서비스 유지 ✅<br/>2개 Broker 장애 → 서비스 장애 가능성 높음 ⚠️ |
 | **처리량** | 제한적 (1대 한계) | 3배 이상 확장 가능 |
 | **데이터 안정성** | 디스크 장애 → 데이터 손실 | 복제로 손실 방지 |
 | **확장성** | 불가능 | Broker 추가로 수평 확장 |
@@ -92,8 +92,10 @@ Kafka는 **분산 이벤트 스트리밍 플랫폼**입니다. 쉽게 말해, �
 1. **고가용성 (High Availability)**
    ```
    3개 브로커 + Replication Factor 3:
-   - 최대 2개 브로커 장애까지 견딤
-   - 1개 브로커만 살아있어도 데이터 보존
+   - 1개 브로커 장애 → 정상 서비스 유지 ✅
+   - 2개 브로커 장애 → 데이터 보존은 가능하나 서비스 장애 가능성 높음 ⚠️
+     → ISR 부족, Controller quorum 상실 등 복합 장애 발생 가능
+     → 실무에서는 2개 장애 시나리오는 비정상 상황으로 간주
    ```
 
 2. **과반수 기반 의사결정 (Quorum)**
@@ -224,14 +226,16 @@ Broker 2: [Partition 0 - Follower]    ← Leader 데이터 복제
            ↓ 복제
 Broker 3: [Partition 0 - Follower]    ← Leader 데이터 복제
 
-⚠️ 중요: Producer와 Consumer는 항상 Leader에만 접근!
+⚠️ 중요: Producer와 Consumer는 기본적으로 Leader에 접근
+   - Producer: acks=all 설정 시 Follower(ISR)의 복제 응답도 대기
+   - Consumer: 일부 설정(rack-aware 등)에서 Follower 읽기 가능 (비표준)
 ```
 
 **Leader와 Follower의 역할:**
 
 | 역할 | Leader Replica | Follower Replica |
 |------|---------------|-----------------|
-| **읽기** | ✅ Consumer 읽기 처리 | ❌ 읽기 안 함 (Leader만) |
+| **읽기** | ✅ Consumer 기본 읽기 대상 | ⚠️ 특정 설정 시 가능 (rack-aware) |
 | **쓰기** | ✅ Producer 쓰기 처리 | ❌ 쓰기 안 함 (Leader만) |
 | **복제** | - | ✅ Leader 데이터 복제 |
 | **장애 대응** | - | ✅ Leader 장애 시 승격 |
@@ -332,7 +336,9 @@ order-events Partition 0:
 - Broker 2 (Follower)
 - Broker 3 (Follower)
 
-⇒ 2개 브로커 장애까지 견딤 ✅
+⇒ 1개 브로커 장애까지 안정적으로 견딤 ✅
+⇒ 2개 브로커 장애 시 데이터는 보존되나 서비스 장애 가능성 높음 ⚠️
+   (ISR 부족, min.insync.replicas 미충족, Controller quorum 상실 등)
 ⇒ 운영 환경 권장 설정
 ```
 
@@ -903,8 +909,14 @@ kafkaTemplate.send("order-events", order.getId().toString(), event);
 // ❌ Key 없음
 kafkaTemplate.send("order-events", null, event);
 
-// 결과: Round-robin 방식으로 랜덤 파티션 할당
+// 결과: Sticky Partitioner 방식으로 파티션 할당
+// - 배치 단위로 하나의 파티션에 메시지를 모아서 전송
+// - 배치가 가득 차거나 linger.ms 초과 시 다음 파티션으로 전환
+// - Producer 배치 설정(batch.size, linger.ms)에 영향받음
+//
 // 문제: 같은 주문의 이벤트가 다른 파티션에 분산되어 순서 보장 안 됨
+//
+// 💡 참고: Kafka 2.4+ 기본값 (이전 버전은 round-robin)
 ```
 
 ---

@@ -10,6 +10,7 @@ import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -143,12 +144,13 @@ public class OrderValidator {
     /**
      * 쿠폰 소유 및 사용 가능 여부 검증
      *
-     * 변경 사항 (2025-11-18):
-     * - USER_COUPONS.order_id 삭제로 인한 새로운 검증 방식
-     * - 쿠폰 사용 여부는 ORDERS.coupon_id로 추적
+     * VULN-004 해결:
+     * - @Transactional로 트랜잭션 범위 확보
+     * - findByUserIdAndCouponIdForUpdate()로 검증 시점에 배타적 락 획득
+     * - 락 획득 후 상태 확인 → 동시 요청의 쿠폰 중복 사용 방지
      *
      * 검증 항목:
-     * 1. 사용자가 쿠폰을 보유하고 있는가? (user_coupons에서 확인)
+     * 1. 사용자가 쿠폰을 보유하고 있는가? (user_coupons에서 확인, 비관적 락)
      * 2. 쿠폰의 상태가 미사용인가? (user_coupons.status = 'UNUSED')
      * 3. 쿠폰이 이미 다른 주문에 사용 중인가? (orders.coupon_id에서 확인)
      *
@@ -156,18 +158,19 @@ public class OrderValidator {
      * @param couponId 쿠폰 ID (null이면 쿠폰 미사용)
      * @throws IllegalArgumentException 쿠폰을 찾을 수 없거나, 상태가 유효하지 않음
      */
+    @Transactional
     public void validateCouponOwnershipAndUsage(Long userId, Long couponId) {
         if (couponId == null) {
-            // 쿠폰을 사용하지 않는 경우 검증 스킵
             return;
         }
 
-        // 1. 사용자가 쿠폰을 보유하고 있는지 확인
-        var userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
+        // 1. 비관적 락으로 쿠폰 조회 (SELECT ... FOR UPDATE)
+        // 락 획득 후 상태 확인하므로 동시 요청이 상태를 변경할 수 없음
+        var userCoupon = userCouponRepository.findByUserIdAndCouponIdForUpdate(userId, couponId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "사용자가 쿠폰을 보유하고 있지 않습니다: couponId=" + couponId));
 
-        // 2. 쿠폰 상태가 UNUSED인지 확인 (이미 사용되었으면 실패)
+        // 2. 쿠폰 상태가 UNUSED인지 확인 (락 보유 상태에서 수행)
         if (!"UNUSED".equals(userCoupon.getStatus().name())) {
             throw new IllegalArgumentException(
                     "쿠폰을 사용할 수 없습니다: 상태=" + userCoupon.getStatus());

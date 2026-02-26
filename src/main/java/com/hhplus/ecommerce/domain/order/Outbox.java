@@ -17,16 +17,24 @@ import java.time.LocalDateTime;
  * - 별도 배치 프로세스가 PENDING 상태의 메시지를 외부 시스템에 전송
  * - 전송 실패 시 재시도 가능
  *
- * 흐름:
+ * 상태 전이:
  * 1. 주문 생성 시 Outbox 기록 (status='PENDING')
- * 2. 배치 프로세스가 PENDING 상태 확인
+ * 2. 발행 시작 전 상태 변경 (status='PUBLISHING') ← 중복 발행 방지
  * 3. 외부 시스템에 전송 시도
- * 4. 성공 → status='SENT', 실패 → status='FAILED' (재시도 예정)
+ * 4. 성공 → status='PUBLISHED', 실패 → status='FAILED' (재시도 예정)
+ * 5. 최대 재시도 초과 → status='ABANDONED'
+ *
+ * 상태 전이 다이어그램:
+ * PENDING → PUBLISHING → PUBLISHED (성공)
+ *                      ↓
+ *                    FAILED → PENDING (재시도)
+ *                      ↓
+ *                  ABANDONED (재시도 초과)
  *
  * 구현 참고:
  * - order_id는 NOT NULL (주문과의 관계 필수)
  * - message_type은 이벤트 타입 (ORDER_COMPLETED, SHIPPING_REQUEST 등)
- * - status는 PENDING | SENT | FAILED 중 하나
+ * - status는 PENDING | PUBLISHING | PUBLISHED | FAILED | ABANDONED 중 하나
  * - retry_count는 재시도 횟수 추적
  */
 @Entity
@@ -107,8 +115,34 @@ public class Outbox {
     }
 
     /**
-     * 전송 완료 표시
+     * 발행 시작 표시 (중복 발행 방지)
+     *
+     * 호출 시점: 외부 시스템에 메시지 발행 시작 직전
+     * 목적: 발행 중 상태 업데이트 실패 시에도 재발행 방지
+     *
+     * 상태 전이: PENDING → PUBLISHING
      */
+    public void markAsPublishing() {
+        this.status = "PUBLISHING";
+        this.lastAttempt = LocalDateTime.now();
+    }
+
+    /**
+     * 전송 완료 표시
+     *
+     * 상태 전이: PUBLISHING → PUBLISHED
+     */
+    public void markAsPublished() {
+        this.status = "PUBLISHED";
+        this.sentAt = LocalDateTime.now();
+    }
+
+    /**
+     * 전송 완료 표시 (하위 호환성 유지)
+     *
+     * @deprecated Use markAsPublished() instead
+     */
+    @Deprecated
     public void markAsSent() {
         this.status = "SENT";
         this.sentAt = LocalDateTime.now();
@@ -116,6 +150,8 @@ public class Outbox {
 
     /**
      * 전송 실패 표시
+     *
+     * 상태 전이: PUBLISHING → FAILED
      */
     public void markAsFailed() {
         this.status = "FAILED";

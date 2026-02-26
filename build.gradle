@@ -28,11 +28,11 @@ repositories {
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     runtimeOnly 'com.mysql:mysql-connector-j'
-    runtimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // P6Spy - SQL logging
@@ -50,10 +50,14 @@ dependencies {
     // Spring Retry - Retryable 어노테이션 지원
     implementation 'org.springframework.retry:spring-retry:2.0.5'
     // Spring Aspects - @Retryable, @Recover 어노테이션 프록시 처리
-    implementation 'org.springframework:spring-aspects:6.1.3'
+    implementation 'org.springframework:spring-aspects'
 
-    // Redisson - Redis 분산락 구현
-    implementation 'org.redisson:redisson-spring-boot-starter:3.18.0'
+    // Redisson - Redis 분산락 구현 (Spring Boot 3.5.x 호환)
+    implementation 'org.redisson:redisson-spring-boot-starter:3.52.0'
+    implementation 'org.redisson:redisson-spring-data-35:3.52.0'
+
+    // Jackson JSR310 (Java 8 Date/Time) - Instant 직렬화 지원
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 
     // Resilience4J - Circuit Breaker 및 Fault Tolerance
     implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.1.0'

@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: e-commerce
+  datasource:
+    url: jdbc:mysql://localhost:3306/hhplus_ecommerce?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: Happy0904*
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    # Dev 환경: Hibernate show-sql은 비활성화 (P6Spy는 test 환경에서만 사용)
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+  devtools:
+    restart:
+      enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.hhplus.ecommerce: DEBUG
+    com.hhplus.ecommerce.infrastructure.lock: DEBUG
+    org.redisson: INFO
+    # Dev 환경에서는 Hibernate SQL 로그 비활성화
+    org.hibernate.SQL: OFF
+    org.hibernate.orm.jdbc.bind: OFF
+
+# Kafka Configuration (KRaft Mode)
+kafka:
+  bootstrap-servers: localhost:9092
+  topics:
+    order-events: order.events
+  producer:
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    acks: all  # 모든 ISR 복제 완료 후 ack
+    retries: 3
+    properties:
+      linger.ms: 10
+      batch.size: 16384
+      compression.type: snappy
+      enable.idempotence: true  # 멱등성 보장
+  consumer:
+    group-id: ecommerce-order-consumer-group
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+    auto-offset-reset: earliest
+    enable-auto-commit: false  # 수동 커밋으로 at-least-once 보장
+    properties:
+      spring.json.trusted.packages: "com.hhplus.ecommerce.domain.order.event"
+      max.poll.records: 10
+      session.timeout.ms: 30000

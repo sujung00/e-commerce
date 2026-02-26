@@ -88,8 +88,8 @@ public class OrderEventConsumer {
      * @param acknowledgment 수동 커밋 객체
      */
     @KafkaListener(
-        topics = "${kafka.topics.order-events}",
-        groupId = "${kafka.consumer.group-id}",
+        topics = "${spring.kafka.topics.order-events}",
+        groupId = "${spring.kafka.consumer.group-id}",
         containerFactory = "kafkaListenerContainerFactory"
     )
     public void listen(

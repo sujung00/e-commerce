@@ -47,13 +47,20 @@ public class OutboxEventPublisher {
     private final ShippingServiceClient shippingServiceClient;
 
     /**
-     * Outbox 패턴을 통한 메시지 발행
+     * Outbox 패턴을 통한 메시지 발행 (중복 발행 방지 개선)
      *
-     * 플로우:
+     * 플로우 (개선):
      * 1. Outbox 테이블에 메시지 저장 (PENDING 상태)
-     * 2. 즉시 발행 시도
-     * 3. 성공 → SENT 상태로 업데이트
-     * 4. 실패 → PENDING 유지, 배치가 재시도
+     * 2. 발행 시작 전 상태를 PUBLISHING으로 변경 (트랜잭션 보장) ← 핵심!
+     * 3. 즉시 발행 시도
+     * 4. 성공 → PUBLISHED 상태로 업데이트
+     * 5. 실패 → FAILED 상태로 업데이트, 배치가 재시도
+     *
+     * 중복 발행 방지 메커니즘:
+     * - 발행 전에 PUBLISHING 상태로 변경 → 트랜잭션 커밋
+     * - 발행 성공 후 상태 업데이트 실패 시에도 PUBLISHING 상태 유지
+     * - 배치 처리는 PENDING/FAILED만 처리 (PUBLISHING은 제외)
+     * - 따라서 메시지는 한 번만 발행됨
      *
      * @param messageType 메시지 타입 (ORDER_COMPLETED, DATA_PLATFORM, SHIPPING 등)
      * @param orderId 주문 ID
@@ -65,27 +72,37 @@ public class OutboxEventPublisher {
         log.info("[OutboxEventPublisher] Outbox 메시지 저장 시작 - type={}, orderId={}, userId={}",
             messageType, orderId, userId);
 
-        // 1. Outbox 테이블에 저장 (트랜잭션 보장)
+        // 1. Outbox 테이블에 저장 (PENDING 상태)
         Outbox outbox = Outbox.createOutboxWithPayload(orderId, userId, messageType, payload);
         Outbox savedOutbox = outboxRepository.save(outbox);
 
         log.info("[OutboxEventPublisher] Outbox 메시지 저장 완료 - messageId={}, status=PENDING",
             savedOutbox.getMessageId());
 
-        // 2. 즉시 발행 시도 (실패해도 배치가 재시도)
+        // 2. 발행 시작 전 PUBLISHING 상태로 변경 (중복 발행 방지)
+        savedOutbox.markAsPublishing();
+        savedOutbox = outboxRepository.save(savedOutbox);
+
+        log.info("[OutboxEventPublisher] 발행 시작 - messageId={}, status=PUBLISHING",
+            savedOutbox.getMessageId());
+
+        // 3. 즉시 발행 시도
         try {
             publish(savedOutbox);
 
-            // 발행 성공 → SENT 상태로 업데이트
-            savedOutbox.markAsSent();
+            // 4. 발행 성공 → PUBLISHED 상태로 업데이트
+            savedOutbox.markAsPublished();
             outboxRepository.save(savedOutbox);
 
-            log.info("[OutboxEventPublisher] 즉시 발행 성공 - messageId={}, status=SENT",
+            log.info("[OutboxEventPublisher] 즉시 발행 성공 - messageId={}, status=PUBLISHED",
                 savedOutbox.getMessageId());
 
         } catch (Exception e) {
-            // 발행 실패 → PENDING 유지 (배치가 재시도)
-            log.warn("[OutboxEventPublisher] 즉시 발행 실패 (배치가 재시도) - messageId={}, error={}",
+            // 5. 발행 실패 → FAILED 상태로 업데이트 (배치가 재시도)
+            savedOutbox.markAsFailed();
+            outboxRepository.save(savedOutbox);
+
+            log.warn("[OutboxEventPublisher] 즉시 발행 실패 (배치가 재시도) - messageId={}, status=FAILED, error={}",
                 savedOutbox.getMessageId(), e.getMessage());
         }
     }

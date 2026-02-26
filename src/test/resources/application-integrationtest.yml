@@ -1,0 +1,62 @@
+spring:
+  profiles:
+    active: integrationtest
+
+  # H2 in-memory database for integration testing
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  # JPA configuration
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  # Redis configuration (in-memory or TestContainers can override)
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 2000ms
+    jedis:
+      pool:
+        max-active: 10
+        max-idle: 10
+        min-idle: 5
+
+  # Cache configuration - Use Redis
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+      cache-null-values: false
+
+  # P6Spy logging
+  p6spy:
+    logging:
+      use-logging-filter: true
+
+# Application settings
+app:
+  product:
+    cache:
+      ttl-seconds: 300
+  coupon:
+    max-retries: 3
+    batch-size: 100
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.hhplus: DEBUG
+    p6spy: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

@@ -211,8 +211,13 @@ public class OrderService {
     /**
      * 주문 취소 (재고 복구)
      *
-     * 1단계: 검증 (읽기 전용)
-     * - 주문 존재 여부 확인
+     * VULN-003/008 해결:
+     * - @Transactional로 검증~취소 실행 전체를 단일 트랜잭션으로 묶음
+     * - findByIdForUpdate()로 검증 시점에 배타적 락 선취득
+     * - 락 획득 후 상태 검증 → 취소 실행까지 다른 트랜잭션 개입 불가
+     *
+     * 1단계: 검증 (비관적 락 적용)
+     * - 주문 존재 여부 확인 + 배타적 락 획득
      * - 사용자 권한 확인
      * - 주문 상태 확인 (COMPLETED만 취소 가능)
      *
@@ -229,9 +234,11 @@ public class OrderService {
      * @throws UserMismatchException 주문 사용자 불일치 (404)
      * @throws InvalidOrderStatusException 취소 불가능한 주문 상태 (400)
      */
+    @Transactional
     public CancelOrderResponse cancelOrder(Long userId, Long orderId) {
-        // 1단계: 검증 (읽기 전용)
-        Order order = orderRepository.findById(orderId)
+        // 1단계: 검증 — 비관적 락 선취득 (SELECT ... FOR UPDATE)
+        // 락 획득 후 검증하므로 동시 취소 요청이 들어와도 한 번만 처리됨
+        Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
         // 권한 확인 - USER_MISMATCH 예외 발생 (404 Not Found)
@@ -239,10 +246,10 @@ public class OrderService {
             throw new UserMismatchException(orderId, userId);
         }
 
-        // 주문 상태 확인 (OrderValidator 위임)
+        // 주문 상태 확인 (락 보유 상태에서 수행 — 다른 트랜잭션이 상태 변경 불가)
         orderValidator.validateOrderStatus(order);
 
-        // 2단계: 원자적 거래 (프록시를 통해 호출)
+        // 2단계: 원자적 거래 (같은 트랜잭션 내에서 실행, 락 유지)
         CancelOrderResponse response = orderCancelTransactionService.executeTransactionalCancel(orderId, userId, order);
 
         return response;
