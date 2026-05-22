@@ -58,8 +58,8 @@ public class RankingServiceImpl implements RankingService {
             rankingRepository.incrementProductScore(todayDate, productId);
             log.debug("[RankingService] 상품 점수 증가: productId={}, date={}", productId, todayDate);
         } catch (Exception e) {
-            log.error("[RankingService] 상품 점수 증가 실패: productId={}", productId, e);
-            throw new RuntimeException("상품 랭킹 업데이트 실패: " + productId, e);
+            // Repository 레이어에서 이미 처리. 여기까지 올라온 경우만 방어적 로깅
+            log.warn("[RankingService] 상품 점수 증가 실패 (무시): productId={}, error={}", productId, e.getMessage());
         }
     }
 
@@ -76,8 +76,8 @@ public class RankingServiceImpl implements RankingService {
             log.debug("[RankingService] TOP 상품 조회 완료: topN={}, count={}", topN, topProducts.size());
             return topProducts;
         } catch (Exception e) {
-            log.error("[RankingService] TOP 상품 조회 실패: topN={}", topN, e);
-            throw new RuntimeException("TOP 상품 조회 실패", e);
+            log.warn("[RankingService] TOP 상품 조회 실패 (빈 목록 반환): topN={}, error={}", topN, e.getMessage());
+            return List.of();
         }
     }
 
@@ -94,8 +94,8 @@ public class RankingServiceImpl implements RankingService {
             log.debug("[RankingService] 상품 순위 조회: productId={}, rank={}", productId, rank);
             return rank;
         } catch (Exception e) {
-            log.error("[RankingService] 상품 순위 조회 실패: productId={}", productId, e);
-            throw new RuntimeException("상품 순위 조회 실패", e);
+            log.warn("[RankingService] 상품 순위 조회 실패 (empty 반환): productId={}, error={}", productId, e.getMessage());
+            return Optional.empty();
         }
     }
 
@@ -112,8 +112,8 @@ public class RankingServiceImpl implements RankingService {
             log.debug("[RankingService] 상품 주문 수 조회: productId={}, score={}", productId, score);
             return score;
         } catch (Exception e) {
-            log.error("[RankingService] 상품 주문 수 조회 실패: productId={}", productId, e);
-            throw new RuntimeException("상품 주문 수 조회 실패", e);
+            log.warn("[RankingService] 상품 주문 수 조회 실패 (0 반환): productId={}, error={}", productId, e.getMessage());
+            return 0L;
         }
     }
 }

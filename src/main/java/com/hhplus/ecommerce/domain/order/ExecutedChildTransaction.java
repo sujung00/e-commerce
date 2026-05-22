@@ -36,9 +36,9 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "executed_child_transactions",
         indexes = {
-                @Index(name = "idx_idempotency_token", columnList = "idempotency_token", unique = true),
-                @Index(name = "idx_order_id", columnList = "order_id"),
-                @Index(name = "idx_status", columnList = "status")
+                @Index(name = "idx_ect_idempotency_token", columnList = "idempotency_token", unique = true),
+                @Index(name = "idx_ect_order_id",          columnList = "order_id"),
+                @Index(name = "idx_ect_status",            columnList = "status")
         })
 @Getter
 @Setter

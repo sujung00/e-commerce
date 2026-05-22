@@ -525,7 +525,7 @@ Consumer 2: SELECT FOR UPDATE (Coupon 1) ─────────────
 
 | 항목 | Redis Queue | Kafka | 개선 효과 |
 |------|-------------|-------|----------|
-| **처리량** | ~1,000 req/s (단일 인스턴스) | 10,000+ req/s (Partition 확장) | **10배 향상** |
+| **처리량** | ~1,000 req/s (단일 인스턴스, 추정) | 10,000+ req/s (Partition 확장, 추정) | **10배 향상 (추정)** |
 | **확장성** | Vertical (인스턴스 스펙 증설) | Horizontal (Partition/Consumer 증설) | **선형 확장** |
 | **장애 복구** | Redis Sentinel (복잡) | Replica + Offset (단순) | **운영 단순화** |
 | **메시지 보관** | 휘발성 (메모리) | 영구 보관 (Disk, 7일) | **재처리 가능** |
@@ -555,9 +555,9 @@ Client (10K req/s) ──> Kafka Producer ──┬──> Partition 0 → Consu
                                         처리량: 500 × 20 = 10,000 req/s
 ```
 
-**결과**:
-- Redis: 1,000 req/s → Kafka: 10,000 req/s
-- **10배 처리량 향상**
+**결과 (추정 — 실제 파티션 수·Consumer 수·DB 처리 시간에 따라 달라짐)**:
+- Redis: 1,000 req/s → Kafka: 10,000 req/s (추정)
+- **10배 처리량 향상 (추정)**
 
 ---
 
@@ -740,19 +740,22 @@ Broker: 10대
 
 ---
 
-### 7.2 예상 결과
+### 7.2 예상 결과 (추정)
 
-**처리량 향상**:
-- Redis Queue: 1,000 req/s → Kafka: 10,000 req/s
-- **10배 향상**
+> ⚠️ **이 섹션의 수치는 실측 없이 이론적으로 산출된 추정값입니다.**
+> 실제 수치는 인프라 사양·파티션 수·Consumer 수에 따라 달라집니다.
 
-**응답 시간 개선**:
-- Redis Queue: ~50ms (동기) → Kafka: ~5ms (비동기)
-- **90% 단축**
+**처리량 향상 (추정)**:
+- Redis Queue: 1,000 req/s → Kafka: 10,000 req/s (추정)
+- **10배 향상 (추정)**
 
-**장애 복구 시간**:
-- Redis Sentinel: 30초 ~ 2분 → Kafka: 5초 이내
-- **80% 단축**
+**응답 시간 개선 (추정)**:
+- Redis Queue: ~50ms (동기) → Kafka: ~5ms (비동기) (추정)
+- **90% 단축 (추정)**
+
+**장애 복구 시간 (추정)**:
+- Redis Sentinel: 30초 ~ 2분 → Kafka: 5초 이내 (추정)
+- **80% 단축 (추정)**
 
 **운영 복잡도**:
 - Redis: Sentinel 관리, 메모리 모니터링

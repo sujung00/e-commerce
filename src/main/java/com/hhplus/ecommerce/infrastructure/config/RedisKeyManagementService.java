@@ -2,9 +2,11 @@ package com.hhplus.ecommerce.infrastructure.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -116,20 +118,15 @@ public class RedisKeyManagementService {
         Set<String> keys = redisTemplate.keys(keyType.getPattern());
         metadata.put("actual_count", keys != null ? keys.size() : 0);
 
-        // 예상 메모리 사용 (샘플 기반)
+        // 샘플 키 1개로 MEMORY USAGE 명령 실행 → 실제 메모리 조회
         if (keys != null && !keys.isEmpty()) {
+            String sampleKey = keys.iterator().next();
             try {
-                String sampleKey = keys.iterator().next();
-                var connection = redisTemplate.getConnectionFactory().getConnection();
-                if (connection != null) {
-                    // StringLength는 키의 메모리 사용량의 대략적인 추정치
-                    Long stringLength = redisTemplate.opsForValue().size(sampleKey);
-                    metadata.put("estimated_memory_bytes", stringLength != null ? stringLength : 0);
-                    connection.close();
-                }
+                Long memBytes = fetchMemoryUsage(sampleKey);
+                metadata.put("actual_memory_bytes", memBytes != null ? memBytes : 0L);
             } catch (Exception e) {
-                log.warn("메모리 사용량 계산 실패", e);
-                metadata.put("estimated_memory_bytes", 0);
+                log.warn("[RedisKeyManagementService] MEMORY USAGE 조회 실패: key={}", sampleKey, e);
+                metadata.put("actual_memory_bytes", 0L);
             }
         }
 
@@ -165,17 +162,16 @@ public class RedisKeyManagementService {
                 String categoryName = keyType.getCategory().getDisplayName();
 
                 try {
-                    // 첫 번째 키의 메모리 사용량 샘플링
+                    // 샘플 키 1개로 MEMORY USAGE 실측 후 전체 추산 (같은 카테고리의 키가 유사한 크기라 가정)
                     String sampleKey = keys.iterator().next();
-                    Long stringLength = redisTemplate.opsForValue().size(sampleKey);
+                    Long sampleBytes = fetchMemoryUsage(sampleKey);
 
-                    if (stringLength != null && stringLength > 0) {
-                        // 같은 카테고리의 모든 키가 유사한 크기라고 가정
-                        long estimatedTotal = stringLength * keys.size();
+                    if (sampleBytes != null && sampleBytes > 0) {
+                        long estimatedTotal = sampleBytes * keys.size();
                         result.merge(categoryName, estimatedTotal, Long::sum);
                     }
                 } catch (Exception e) {
-                    log.warn("카테고리별 메모리 사용량 계산 실패: {}", categoryName, e);
+                    log.warn("[RedisKeyManagementService] 카테고리별 메모리 측정 실패: {}", categoryName, e);
                 }
             }
         }
@@ -213,13 +209,13 @@ public class RedisKeyManagementService {
         String type = String.valueOf(redisTemplate.type(key));
         details.put("type", type);
 
-        // 메모리 사용량 추정
+        // MEMORY USAGE 명령으로 실제 메모리 사용량 조회
         try {
-            Long stringLength = redisTemplate.opsForValue().size(key);
-            details.put("memory_bytes", stringLength != null ? stringLength : 0);
+            Long memBytes = fetchMemoryUsage(key);
+            details.put("actual_memory_bytes", memBytes != null ? memBytes : 0L);
         } catch (Exception e) {
-            log.warn("키 메모리 사용량 조회 실패: {}", key, e);
-            details.put("memory_bytes", 0);
+            log.warn("[RedisKeyManagementService] MEMORY USAGE 조회 실패: key={}", key, e);
+            details.put("actual_memory_bytes", 0L);
         }
 
         // 대응하는 RedisKeyType 찾기
@@ -233,6 +229,25 @@ public class RedisKeyManagementService {
         }
 
         return details;
+    }
+
+    /**
+     * Redis MEMORY USAGE 명령으로 키의 실제 메모리 사용량 조회
+     *
+     * opsForValue().size() 는 직렬화된 문자열 길이(바이트)만 반환하여 실제 Redis 메모리와 다르다.
+     * MEMORY USAGE 명령은 키 자체의 메타데이터·인코딩·만료 정보를 포함한 실제 메모리를 반환한다.
+     * (Redis 4.0+, Spring Data Redis conn.execute() native command API 사용)
+     *
+     * @param key Redis 키
+     * @return 실제 메모리 사용량 (바이트). 키 미존재 또는 명령 미지원 시 null
+     */
+    private Long fetchMemoryUsage(String key) {
+        return redisTemplate.execute((RedisCallback<Long>) conn -> {
+            Object result = conn.execute("MEMORY",
+                    "USAGE".getBytes(StandardCharsets.UTF_8),
+                    key.getBytes(StandardCharsets.UTF_8));
+            return result instanceof Long ? (Long) result : null;
+        });
     }
 
     /**

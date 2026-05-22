@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -64,18 +65,21 @@ public class CompensationService {
     private final CouponService couponService;
     private final InventoryService inventoryService;
     private final ObjectMapper objectMapper;
+    private final FailedCompensationRepository failedCompensationRepository;
 
     public CompensationService(
             ChildTransactionEventRepository childTransactionEventRepository,
             UserBalanceService userBalanceService,
             CouponService couponService,
             InventoryService inventoryService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            FailedCompensationRepository failedCompensationRepository) {
         this.childTransactionEventRepository = childTransactionEventRepository;
         this.userBalanceService = userBalanceService;
         this.couponService = couponService;
         this.inventoryService = inventoryService;
         this.objectMapper = objectMapper;
+        this.failedCompensationRepository = failedCompensationRepository;
     }
 
     /**
@@ -127,10 +131,9 @@ public class CompensationService {
                     }
 
                 } catch (Exception e) {
-                    // 보상 실패 시 로깅하고 계속 진행 (다른 이벤트 보상 진행)
-                    log.error("[CompensationService] 이벤트 {} ({}) 보상 실패: {}",
+                    log.error("[CompensationService] 이벤트 {} ({}) 보상 실패 — FailedCompensationEntity 저장: {}",
                             event.getEventId(), event.getTxType(), e.getMessage(), e);
-                    // 실제 운영 환경에서는 알림 발송 또는 별도 큐에 저장
+                    saveFailedCompensation(event, e);
                 }
             }
 
@@ -309,6 +312,48 @@ public class CompensationService {
                     event.getEventData(), e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * 보상 실패를 FailedCompensationEntity로 영구 저장
+     *
+     * 호출 시점: compensateChildTransaction 에서 예외 발생 시
+     * - PENDING 상태로 저장 → 배치가 주기적으로 재시도
+     * - 수동 조치가 필요하면 ABANDONED로 전환
+     *
+     * @param event 보상 실패한 ChildTransactionEvent
+     * @param cause 발생한 예외
+     */
+    private void saveFailedCompensation(ChildTransactionEvent event, Exception cause) {
+        try {
+            FailedCompensationEntity entity = FailedCompensationEntity.builder()
+                    .orderId(event.getOrderId())
+                    .userId(event.getUserId())
+                    .stepName(event.getTxType().name())
+                    .errorMessage(cause.getMessage())
+                    .stackTrace(buildStackTrace(cause))
+                    .failedAt(LocalDateTime.now())
+                    .retryCount(0)
+                    .status(FailedCompensationStatus.PENDING)
+                    .contextSnapshot(event.getEventData())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
+            failedCompensationRepository.save(entity);
+            log.info("[CompensationService] FailedCompensationEntity 저장 완료: orderId={}, txType={}",
+                    event.getOrderId(), event.getTxType());
+
+        } catch (Exception saveError) {
+            log.error("[CompensationService] FailedCompensationEntity 저장마저 실패: orderId={}, error={}",
+                    event.getOrderId(), saveError.getMessage(), saveError);
+        }
+    }
+
+    private String buildStackTrace(Exception e) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        e.printStackTrace(new java.io.PrintWriter(sw));
+        String trace = sw.toString();
+        return trace.length() > 2000 ? trace.substring(0, 2000) + "..." : trace;
     }
 
     /**

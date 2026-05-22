@@ -75,16 +75,12 @@ public class RedisRankingRepository implements RankingRepository {
         String member = String.valueOf(productId);
 
         try {
-            // ZADD ranking:daily:YYYYMMDD productId 1
-            // - 해당 멤버가 없으면 score=1로 추가
-            // - 해당 멤버가 있으면 score을 1 증가
-            // Atomicity: Redis ZADD는 원자적 연산 (분산 환경에서도 안전)
             redisTemplate.opsForZSet().incrementScore(key, member, 1.0);
-
             log.debug("[RankingRepository] 상품 점수 증가: date={}, productId={}, key={}", date, productId, key);
         } catch (Exception e) {
-            log.error("[RankingRepository] 상품 점수 증가 실패: date={}, productId={}", date, productId, e);
-            throw new RuntimeException("랭킹 점수 업데이트 실패", e);
+            // Redis 장애 시 랭킹 업데이트는 best-effort — 주문 흐름을 중단시키지 않는다
+            log.warn("[RankingRepository] 상품 점수 증가 실패 (Redis 장애 추정, 무시): date={}, productId={}, error={}",
+                    date, productId, e.getMessage());
         }
     }
 
@@ -115,8 +111,9 @@ public class RedisRankingRepository implements RankingRepository {
             log.debug("[RankingRepository] TOP 상품 조회 완료: date={}, topN={}, count={}", date, topN, items.size());
             return items;
         } catch (Exception e) {
-            log.error("[RankingRepository] TOP 상품 조회 실패: date={}, topN={}", date, topN, e);
-            throw new RuntimeException("TOP 상품 조회 실패", e);
+            log.warn("[RankingRepository] TOP 상품 조회 실패 (Redis 장애 추정, 빈 목록 반환): date={}, topN={}, error={}",
+                    date, topN, e.getMessage());
+            return List.of();
         }
     }
 
@@ -142,8 +139,9 @@ public class RedisRankingRepository implements RankingRepository {
             log.debug("[RankingRepository] 상품 순위 조회: date={}, productId={}, rank={}", date, productId, actualRank);
             return Optional.of(actualRank);
         } catch (Exception e) {
-            log.error("[RankingRepository] 상품 순위 조회 실패: date={}, productId={}", date, productId, e);
-            throw new RuntimeException("상품 순위 조회 실패", e);
+            log.warn("[RankingRepository] 상품 순위 조회 실패 (Redis 장애 추정, empty 반환): date={}, productId={}, error={}",
+                    date, productId, e.getMessage());
+            return Optional.empty();
         }
     }
 
@@ -162,8 +160,9 @@ public class RedisRankingRepository implements RankingRepository {
             log.debug("[RankingRepository] 상품 점수 조회: date={}, productId={}, score={}", date, productId, result);
             return result;
         } catch (Exception e) {
-            log.error("[RankingRepository] 상품 점수 조회 실패: date={}, productId={}", date, productId, e);
-            throw new RuntimeException("상품 점수 조회 실패", e);
+            log.warn("[RankingRepository] 상품 점수 조회 실패 (Redis 장애 추정, 0 반환): date={}, productId={}, error={}",
+                    date, productId, e.getMessage());
+            return 0L;
         }
     }
 
@@ -178,8 +177,9 @@ public class RedisRankingRepository implements RankingRepository {
             Boolean deleted = redisTemplate.delete(key);
             log.info("[RankingRepository] 일일 랭킹 초기화: date={}, deleted={}", date, deleted);
         } catch (Exception e) {
-            log.error("[RankingRepository] 일일 랭킹 초기화 실패: date={}", date, e);
-            throw new RuntimeException("랭킹 초기화 실패", e);
+            log.error("[RankingRepository] 일일 랭킹 초기화 실패 (Redis 장애 추정): date={}, error={}",
+                    date, e.getMessage());
+            // 초기화 실패는 다음 스케줄에서 재시도 가능 — 예외 전파하지 않음
         }
     }
 }

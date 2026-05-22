@@ -1,17 +1,16 @@
 package com.hhplus.ecommerce.infrastructure.constants;
 
 /**
- * RetryConstants - 재시도 로직 설정 상수
+ * RetryConstants - 재시도 설정 기본값 상수
  *
- * 역할:
- * - 동시성 제어, Outbox 이벤트 폴링 등 재시도 관련 설정 관리
- * - 재시도 횟수, 초기 딜레이, 지수 백오프 배수 통일
- * - 서로 다른 재시도 전략(쿠폰 발급, 주문 생성, Outbox 폴링)을 카테고리별로 관리
+ * @deprecated application.yml 의 {@code retry:} 섹션과
+ *             {@link RetryProperties} 빈을 통해 설정값을 주입받는 방식으로 전환됨.
+ *             Spring 빈 컨텍스트 밖(예: 테스트 유틸)에서만 이 클래스를 사용하라.
+ *             서비스 계층에서는 {@link RetryProperties} 를 주입해 사용할 것.
  *
- * 사용 예:
- * - for (int i = 0; i < RetryConstants.ORDER_CREATION_MAX_RETRIES; i++) { ... }
- * - Thread.sleep(RetryConstants.ORDER_CREATION_INITIAL_DELAY_MS * (1L << i));
+ * <p>각 상수는 {@code application.yml retry:} 섹션의 기본값과 동일하다.</p>
  */
+@Deprecated
 public class RetryConstants {
 
     // ========== Order Creation Retry Constants ==========

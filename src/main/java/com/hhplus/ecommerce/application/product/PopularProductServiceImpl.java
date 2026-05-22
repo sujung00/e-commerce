@@ -23,8 +23,8 @@ import java.util.stream.Collectors;
  * - TTL: 1시간 (CacheConfig.java에서 설정)
  * - 캐시 키: "popularProducts"
  *
- * 성능 개선:
- * - TPS: 예상 3-4배 향상
+ * 성능 개선 (미측정, 추정값 — TODO: 캐시 적용 전후 부하 테스트로 실측 필요):
+ * - TPS: 3-4배 향상
  * - 응답시간: 87% 감소
  * - DB 부하: 현저히 감소
  * - 분산 환경: 서버 인스턴스 간 캐시 공유 가능

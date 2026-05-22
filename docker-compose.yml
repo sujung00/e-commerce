@@ -120,7 +120,7 @@ services:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     ports:
-      - "8080:8080"   # 웹 UI 접속 포트
+      - "8989:8080"   # 웹 UI 접속 포트 (Spring Boot 8080과 충돌 방지)
     environment:
       # Kafka UI 동적 설정 모드 활성화
       DYNAMIC_CONFIG_ENABLED: 'true'
@@ -138,6 +138,23 @@ services:
 
     networks:
       - kafka-network
+
+  # ================================
+  # Redis (캐시 + 쿠폰 비동기 큐)
+  # ================================
+  redis:
+    image: redis:7.0-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save "" --appendonly no
+    networks:
+      - kafka-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 # ================================
 # Volume 정의

@@ -15,6 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -297,54 +298,45 @@ public class RankingServiceTest {
     // ========== 예외 처리 ==========
 
     @Test
-    @DisplayName("Repository 예외 발생 시 처리 - incrementProductScore")
+    @DisplayName("Redis 장애 시 incrementProductScore - 예외 없이 무시")
     void testIncrementProductScore_RepositoryException() {
-        // Given: Repository에서 예외 발생
         doThrow(new RuntimeException("Redis 연결 실패"))
                 .when(rankingRepository).incrementProductScore(anyString(), anyLong());
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingService.incrementProductScore(100L);
-        });
+        // best-effort 업데이트: 예외를 전파하지 않는다
+        assertDoesNotThrow(() -> rankingService.incrementProductScore(100L));
     }
 
     @Test
-    @DisplayName("Repository 예외 발생 시 처리 - getTopProducts")
+    @DisplayName("Redis 장애 시 getTopProducts - 빈 목록 반환")
     void testGetTopProducts_RepositoryException() {
-        // Given: Repository에서 예외 발생
         when(rankingRepository.getTopProducts(TODAY_DATE, 5))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingService.getTopProducts(5);
-        });
+        List<RankingItem> result = rankingService.getTopProducts(5);
+
+        assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("Repository 예외 발생 시 처리 - getProductRank")
+    @DisplayName("Redis 장애 시 getProductRank - Optional.empty 반환")
     void testGetProductRank_RepositoryException() {
-        // Given: Repository에서 예외 발생
         when(rankingRepository.getProductRank(TODAY_DATE, 100L))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingService.getProductRank(100L);
-        });
+        Optional<Long> result = rankingService.getProductRank(100L);
+
+        assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("Repository 예외 발생 시 처리 - getProductScore")
+    @DisplayName("Redis 장애 시 getProductScore - 0 반환")
     void testGetProductScore_RepositoryException() {
-        // Given: Repository에서 예외 발생
         when(rankingRepository.getProductScore(TODAY_DATE, 100L))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingService.getProductScore(100L);
-        });
+        Long result = rankingService.getProductScore(100L);
+
+        assertThat(result).isEqualTo(0L);
     }
 }

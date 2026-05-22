@@ -30,10 +30,10 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "failed_compensations",
         indexes = {
-                @Index(name = "idx_order_id", columnList = "order_id"),
-                @Index(name = "idx_status", columnList = "status"),
-                @Index(name = "idx_failed_at", columnList = "failed_at"),
-                @Index(name = "idx_step_name", columnList = "step_name")
+                @Index(name = "idx_fc_order_id",  columnList = "order_id"),
+                @Index(name = "idx_fc_status",     columnList = "status"),
+                @Index(name = "idx_fc_failed_at",  columnList = "failed_at"),
+                @Index(name = "idx_fc_step_name",  columnList = "step_name")
         })
 @Getter
 @Setter

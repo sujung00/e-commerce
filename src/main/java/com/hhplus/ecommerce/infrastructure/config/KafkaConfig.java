@@ -53,6 +53,10 @@ public class KafkaConfig {
     @Value("${kafka.consumer.coupon-group-id}")
     private String couponConsumerGroupId;
 
+    /** 로컬 단일 브로커: 1 / 운영 멀티 브로커: 3 (application.yml 에서 조정) */
+    @Value("${kafka.topic.replication-factor:1}")
+    private short topicReplicationFactor;
+
     /**
      * Kafka Producer 설정
      *
@@ -296,9 +300,9 @@ public class KafkaConfig {
     @Bean
     public NewTopic couponIssueRequestsTopic() {
         NewTopic topic = new NewTopic(
-            "coupon.issue.requests",  // Topic 이름
+            "coupon.issue.requests",   // Topic 이름
             10,                        // Partition 수 (Phase 1: 초기 설정)
-            (short) 3                  // Replication Factor (가용성 보장)
+            topicReplicationFactor     // Replication Factor (로컬=1, 운영=3)
         );
 
         // Topic 상세 설정

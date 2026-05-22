@@ -175,11 +175,11 @@ public class OrderTransactionService {
     )
     @Retryable(
         value = OptimisticLockException.class,
-        maxAttempts = 3,
+        maxAttemptsExpression    = "${retry.order.max-attempts:3}",
         backoff = @Backoff(
-            delay = 50,
-            multiplier = 2,
-            maxDelay = 1000,
+            delayExpression      = "${retry.order.initial-delay-ms:50}",
+            multiplierExpression = "${retry.order.backoff-multiplier:2}",
+            maxDelayExpression   = "${retry.order.max-delay-ms:1000}",
             random = true
         )
     )
@@ -201,11 +201,11 @@ public class OrderTransactionService {
     )
     @Retryable(
         value = OptimisticLockException.class,
-        maxAttempts = 3,
+        maxAttemptsExpression    = "${retry.order.max-attempts:3}",
         backoff = @Backoff(
-            delay = 50,
-            multiplier = 2,
-            maxDelay = 1000,
+            delayExpression      = "${retry.order.initial-delay-ms:50}",
+            multiplierExpression = "${retry.order.backoff-multiplier:2}",
+            maxDelayExpression   = "${retry.order.max-delay-ms:1000}",
             random = true
         )
     )

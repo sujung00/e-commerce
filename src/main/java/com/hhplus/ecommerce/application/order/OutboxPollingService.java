@@ -3,6 +3,7 @@ package com.hhplus.ecommerce.application.order;
 import com.hhplus.ecommerce.domain.order.Outbox;
 import com.hhplus.ecommerce.domain.order.OutboxRepository;
 import com.hhplus.ecommerce.application.alert.AlertService;
+import com.hhplus.ecommerce.infrastructure.constants.RetryProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -38,9 +39,7 @@ public class OutboxPollingService {
     private final OutboxRepository outboxRepository;
     private final OutboxEventPublisher eventPublisher;
     private final AlertService alertService;
-
-    private static final int MAX_RETRIES = 3;
-    private static final long RETRY_DELAY_SECONDS = 60;  // 1분 후 재시도
+    private final RetryProperties retryProperties;
 
     /**
      * 5초마다 실행되는 배치 작업
@@ -51,32 +50,31 @@ public class OutboxPollingService {
      * 3. 성공 → SENT로 업데이트
      * 4. 실패 → retryCount 증가, 최대 초과 시 ABANDONED로 변경
      */
-    @Scheduled(fixedRate = 5000)
-    @Transactional
+    @Scheduled(fixedRateString = "${retry.outbox.polling-interval-ms:5000}")
     public void pollAndSendMessages() {
+        log.debug("[OutboxPollingService] Outbox 메시지 폴링 시작...");
+
+        List<Outbox> pendingMessages;
         try {
-            log.debug("[OutboxPollingService] Outbox 메시지 폴링 시작...");
-
-            // STEP 1: PENDING 상태의 모든 메시지 조회
-            List<Outbox> pendingMessages = outboxRepository.findAllByStatus("PENDING");
-
-            if (pendingMessages.isEmpty()) {
-                log.debug("[OutboxPollingService] 전송할 PENDING 메시지 없음");
-                return;
-            }
-
-            log.info("[OutboxPollingService] {} 개의 PENDING 메시지 발견", pendingMessages.size());
-
-            // STEP 2: 각 메시지별로 외부 시스템에 발행 시도
-            for (Outbox message : pendingMessages) {
-                processMessage(message);
-            }
-
-            log.debug("[OutboxPollingService] Outbox 메시지 폴링 완료");
-
+            pendingMessages = outboxRepository.findAllByStatus("PENDING");
         } catch (Exception e) {
-            log.error("[OutboxPollingService] 배치 처리 중 예상치 못한 에러", e);
+            log.error("[OutboxPollingService] PENDING 메시지 조회 실패 (다음 폴링에서 재시도): error={}", e.getMessage(), e);
+            return;
         }
+
+        if (pendingMessages.isEmpty()) {
+            log.debug("[OutboxPollingService] 전송할 PENDING 메시지 없음");
+            return;
+        }
+
+        log.info("[OutboxPollingService] {} 개의 PENDING 메시지 발견", pendingMessages.size());
+
+        // 메시지별 독립 처리 — 한 건 실패가 다른 건에 영향을 주지 않는다
+        for (Outbox message : pendingMessages) {
+            processMessage(message);
+        }
+
+        log.debug("[OutboxPollingService] Outbox 메시지 폴링 완료");
     }
 
     /**
@@ -84,15 +82,14 @@ public class OutboxPollingService {
      *
      * @param message 처리할 Outbox 메시지
      */
-    private void processMessage(Outbox message) {
+    @Transactional
+    public void processMessage(Outbox message) {
         try {
             log.info("[OutboxPollingService] 메시지 발행 시작 - messageId={}, orderId={}, type={}",
                     message.getMessageId(), message.getOrderId(), message.getMessageType());
 
-            // STEP 3a: 외부 시스템에 메시지 발행
             eventPublisher.publish(message);
 
-            // STEP 3b: 성공 - SENT 상태로 업데이트
             message.markAsSent();
             message.setSentAt(LocalDateTime.now());
             outboxRepository.update(message);
@@ -119,32 +116,28 @@ public class OutboxPollingService {
         log.warn("[OutboxPollingService] 메시지 발행 실패 - messageId={}, orderId={}, error={}",
                 message.getMessageId(), message.getOrderId(), e.getMessage());
 
-        // 재시도 횟수 증가
-        message.markAsFailed();
+        message.markAsFailed();          // status = "FAILED", retryCount++
         message.setLastAttempt(LocalDateTime.now());
 
-        // 최대 재시도 횟수 확인
-        if (message.getRetryCount() >= MAX_RETRIES) {
-            log.error("[OutboxPollingService] 최대 재시도 횟수 초과 - messageId={}, orderId={}, retries={}",
-                    message.getMessageId(), message.getOrderId(), message.getRetryCount());
+        int maxAttempts = retryProperties.getOutbox().getMaxAttempts();
+        try {
+            if (message.getRetryCount() >= maxAttempts) {
+                log.error("[OutboxPollingService] 최대 재시도 횟수 초과 → ABANDONED: messageId={}, orderId={}, retries={}",
+                        message.getMessageId(), message.getOrderId(), message.getRetryCount());
 
-            // DLQ로 이동 (ABANDONED)
-            message.setStatus("ABANDONED");
-            outboxRepository.update(message);
+                message.setStatus("ABANDONED");
+                outboxRepository.update(message);
+                alertService.notifyOutboxFailure(message);
 
-            // 관리자 알림
-            alertService.notifyOutboxFailure(message);
-
-            log.error("[OutboxPollingService] 메시지 ABANDONED로 처리됨 - messageId={}, orderId={}",
-                    message.getMessageId(), message.getOrderId());
-
-        } else {
-            // 재시도 대기: PENDING 상태 유지, lastAttempt 업데이트
-            message.setStatus("PENDING");
-            outboxRepository.update(message);
-
-            log.info("[OutboxPollingService] 메시지 재시도 대기 - messageId={}, orderId={}, retryCount={}/{}",
-                    message.getMessageId(), message.getOrderId(), message.getRetryCount(), MAX_RETRIES);
+            } else {
+                outboxRepository.update(message);
+                log.info("[OutboxPollingService] 메시지 FAILED 저장 (재시도 예정) - messageId={}, orderId={}, retryCount={}/{}",
+                        message.getMessageId(), message.getOrderId(), message.getRetryCount(), maxAttempts);
+            }
+        } catch (Exception updateError) {
+            // 상태 업데이트마저 실패하면 다음 폴링에서 중복 처리될 수 있으므로 반드시 로깅
+            log.error("[OutboxPollingService] 메시지 상태 업데이트 실패 (다음 폴링에서 재처리됨): messageId={}, orderId={}, updateError={}",
+                    message.getMessageId(), message.getOrderId(), updateError.getMessage(), updateError);
         }
     }
 }

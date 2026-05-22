@@ -1,6 +1,8 @@
 package com.hhplus.ecommerce.application.order;
 
 import com.hhplus.ecommerce.application.order.saga.orchestration.OrderSagaOrchestrator;
+import com.hhplus.ecommerce.domain.coupon.Coupon;
+import com.hhplus.ecommerce.domain.coupon.CouponRepository;
 import com.hhplus.ecommerce.domain.order.Order;
 import com.hhplus.ecommerce.domain.order.OrderItem;
 import com.hhplus.ecommerce.domain.order.OrderRepository;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -81,6 +84,7 @@ public class OrderSagaService {
     private final OrderCalculator orderCalculator;
     private final OutboxEventPublisher outboxEventPublisher;
     private final ObjectMapper objectMapper;
+    private final CouponRepository couponRepository;
 
     public OrderSagaService(OrderSagaOrchestrator orderSagaOrchestrator,
                           OrderRepository orderRepository,
@@ -89,7 +93,8 @@ public class OrderSagaService {
                           ApplicationEventPublisher eventPublisher,
                           OrderCalculator orderCalculator,
                           OutboxEventPublisher outboxEventPublisher,
-                          ObjectMapper objectMapper) {
+                          ObjectMapper objectMapper,
+                          CouponRepository couponRepository) {
         this.orderSagaOrchestrator = orderSagaOrchestrator;
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
@@ -98,6 +103,7 @@ public class OrderSagaService {
         this.orderCalculator = orderCalculator;
         this.outboxEventPublisher = outboxEventPublisher;
         this.objectMapper = objectMapper;
+        this.couponRepository = couponRepository;
     }
 
     /**
@@ -141,10 +147,7 @@ public class OrderSagaService {
             log.info("[OrderSagaService] Saga Orchestrator 주문 생성 시작 - userId={}, finalAmount={}, couponId={}",
                     userId, finalAmount, couponId);
 
-            // ========== Step 1: 쿠폰 할인액 계산 ==========
-            Long couponDiscount = (couponId != null) ? calculateCouponDiscount(couponId) : 0L;
-
-            // OrderItemDto를 OrderItemCommand로 변환 (OrderCalculator 호출용)
+            // ========== Step 1: 소계 계산 (쿠폰 PERCENTAGE 할인에 기준금액 필요) ==========
             List<OrderItemCommand> orderItemCommands = orderItems.stream()
                     .map(dto -> OrderItemCommand.builder()
                             .productId(dto.getProductId())
@@ -154,6 +157,9 @@ public class OrderSagaService {
                     .collect(java.util.stream.Collectors.toList());
 
             Long subtotal = orderCalculator.calculateSubtotal(orderItemCommands);
+
+            // ========== Step 2: 쿠폰 할인액 계산 (subtotal 기준) ==========
+            Long couponDiscount = (couponId != null) ? calculateCouponDiscount(couponId, subtotal) : 0L;
 
             // ========== Step 2: OrderSagaOrchestrator 실행 ==========
             // OrderSagaOrchestrator가 각 Step을 순차 실행:
@@ -423,11 +429,32 @@ public class OrderSagaService {
     }
 
     /**
-     * 쿠폰 할인액 조회 (실제 구현 필요)
-     * TODO: CouponRepository를 통해 실제 할인액 조회
+     * 쿠폰 할인액 계산
+     *
+     * FIXED_AMOUNT: 쿠폰에 명시된 고정 할인액 반환
+     * PERCENTAGE:   subtotal * discountRate (소수점 버림)
+     *
+     * @param couponId 쿠폰 ID
+     * @param subtotal 상품 소계 (PERCENTAGE 계산 기준금액)
+     * @return 할인액 (원)
+     * @throws IllegalArgumentException 쿠폰이 존재하지 않거나 지원하지 않는 discount_type
      */
-    private Long calculateCouponDiscount(Long couponId) {
-        return 0L; // 임시
+    private Long calculateCouponDiscount(Long couponId, Long subtotal) {
+        Coupon coupon = couponRepository.findById(couponId)
+                .orElseThrow(() -> new IllegalArgumentException("쿠폰을 찾을 수 없습니다: " + couponId));
+
+        if ("FIXED_AMOUNT".equals(coupon.getDiscountType())) {
+            return coupon.getDiscountAmount();
+        }
+
+        if ("PERCENTAGE".equals(coupon.getDiscountType())) {
+            return coupon.getDiscountRate()
+                    .multiply(BigDecimal.valueOf(subtotal))
+                    .longValue();
+        }
+
+        log.warn("[OrderSagaService] 지원하지 않는 discount_type: {}, couponId={}", coupon.getDiscountType(), couponId);
+        return 0L;
     }
 
 

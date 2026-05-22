@@ -36,7 +36,7 @@ public class ProductService {
      * 상품 목록 조회 with 페이지네이션 및 정렬
      * 캐시: RedisKeyType.CACHE_PRODUCT_LIST_NAME
      * TTL: 1시간 (RedisKeyType에서 자동 관리)
-     * 예상 효과: TPS 200 → 1000 (5배 향상)
+     * TODO(미측정, 추정값): TPS 200 → 1000 (5배 향상) — 부하 테스트로 실측 필요
      *
      * ✅ 개선: 캐시 이름을 RedisKeyType enum으로 타입 안전하게 관리
      *
@@ -84,7 +84,7 @@ public class ProductService {
      * 상품 상세 조회 (옵션 포함)
      * 캐시: RedisKeyType.CACHE_PRODUCT_DETAIL_NAME
      * TTL: 2시간 (RedisKeyType에서 자동 관리)
-     * 예상 효과: TPS 3배 향상, 응답시간 87% 감소
+     * TODO(미측정, 추정값): TPS 3배 향상, 응답시간 87% 감소 — 부하 테스트로 실측 필요
      *
      * ✅ 개선: 캐시 이름을 RedisKeyType enum으로 타입 안전하게 관리
      *

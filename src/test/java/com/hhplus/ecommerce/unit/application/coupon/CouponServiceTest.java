@@ -70,6 +70,9 @@ class CouponServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private com.hhplus.ecommerce.infrastructure.constants.RetryProperties retryProperties;
+
     private static final Long TEST_USER_ID = 1L;
     private static final Long TEST_COUPON_ID = 1L;
     private static final Long TEST_USER_COUPON_ID = 100L;
@@ -77,8 +80,13 @@ class CouponServiceTest {
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
+        // RetryProperties 기본값 스텁 — issueCoupon 경로에서만 호출되므로 lenient 처리
+        com.hhplus.ecommerce.infrastructure.constants.RetryProperties.Coupon couponRetry =
+                new com.hhplus.ecommerce.infrastructure.constants.RetryProperties.Coupon();
+        lenient().when(retryProperties.getCoupon()).thenReturn(couponRetry);
+
         couponService = new CouponService(couponRepository, userCouponRepository, userRepository,
-                childTransactionEventRepository, objectMapper, eventPublisher);
+                childTransactionEventRepository, objectMapper, eventPublisher, retryProperties);
     }
 
     // ========== 쿠폰 발급 (issueCoupon) ==========

@@ -3,14 +3,18 @@ package com.hhplus.ecommerce.infrastructure.config;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.cache.CacheManager;
-import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
@@ -42,7 +46,7 @@ import java.util.Map;
  * - cartItems: 장바구니 아이템 (TTL: 30분, 빈도: 중간)
  * - popularProducts: 인기 상품 조회 (TTL: 1시간, 빈도: 높음)
  *
- * 예상 효과:
+ * 예상 효과 (미측정, 추정값 — TODO: JMeter 부하 테스트로 실측 필요):
  * - Product 목록 조회: TPS 200 → 1000 (5배)
  * - Coupon 목록 조회: TPS 300 → 2000 (6배)
  * - 응답시간 87% 감소
@@ -50,11 +54,13 @@ import java.util.Map;
  * - 캐시 무효화 일관성 보장
  */
 @Configuration
-@EnableCaching
 @RequiredArgsConstructor
 public class CacheConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(CacheConfig.class);
+
     private final RedisConnectionFactory redisConnectionFactory;
+    private final RedisProperties redisProperties;
 
     /**
      * ObjectMapper 설정 (캐시 전용 - JSON 타입 정보 포함)
@@ -66,9 +72,13 @@ public class CacheConfig {
      *
      * @return 캐시 전용 ObjectMapper (타입 정보 포함)
      */
-    @Bean
-    public ObjectMapper cacheObjectMapper() {
+    /**
+     * 캐시 전용 ObjectMapper — @Bean으로 노출하지 않고 cacheManager() 내부에서만 사용
+     * @Bean으로 노출하면 앱 전체의 기본 ObjectMapper가 오염되어 HTTP 응답에 @class가 붙음
+     */
+    private ObjectMapper buildCacheObjectMapper() {
         ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
         mapper.activateDefaultTyping(
                 BasicPolymorphicTypeValidator.builder()
                         .allowIfBaseType(Object.class)
@@ -104,7 +114,7 @@ public class CacheConfig {
 
         // Value 직렬화 (Jackson JSON - 캐시 전용)
         Jackson2JsonRedisSerializer<Object> jackson2JsonRedisSerializer =
-                new Jackson2JsonRedisSerializer<>(cacheObjectMapper(), Object.class);
+                new Jackson2JsonRedisSerializer<>(buildCacheObjectMapper(), Object.class);
 
         // 캐시 전용으로 설정 (JSON 직렬화)
         template.setKeySerializer(stringSerializer);
@@ -167,6 +177,8 @@ public class CacheConfig {
      */
     @Bean
     public CacheManager cacheManager() {
+        log.info("[CacheConfig] RedisCacheManager 생성 시작 — host={}, port={}",
+                redisProperties.getHost(), redisProperties.getPort());
         // 기본 캐시 설정 (TTL: 10분)
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(10))
@@ -177,7 +189,7 @@ public class CacheConfig {
                 )
                 .serializeValuesWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(
-                                new Jackson2JsonRedisSerializer<>(cacheObjectMapper(), Object.class)
+                                new Jackson2JsonRedisSerializer<>(buildCacheObjectMapper(), Object.class)
                         )
                 )
                 .disableCachingNullValues();  // null 값 캐시 금지
@@ -205,7 +217,15 @@ public class CacheConfig {
         cacheConfigMap.put(RedisKeyType.CACHE_POPULAR_PRODUCTS_NAME, defaultConfig
                 .entryTtl(RedisKeyType.CACHE_POPULAR_PRODUCTS.getTtl()));
 
-        return RedisCacheManager.builder(redisConnectionFactory)
+        // Redisson이 아닌 Lettuce 팩토리 사용 — Spring Data Redis 3.5.x 완전 호환
+        // @Bean이 아닌 인라인 생성으로 순환 의존성 방지
+        LettuceConnectionFactory lettuceFactory = new LettuceConnectionFactory(
+                redisProperties.getHost(),
+                redisProperties.getPort()
+        );
+        lettuceFactory.afterPropertiesSet();
+
+        return RedisCacheManager.builder(lettuceFactory)
                 .cacheDefaults(defaultConfig)
                 .withInitialCacheConfigurations(cacheConfigMap)
                 .build();

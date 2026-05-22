@@ -9,6 +9,7 @@ import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
 import com.hhplus.ecommerce.domain.coupon.event.CouponIssuedEvent;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
+import com.hhplus.ecommerce.infrastructure.constants.RetryProperties;
 import com.hhplus.ecommerce.domain.order.ChildTransactionEvent;
 import com.hhplus.ecommerce.domain.order.ChildTransactionEventRepository;
 import com.hhplus.ecommerce.domain.order.ChildTxType;
@@ -69,19 +70,22 @@ public class CouponService {
     private final ChildTransactionEventRepository childTransactionEventRepository;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final RetryProperties retryProperties;
 
     public CouponService(CouponRepository couponRepository,
                          UserCouponRepository userCouponRepository,
                          UserRepository userRepository,
                          ChildTransactionEventRepository childTransactionEventRepository,
                          ObjectMapper objectMapper,
-                         ApplicationEventPublisher eventPublisher) {
+                         ApplicationEventPublisher eventPublisher,
+                         RetryProperties retryProperties) {
         this.couponRepository = couponRepository;
         this.userCouponRepository = userCouponRepository;
         this.userRepository = userRepository;
         this.childTransactionEventRepository = childTransactionEventRepository;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.retryProperties = retryProperties;
     }
 
     /**
@@ -117,10 +121,9 @@ public class CouponService {
             throw new UserNotFoundException(userId);
         }
 
-        // 재시도 로직 (최대 5회)
-        int maxRetries = 5;
+        int maxRetries = retryProperties.getCoupon().getIssuance().getMaxAttempts();
         int retryCount = 0;
-        long retryDelayMs = 5;
+        long retryDelayMs = retryProperties.getCoupon().getIssuance().getInitialDelayMs();
 
         while (retryCount < maxRetries) {
             try {
@@ -390,7 +393,7 @@ public class CouponService {
      *
      * 캐시: couponList (조회 빈도 높음, 변경 빈도 낮음)
      * TTL: 30분 (Redis로 자동 관리)
-     * 예상 효과: TPS 300 → 2000 (6배 향상)
+     * TODO(미측정, 추정값): TPS 300 → 2000 (6배 향상) — JMeter 부하 테스트로 실측 필요
      *
      * 비즈니스 로직:
      * 1. 발급 가능한 쿠폰 조회 (is_active=true, 유효기간 내, remaining_qty > 0)

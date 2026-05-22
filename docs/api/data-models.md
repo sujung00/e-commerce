@@ -309,7 +309,7 @@
 **Outbox 패턴**:
 - 주문 생성 시 status='PENDING'으로 메시지 저장
 - 배치 프로세스가 PENDING 메시지를 외부 시스템으로 전송
-- 성공 → status='SENT', 실패 → status='FAILED' (최대 5회 재시도)
+- 성공 → status='SENT', 실패 → status='FAILED' (최대 3회 재시도, `RetryConstants.OUTBOX_POLLING_MAX_RETRIES`)
 - 트랜잭션 2단계 내에서 저장되므로 원자성 보장
 
 **핵심 규칙**:
@@ -508,7 +508,7 @@ erDiagram
 | **5. 쿠폰 발급** | 선착순 발급, 중복 방지 | coupons, user_coupons | 비관적 락, 원자적 감소, UNIQUE 제약 |
 | **6. 주문 조회** | 사용자가 과거 주문 조회 | orders, order_items, products | 스냅샷으로 과거 상품명 조회 가능 |
 | **7. 쿠폰 적용 주문** | 할인액 계산 후 결제 | orders, order_items, user_coupons, coupons | 할인액 = discount_type에 따라 계산 |
-| **8. 외부 전송** | 주문 후 배송 시스템 호출 (비동기) | outbox, orders | 재시도 전략: 지수 백오프, 최대 5회 |
+| **8. 외부 전송** | 주문 후 배송 시스템 호출 (비동기) | outbox, orders | 재시도 전략: 지수 백오프, 최대 3회 (`RetryConstants.OUTBOX_POLLING_MAX_RETRIES`) |
 | **9. 데이터 일관성** | 일일 배치로 재고 검증 | products, product_options | total_stock = SUM(option.stock) 검증 |
 | **10. 에러 처리** | ERR-001~004 상황별 대응 | orders, product_options, users, coupons | 트랜잭션 ROLLBACK으로 모든 변경 취소 |
 
@@ -520,7 +520,7 @@ erDiagram
 |--------|------|----------|---------|
 | **orders** | order_status | COMPLETED, CANCELLED | COMPLETED (기본값) → CANCELLED (취소 시만 가능) |
 | **user_coupons** | status | UNUSED, USED, EXPIRED, CANCELLED | UNUSED (기본값) → USED (주문 사용 시) / → EXPIRED (만료 시) / → CANCELLED |
-| **outbox** | status | PENDING, SENT, FAILED | PENDING (기본값) → SENT (전송 성공) / → FAILED (5회 재시도 후) → PENDING (재시도) |
+| **outbox** | status | PENDING, SENT, FAILED | PENDING (기본값) → SENT (전송 성공) / → FAILED (3회 재시도 후) → ABANDONED (최대 초과) |
 | **products** | status | IN_STOCK, SOLD_OUT | IN_STOCK (기본값) → SOLD_OUT (모든 옵션 stock=0) / SOLD_OUT → IN_STOCK (재입고 시) |
 
 ---
@@ -612,7 +612,7 @@ enum UserCouponStatus {
 ### 2. Outbox 패턴 (신뢰성 보장)
 - **목적**: 주문 생성과 외부 시스템 전송의 원자성 보장
 - **동작**: 주문 생성 시 outbox에 메시지 저장 → 별도 배치가 비동기 전송
-- **재시도**: 최대 5회, 지수 백오프 적용
+- **재시도**: 최대 3회, 지수 백오프 적용 (`RetryConstants.OUTBOX_POLLING_MAX_RETRIES = 3`)
 
 ### 3. 계산 필드의 관리
 - **products.total_stock**: 옵션별 재고 변경 시 자동 재계산
@@ -726,7 +726,11 @@ CREATE INDEX idx_orders_created ON orders(created_at DESC);
 
 **성능 영향**:
 - `GET /products/popular` API: 최근 3일 주문 필터링 시 Full Table Scan 방지
-- `idx_orders_created` 사용 시 expected reduction: Full Scan → Index Range Scan (500배 이상 개선 가능)
+- `idx_orders_created` 사용 시 실측 결과 (MySQL 8.0, 10,000건):
+  - **Full Scan** : actual time 0.449–7.09 ms, rows examined 10,000
+  - **Index Range Scan** : actual time 0.058–0.314 ms, rows examined 327
+  - **실측 개선율** : 약 22.6배 (Full Scan 7.09ms → Index 0.314ms)
+  - ※ "500배 이상"은 수백만 건 규모 이론값. 10,000건 기준 실측은 22.6배.
 
 ---
 
@@ -776,14 +780,16 @@ CREATE INDEX idx_user_coupons_unique_check ON user_coupons(user_id, coupon_id, s
 
 ---
 
-### 성능 예상 개선 효과
+### 성능 예상 개선 효과 (추정 — 실측 없음)
 
-| 쿼리 | 개선 전 | 개선 후 | 예상 개선율 |
-|------|--------|--------|-----------|
-| `GET /products/popular` (3일 주문 집계) | ~2초 이상 (Full Scan) | < 200ms | **90% ↓** |
-| `GET /products/{product_id}` (옵션 포함) | ~500ms | < 100ms | **80% ↓** |
-| `GET /orders` (사용자별 주문) | ~800ms | < 150ms | **81% ↓** |
-| `GET /coupons/issued` (사용자 쿠폰) | ~600ms | < 100ms | **83% ↓** |
+> ⚠️ 아래 수치는 실제 부하 테스트 없이 인덱스 이론과 쿼리 분석으로 산출된 추정값입니다.
+
+| 쿼리 | 개선 전 (추정) | 개선 후 (추정) | 예상 개선율 (추정) |
+|------|-------------|-------------|-----------------|
+| `GET /products/popular` (3일 주문 집계) | ~2초 이상 (Full Scan) | < 200ms | **90% ↓ (추정)** |
+| `GET /products/{product_id}` (옵션 포함) | ~500ms | < 100ms | **80% ↓ (추정)** |
+| `GET /orders` (사용자별 주문) | ~800ms | < 150ms | **81% ↓ (추정)** |
+| `GET /coupons/issued` (사용자 쿠폰) | ~600ms | < 100ms | **83% ↓ (추정)** |
 
 ---
 

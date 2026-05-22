@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.ZSetOperations;
 
 import java.util.*;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -263,59 +264,50 @@ public class RedisRankingRepositoryTest {
     // ========== 예외 처리 테스트 ==========
 
     @Test
-    @DisplayName("incrementProductScore 예외 처리")
+    @DisplayName("incrementProductScore - Redis 장애 시 예외 없이 무시")
     void testIncrementProductScore_Exception() {
-        // Given: 예외 발생
         setupZSetMock();
         when(zSetOperations.incrementScore(anyString(), anyString(), anyDouble()))
                 .thenThrow(new RuntimeException("Redis 연결 실패"));
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingRepository.incrementProductScore(TEST_DATE, 100L);
-        });
+        // 예외를 전파하지 않고 조용히 무시한다 (best-effort 랭킹 업데이트)
+        assertDoesNotThrow(() -> rankingRepository.incrementProductScore(TEST_DATE, 100L));
     }
 
     @Test
-    @DisplayName("getTopProducts 예외 처리")
+    @DisplayName("getTopProducts - Redis 장애 시 빈 목록 반환")
     void testGetTopProducts_Exception() {
-        // Given
         setupZSetMock();
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong()))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingRepository.getTopProducts(TEST_DATE, 5);
-        });
+        List<RankingItem> result = rankingRepository.getTopProducts(TEST_DATE, 5);
+
+        assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("getProductRank 예외 처리")
+    @DisplayName("getProductRank - Redis 장애 시 Optional.empty 반환")
     void testGetProductRank_Exception() {
-        // Given
         setupZSetMock();
         when(zSetOperations.reverseRank(anyString(), anyString()))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingRepository.getProductRank(TEST_DATE, 100L);
-        });
+        Optional<Long> result = rankingRepository.getProductRank(TEST_DATE, 100L);
+
+        assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("getProductScore 예외 처리")
+    @DisplayName("getProductScore - Redis 장애 시 0 반환")
     void testGetProductScore_Exception() {
-        // Given
         setupZSetMock();
         when(zSetOperations.score(anyString(), anyString()))
                 .thenThrow(new RuntimeException("Redis 조회 실패"));
 
-        // When & Then
-        assertThrows(RuntimeException.class, () -> {
-            rankingRepository.getProductScore(TEST_DATE, 100L);
-        });
+        Long result = rankingRepository.getProductScore(TEST_DATE, 100L);
+
+        assertThat(result).isEqualTo(0L);
     }
 
     // ========== Mock 헬퍼 클래스 ==========

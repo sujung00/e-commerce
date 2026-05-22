@@ -4,7 +4,7 @@ import com.hhplus.ecommerce.application.coupon.dto.CouponRequest;
 import com.hhplus.ecommerce.application.coupon.dto.CouponIssueStatusResponse;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import com.hhplus.ecommerce.infrastructure.config.RedisKeyType;
-import com.hhplus.ecommerce.infrastructure.constants.RetryConstants;
+import com.hhplus.ecommerce.infrastructure.constants.RetryProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -54,14 +54,17 @@ public class CouponQueueService {
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
     private final CouponService couponService;
+    private final RetryProperties retryProperties;
 
     public CouponQueueService(
             RedisTemplate<String, String> redisTemplate,
             ObjectMapper objectMapper,
-            CouponService couponService) {
+            CouponService couponService,
+            RetryProperties retryProperties) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.couponService = couponService;
+        this.retryProperties = retryProperties;
     }
 
     /**
@@ -122,11 +125,11 @@ public class CouponQueueService {
      * - IllegalArgumentException (쿠폰 소진, 기간 만료): FAILED로 기록
      * - Exception (시스템 오류): 재시도 큐로 이동
      */
-    @Scheduled(fixedRate = 10)
+    @Scheduled(fixedRateString = "${retry.coupon.queue.fixed-rate-ms:10}")
     public void processCouponQueue() {
         String queueKey = RedisKeyType.QUEUE_COUPON_PENDING.getKey();
         int processedCount = 0;
-        int maxBatchSize = 10;  // 한 번에 최대 10개 처리
+        int maxBatchSize = retryProperties.getCoupon().getQueue().getMaxBatchSize();
 
         while (processedCount < maxBatchSize) {
             String json = redisTemplate.opsForList().rightPop(queueKey);
@@ -205,14 +208,18 @@ public class CouponQueueService {
      * 6. 시스템 오류 + 재시도 가능 → 재시도 큐로 다시 추가
      * 7. 시스템 오류 + 재시도 불가능 → DLQ로 이동
      */
-    @Scheduled(fixedRate = 60000, initialDelay = 30000)  // 1분마다, 30초 후 시작
+    @Scheduled(
+        fixedRateString   = "${retry.coupon.queue.retry-fixed-rate-ms:60000}",
+        initialDelayString = "${retry.coupon.queue.retry-initial-delay-ms:30000}"
+    )
     public void processRetryQueue() {
         String retryQueueKey = RedisKeyType.QUEUE_COUPON_RETRY.getKey();
         String dlqKey = RedisKeyType.QUEUE_COUPON_DLQ.getKey();
         int processedCount = 0;
-        int maxRetries = RetryConstants.COUPON_ISSUANCE_MAX_RETRIES;
+        int maxRetries   = retryProperties.getCoupon().getIssuance().getMaxAttempts();
+        int retryBatchSize = retryProperties.getCoupon().getQueue().getRetryBatchSize();
 
-        while (processedCount < 5) {  // 재시도 큐는 한번에 5개까지만
+        while (processedCount < retryBatchSize) {
             String json = redisTemplate.opsForList().rightPop(retryQueueKey);
 
             if (json == null) break;

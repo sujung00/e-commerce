@@ -56,8 +56,8 @@ public class MySQLUserCouponRepository implements UserCouponRepository {
 
     @Override
     public List<UserCoupon> findByUserIdAndStatus(Long userId, String status) {
-        // String status를 UserCouponStatus enum으로 변환
-        UserCouponStatus couponStatus = UserCouponStatus.valueOf(status);
+        // valueOf() 대신 from()을 사용 — "ACTIVE" → UNUSED 변환 포함
+        UserCouponStatus couponStatus = UserCouponStatus.from(status);
         return userCouponJpaRepository.findByUserIdAndStatusString(userId, couponStatus);
     }
 
