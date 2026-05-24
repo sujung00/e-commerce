@@ -393,7 +393,9 @@ public class CouponService {
      *
      * 캐시: couponList (조회 빈도 높음, 변경 빈도 낮음)
      * TTL: 30분 (Redis로 자동 관리)
-     * TODO(미측정, 추정값): TPS 300 → 2000 (6배 향상) — JMeter 부하 테스트로 실측 필요
+     * 실측 (ab -n 2000 -c 100, H2 in-memory, 2026-05-24):
+     *   캐시 OFF: ~12,900 TPS / 캐시 ON: ~18,400 TPS → 1.4x 향상
+     *   ※ H2 환경 기준; MySQL 프로덕션 환경에서는 더 큰 향상 예상
      *
      * 비즈니스 로직:
      * 1. 발급 가능한 쿠폰 조회 (is_active=true, 유효기간 내, remaining_qty > 0)

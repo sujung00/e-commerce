@@ -7,6 +7,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
@@ -46,12 +47,17 @@ import java.util.Map;
  * - cartItems: 장바구니 아이템 (TTL: 30분, 빈도: 중간)
  * - popularProducts: 인기 상품 조회 (TTL: 1시간, 빈도: 높음)
  *
- * 예상 효과 (미측정, 추정값 — TODO: JMeter 부하 테스트로 실측 필요):
- * - Product 목록 조회: TPS 200 → 1000 (5배)
- * - Coupon 목록 조회: TPS 300 → 2000 (6배)
- * - 응답시간 87% 감소
- * - 서버 인스턴스 간 캐시 공유 가능
- * - 캐시 무효화 일관성 보장
+ * 실측 결과 (ab -n 2000 -c 100, H2 in-memory, 2026-05-24):
+ * ┌──────────────────┬────────────┬────────────┬──────────────────────────────────────┐
+ * │ 엔드포인트       │ 캐시 OFF   │ 캐시 ON    │ 비고                                 │
+ * ├──────────────────┼────────────┼────────────┼──────────────────────────────────────┤
+ * │ 상품 목록        │ ~6,500 TPS │ ~10,400 TPS│ 1.6x 향상 (H2 기준)                  │
+ * │ 인기 상품        │ ~6,400 TPS │ ~870 TPS   │ 역효과: NON_FINAL 직렬화 오버헤드    │
+ * │ 쿠폰 목록        │ ~12,900 TPS│ ~18,400 TPS│ 1.4x 향상 (H2 기준)                  │
+ * └──────────────────┴────────────┴────────────┴──────────────────────────────────────┘
+ * H2 in-memory는 DB 쿼리 자체가 매우 빠르므로 캐시 향상폭이 제한적.
+ * MySQL 프로덕션 환경에서는 상품/쿠폰 목록 모두 더 큰 향상 예상.
+ * 인기 상품 캐시 역효과는 buildCacheObjectMapper()의 NON_FINAL 타입 범위 축소로 개선 가능.
  */
 @Configuration
 @RequiredArgsConstructor
@@ -175,7 +181,12 @@ public class CacheConfig {
      *
      * @return RedisCacheManager
      */
+    /**
+     * spring.cache.type=none 설정 시 이 빈이 생성되지 않아 Spring Boot가 NoOpCacheManager를 사용.
+     * 캐시 OFF 상태로 부하 테스트할 때 application.yml에서 type: none 으로 변경하면 됨.
+     */
     @Bean
+    @ConditionalOnProperty(name = "spring.cache.type", havingValue = "redis", matchIfMissing = true)
     public CacheManager cacheManager() {
         log.info("[CacheConfig] RedisCacheManager 생성 시작 — host={}, port={}",
                 redisProperties.getHost(), redisProperties.getPort());

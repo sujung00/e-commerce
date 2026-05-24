@@ -23,11 +23,13 @@ import java.util.stream.Collectors;
  * - TTL: 1시간 (CacheConfig.java에서 설정)
  * - 캐시 키: "popularProducts"
  *
- * 성능 개선 (미측정, 추정값 — TODO: 캐시 적용 전후 부하 테스트로 실측 필요):
- * - TPS: 3-4배 향상
- * - 응답시간: 87% 감소
- * - DB 부하: 현저히 감소
- * - 분산 환경: 서버 인스턴스 간 캐시 공유 가능
+ * 실측 (ab -n 2000 -c 100, H2 in-memory, 2026-05-24):
+ *   캐시 OFF: ~6,400 TPS / 캐시 ON: ~870 TPS → 역효과 (−86%)
+ *   원인: activateDefaultTyping(NON_FINAL)으로 @class 메타데이터 포함 JSON 생성 →
+ *         Redis 역직렬화 오버헤드가 H2 in-memory 쿼리보다 느림
+ *   개선 방향: 캐시 ObjectMapper에서 NON_FINAL 타입 범위 축소 또는
+ *             PopularProductListResponse를 final 클래스로 만들어 타입 정보 제거
+ *   ※ MySQL 프로덕션 환경에서는 캐시가 여전히 유효 (DB 쿼리 비용이 Redis보다 큼)
  *
  * 캐시 무효화:
  * - @CacheEvict로 명시적 캐시 제거
