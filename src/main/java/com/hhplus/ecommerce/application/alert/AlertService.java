@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.application.alert;
 
+import com.hhplus.ecommerce.infrastructure.alert.AlertChannel;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,16 +10,22 @@ import org.slf4j.LoggerFactory;
  *
  * 역할:
  * - 시스템 이벤트 (결제 실패, 보상 처리 등)에 대한 관리자 알림 발송
- * - 실제 구현은 이메일, SMS, Slack 등 다양한 채널 가능
+ * - AlertChannel을 통해 실제 알림 채널(Slack, Log 등)로 발송
  *
- * 현재 구현:
- * - 로깅 기반 알림 (프로덕션에서는 이메일/메시지 큐로 확장 가능)
- * - 향후 AlertRepository를 통해 알림 이력 저장 가능
+ * 알림 채널 전략:
+ * - AlertChannelConfig에서 alert.slack.webhook-url 설정 유무에 따라
+ *   SlackAlertChannel 또는 LogAlertChannel을 주입받아 사용
  */
 @Service
 public class AlertService {
 
     private static final Logger log = LoggerFactory.getLogger(AlertService.class);
+
+    private final AlertChannel alertChannel;
+
+    public AlertService(AlertChannel alertChannel) {
+        this.alertChannel = alertChannel;
+    }
 
     /**
      * 결제 실패 알림
@@ -39,10 +46,7 @@ public class AlertService {
         );
 
         log.error(message);
-        // TODO: 프로덕션에서는 실제 알림 채널로 발송
-        // - 이메일: admin@company.com
-        // - Slack: #payments-alert
-        // - SMS: 관리자 연락처
+        alertChannel.send("ERROR", "결제 실패", message);
     }
 
     /**
@@ -64,7 +68,7 @@ public class AlertService {
         );
 
         log.warn(message);
-        // TODO: 프로덕션에서는 실제 알림 채널로 발송
+        alertChannel.send("WARN", "보상 처리 완료", message);
     }
 
     /**
@@ -86,10 +90,7 @@ public class AlertService {
         );
 
         log.error(message);
-        // TODO: 심각도를 높여 알림 발송
-        // - 이메일: admin@company.com (높은 우선순위)
-        // - Slack: @channel
-        // - PagerDuty: Critical alert
+        alertChannel.send("ERROR", "보상 처리 실패 - 긴급", message);
     }
 
     /**
@@ -110,7 +111,7 @@ public class AlertService {
         );
 
         log.info(message);
-        // TODO: 프로덕션에서는 실제 알림 채널로 발송 (선택사항)
+        alertChannel.send("INFO", "결제 성공", message);
     }
 
     /**
@@ -133,7 +134,7 @@ public class AlertService {
         );
 
         log.warn(message);
-        // TODO: 프로덕션에서는 높은 우선순위 알림 발송
+        alertChannel.send("WARN", "결제 부분 성공 - Void 필요", message);
     }
 
     /**
@@ -154,10 +155,7 @@ public class AlertService {
         );
 
         log.error(message);
-        // TODO: 프로덕션에서는 높은 우선순위 알림 발송
-        // - 이메일: ops@company.com
-        // - Slack: #outbox-failures
-        // - PagerDuty: Warning alert
+        alertChannel.send("ERROR", "Outbox 발행 실패 - DLQ", message);
     }
 
     /**
@@ -182,10 +180,7 @@ public class AlertService {
         );
 
         log.warn(message);
-        // TODO: 프로덕션에서는 실제 알림 채널로 발송
-        // - 이메일: inventory@company.com
-        // - Slack: #inventory-alerts
-        // - 재입고 시스템: 자동 발주 트리거
+        alertChannel.send("WARN", "재고 부족", message);
     }
 
     /**
@@ -195,18 +190,6 @@ public class AlertService {
      * - Saga 보상 트랜잭션 중 중요(Critical) Step 실패
      * - 데이터 불일치 가능성 발생 (재고/잔액/쿠폰 복구 실패)
      * - 즉시 수동 개입 필요 - 시스템 정합성 회복 필수
-     * - Dead Letter Queue(DLQ)로 발행하여 재처리 가능
-     *
-     * 발생 예시:
-     * - 재고 복구 실패: 데이터베이스 락 타임아웃, 동시성 충돌
-     * - 잔액 복구 실패: 정합성 오류, 트랜잭션 롤백 실패
-     * - 쿠폰 복구 실패: 상태 전이 오류
-     *
-     * 처리 방법:
-     * - 관리자가 즉시 DLQ 확인
-     * - 데이터베이스 직접 조회하여 상태 확인
-     * - 수동으로 보상 로직 재실행 또는 데이터 수정
-     * - 고객에게 적절한 보상 제공 (포인트, 쿠폰 등)
      *
      * @param orderId 주문 ID
      * @param stepName 실패한 Step 이름 (예: DeductInventoryStep)
@@ -219,13 +202,7 @@ public class AlertService {
         );
 
         log.error(message);
-
-        // TODO: 프로덕션에서는 최고 우선순위 알림 발송
-        // - PagerDuty: Critical alert (온콜 엔지니어 호출)
-        // - Slack: @channel (전체 알림)
-        // - 이메일: admin@company.com (높은 우선순위)
-        // - SMS: 관리자 연락처 (긴급)
-        // - Monitoring Dashboard: Red alert 표시
+        alertChannel.send("ERROR", "중요 보상 실패 - 긴급", message);
     }
 
     /**
@@ -236,17 +213,6 @@ public class AlertService {
      * - Circuit Breaker가 OPEN 상태로 전환
      * - 부분 성공 상태의 트랜잭션 발생 가능
      * - 수동 개입 또는 자동 재시도 필요
-     *
-     * 발생 예시:
-     * - 외부 API 통신 장애 (타임아웃, 연결 거부)
-     * - DB 연결 장애 (네트워크 단절)
-     * - 서비스 간 통신 장애 (마이크로서비스 환경)
-     *
-     * 처리 방법:
-     * - Circuit Breaker 상태 모니터링
-     * - 부분 성공 트랜잭션 확인 및 재시도 큐 등록
-     * - 네트워크 복구 후 자동 재시도
-     * - DLQ로 이동하여 수동 처리
      *
      * @param userId 사용자 ID
      * @param orderId 주문 ID (null 가능)
@@ -260,11 +226,6 @@ public class AlertService {
         );
 
         log.error(message);
-
-        // TODO: 프로덕션에서는 높은 우선순위 알림 발송
-        // - Slack: #network-alerts
-        // - PagerDuty: Warning alert
-        // - Monitoring Dashboard: Yellow alert 표시
-        // - 재시도 큐에 등록하여 자동 재시도
+        alertChannel.send("ERROR", "네트워크 파티션 감지", message);
     }
 }

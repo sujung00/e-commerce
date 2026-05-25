@@ -10,9 +10,9 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -97,7 +97,9 @@ public class PopularProductServiceImpl implements PopularProductService {
         MySQLProductRepository mySQLProductRepository = (MySQLProductRepository) productRepository;
         Map<Long, Long> orderCountMap = mySQLProductRepository.getOrderCountsLast3Days(productIds);
 
-        // 3. 주문 수량으로 정렬하여 상위 5개 선택
+        // 3. 주문 수량으로 정렬하여 상위 5개 선택하고 rank를 스트림 내부에서 즉시 설정
+        // AtomicInteger를 사용하여 동시성 안전한 방식으로 rank를 1부터 순서대로 할당
+        AtomicInteger rankCounter = new AtomicInteger(1);
         List<PopularProductView> topProducts = allProducts.stream()
                 .map(product -> {
                     Long orderCount3Days = orderCountMap.getOrDefault(product.getProductId(), 0L);
@@ -105,32 +107,17 @@ public class PopularProductServiceImpl implements PopularProductService {
                 })
                 .sorted((p1, p2) -> Long.compare(p2.orderCount3Days, p1.orderCount3Days))
                 .limit(5)
-                .map((p) -> PopularProductView.builder()
+                .map(p -> PopularProductView.builder()
                         .productId(p.product.getProductId())
                         .productName(p.product.getProductName())
                         .price(p.product.getPrice())
                         .totalStock(p.product.getTotalStock())
                         .status(p.product.getStatus())
                         .orderCount3Days(p.orderCount3Days)
-                        .rank(0) // 임시 값, 아래에서 업데이트
+                        .rank(rankCounter.getAndIncrement()) // AtomicInteger로 즉시 rank 설정 (1부터 시작)
                         .createdAt(p.product.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
-
-        // 4. 순위 정보 추가
-        for (int i = 0; i < topProducts.size(); i++) {
-            PopularProductView view = topProducts.get(i);
-            topProducts.set(i, PopularProductView.builder()
-                    .productId(view.getProductId())
-                    .productName(view.getProductName())
-                    .price(view.getPrice())
-                    .totalStock(view.getTotalStock())
-                    .status(view.getStatus())
-                    .orderCount3Days(view.getOrderCount3Days())
-                    .rank(i + 1)
-                    .createdAt(view.getCreatedAt())
-                    .build());
-        }
 
         return new PopularProductListResponse(topProducts);
     }

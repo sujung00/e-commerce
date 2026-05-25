@@ -3,9 +3,11 @@ package com.hhplus.ecommerce.application.order;
 import com.hhplus.ecommerce.application.shipping.client.ShippingServiceClient;
 import com.hhplus.ecommerce.domain.order.Outbox;
 import com.hhplus.ecommerce.domain.order.OutboxRepository;
+import com.hhplus.ecommerce.domain.order.event.OrderCompletedEvent;
 import com.hhplus.ecommerce.infrastructure.external.DataPlatformClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +47,7 @@ public class OutboxEventPublisher {
     private final OutboxRepository outboxRepository;
     private final DataPlatformClient dataPlatformClient;
     private final ShippingServiceClient shippingServiceClient;
+    private final KafkaTemplate<String, OrderCompletedEvent> kafkaTemplate;
 
     /**
      * Outbox 패턴을 통한 메시지 발행
@@ -152,20 +155,15 @@ public class OutboxEventPublisher {
         log.info("[OutboxEventPublisher] ORDER_COMPLETED 발행 - orderId={}, userId={}",
                 message.getOrderId(), message.getUserId());
 
-        // TODO: 실제 구현
-        // 방법 1: Kafka 발행
-        // kafkaTemplate.send("order.completed",
-        //                   String.valueOf(message.getOrderId()),
-        //                   message).get();
-        //
-        // 방법 2: HTTP 호출
-        // restTemplate.postForObject(
-        //     "http://shipping-service/api/orders",
-        //     new ShippingRequest(message.getOrderId()),
-        //     ShippingResponse.class);
+        // Kafka: order.completed 토픽으로 발행
+        OrderCompletedEvent event = new OrderCompletedEvent(
+                message.getOrderId(),
+                message.getUserId(),
+                0L  // Outbox 메시지에는 금액 정보가 없으므로 0L (payload에 포함)
+        );
+        kafkaTemplate.send("order.completed", String.valueOf(message.getOrderId()), event).get();
 
-        // 현재: 로깅만 수행
-        log.info("[OutboxEventPublisher] ORDER_COMPLETED 이벤트를 배송 시스템으로 발행합니다 - orderId={}",
+        log.info("[OutboxEventPublisher] ORDER_COMPLETED 이벤트를 Kafka(order.completed)로 발행 완료 - orderId={}",
                 message.getOrderId());
     }
 
@@ -183,11 +181,15 @@ public class OutboxEventPublisher {
         log.info("[OutboxEventPublisher] ORDER_CANCELLED 발행 - orderId={}, userId={}",
                 message.getOrderId(), message.getUserId());
 
-        // TODO: 실제 구현
-        // - 배송 취소
-        // - 결제 취소 (Void)
+        // Kafka: order.cancelled 토픽으로 발행 (배송 취소, 결제 취소 등)
+        OrderCompletedEvent event = new OrderCompletedEvent(
+                message.getOrderId(),
+                message.getUserId(),
+                0L
+        );
+        kafkaTemplate.send("order.cancelled", String.valueOf(message.getOrderId()), event).get();
 
-        log.info("[OutboxEventPublisher] ORDER_CANCELLED 이벤트를 관련 시스템으로 발행합니다 - orderId={}",
+        log.info("[OutboxEventPublisher] ORDER_CANCELLED 이벤트를 Kafka(order.cancelled)로 발행 완료 - orderId={}",
                 message.getOrderId());
     }
 
@@ -206,12 +208,15 @@ public class OutboxEventPublisher {
         log.info("[OutboxEventPublisher] PAYMENT_COMPLETED 발행 - orderId={}, userId={}",
                 message.getOrderId(), message.getUserId());
 
-        // TODO: 실제 구현
-        // - 결제 이력 저장
-        // - 회계 시스템 연동
-        // - 정산 처리
+        // Kafka: payment.completed 토픽으로 발행 (결제 이력, 회계, 정산)
+        OrderCompletedEvent event = new OrderCompletedEvent(
+                message.getOrderId(),
+                message.getUserId(),
+                0L
+        );
+        kafkaTemplate.send("payment.completed", String.valueOf(message.getOrderId()), event).get();
 
-        log.info("[OutboxEventPublisher] PAYMENT_COMPLETED 이벤트를 결제/회계 시스템으로 발행합니다 - orderId={}",
+        log.info("[OutboxEventPublisher] PAYMENT_COMPLETED 이벤트를 Kafka(payment.completed)로 발행 완료 - orderId={}",
                 message.getOrderId());
     }
 
@@ -234,12 +239,15 @@ public class OutboxEventPublisher {
         log.info("[OutboxEventPublisher] PAYMENT_SUCCESS 발행 - orderId={}, userId={}",
                 message.getOrderId(), message.getUserId());
 
-        // TODO: 실제 구현
-        // - 푸시 알림 발송
-        // - SMS/이메일 발송
-        // - 실시간 모니터링 데이터 전송
+        // Kafka: payment.success 토픽으로 발행 (푸시 알림, SMS/이메일, 실시간 모니터링)
+        OrderCompletedEvent event = new OrderCompletedEvent(
+                message.getOrderId(),
+                message.getUserId(),
+                0L
+        );
+        kafkaTemplate.send("payment.success", String.valueOf(message.getOrderId()), event).get();
 
-        log.info("[OutboxEventPublisher] PAYMENT_SUCCESS 이벤트를 알림 시스템으로 발행합니다 - orderId={}",
+        log.info("[OutboxEventPublisher] PAYMENT_SUCCESS 이벤트를 Kafka(payment.success)로 발행 완료 - orderId={}",
                 message.getOrderId());
     }
 

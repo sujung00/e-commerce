@@ -297,6 +297,40 @@ public class KafkaConfig {
      *
      * @return NewTopic Bean
      */
+    /**
+     * 주문 완료 이벤트 토픽 (OutboxEventPublisher의 ORDER_COMPLETED 발행 대상)
+     */
+    @Bean
+    public NewTopic orderCompletedTopic() {
+        return new NewTopic("order.completed", 3, topicReplicationFactor);
+    }
+
+    /**
+     * 주문 취소 이벤트 토픽 (OutboxEventPublisher의 ORDER_CANCELLED 발행 대상)
+     */
+    @Bean
+    public NewTopic orderCancelledTopic() {
+        return new NewTopic("order.cancelled", 3, topicReplicationFactor);
+    }
+
+    /**
+     * 결제 완료 이벤트 토픽 (OutboxEventPublisher의 PAYMENT_COMPLETED 발행 대상)
+     * - 결제 이력 저장, 회계 시스템, 정산 처리
+     */
+    @Bean
+    public NewTopic paymentCompletedTopic() {
+        return new NewTopic("payment.completed", 3, topicReplicationFactor);
+    }
+
+    /**
+     * 결제 성공 알림 토픽 (OutboxEventPublisher의 PAYMENT_SUCCESS 발행 대상)
+     * - 푸시 알림, SMS/이메일, 실시간 모니터링
+     */
+    @Bean
+    public NewTopic paymentSuccessTopic() {
+        return new NewTopic("payment.success", 3, topicReplicationFactor);
+    }
+
     @Bean
     public NewTopic couponIssueRequestsTopic() {
         NewTopic topic = new NewTopic(
