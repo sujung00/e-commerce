@@ -525,7 +525,8 @@ Consumer 2: SELECT FOR UPDATE (Coupon 1) ─────────────
 
 | 항목 | Redis Queue | Kafka | 개선 효과 |
 |------|-------------|-------|----------|
-| **처리량** | ~1,000 req/s (단일 인스턴스, 추정) | 10,000+ req/s (Partition 확장, 추정) | **10배 향상 (추정)** |
+| **HTTP Accept TPS** | ~7,580 req/s (실측, H2) | ~14,055 req/s (실측, H2) | **+1.9x (실측)** |
+| **발급 처리 TPS** | ~100 req/s (10ms 워커, 설정값) | 미측정 (파티션 수에 따라 가변) | **이론상 10x+ (추정)** |
 | **확장성** | Vertical (인스턴스 스펙 증설) | Horizontal (Partition/Consumer 증설) | **선형 확장** |
 | **장애 복구** | Redis Sentinel (복잡) | Replica + Offset (단순) | **운영 단순화** |
 | **메시지 보관** | 휘발성 (메모리) | 영구 보관 (Disk, 7일) | **재처리 가능** |
@@ -556,8 +557,10 @@ Client (10K req/s) ──> Kafka Producer ──┬──> Partition 0 → Consu
 ```
 
 **결과 (추정 — 실제 파티션 수·Consumer 수·DB 처리 시간에 따라 달라짐)**:
-- Redis: 1,000 req/s → Kafka: 10,000 req/s (추정)
-- **10배 처리량 향상 (추정)**
+- Redis 워커 처리량: ~100 req/s (10ms fixedRate, batchSize=10, 설정값 기준)
+- Kafka Consumer 처리량: ~10,000 req/s (10 파티션 × 10 Consumer × DB ~50ms 가정, 추정)
+- **이론상 ~100배 처리량 향상 (추정 — Consumer 처리량 미측정)**
+- ※ HTTP Accept TPS(요청 수락 속도) 실측은 §7.2 참고: Redis ~7,580 / Kafka ~14,055 TPS (+1.9x)
 
 ---
 
@@ -740,22 +743,52 @@ Broker: 10대
 
 ---
 
-### 7.2 예상 결과 (추정)
+### 7.2 실측 결과
 
-> ⚠️ **이 섹션의 수치는 실측 없이 이론적으로 산출된 추정값입니다.**
-> 실제 수치는 인프라 사양·파티션 수·Consumer 수에 따라 달라집니다.
+> **실측 환경**: `ab -n 5000 -c 200`, H2 in-memory DB, JVM 완전 워밍업 후 (2026-05-25)
+> ※ MySQL 프로덕션 환경에서는 DB 처리 비용이 추가되어 결과가 달라질 수 있음.
 
-**처리량 향상 (추정)**:
-- Redis Queue: 1,000 req/s → Kafka: 10,000 req/s (추정)
-- **10배 향상 (추정)**
+#### HTTP Accept TPS 실측 (컨트롤러가 요청 수락 후 202 반환하는 속도)
 
-**응답 시간 개선 (추정)**:
-- Redis Queue: ~50ms (동기) → Kafka: ~5ms (비동기) (추정)
-- **90% 단축 (추정)**
+| 방식 | Round 3 | Round 4 | Round 5 | 평균 (안정) | 실패율 |
+|------|---------|---------|---------|------------|--------|
+| Redis Queue (`/issue/async`) | 6,157 | 7,776 | 8,806 | **~7,580 TPS** | 0% |
+| Kafka (`/issue/kafka`) | 13,382 | 13,133 | 15,649 | **~14,055 TPS** | 0% |
 
-**장애 복구 시간 (추정)**:
-- Redis Sentinel: 30초 ~ 2분 → Kafka: 5초 이내 (추정)
-- **80% 단축 (추정)**
+- **Kafka가 Redis Queue 대비 ~1.9x 빠름** (기존 추정 10배와 차이 있음)
+- Round 1-2는 JIT 워밍업 구간으로 측정값에서 제외
+- ※ H2 in-memory + 로컬 환경 기준; MySQL 환경에서는 DB I/O 추가로 수치 변동 가능
+
+**원인 분석 (1.9x의 이유)**:
+- Redis Queue: 요청 1건당 Redis 2회 호출 (LPUSH + SET) — 동기식 블로킹
+- Kafka: 요청 1건당 `kafkaTemplate.send()` 1회 — Producer 내부 배치 버퍼에 추가 후 즉시 반환
+
+**⚠️ 측정 범위 명확화**:
+```
+이 TPS = "HTTP Accept 속도" (요청 수락 → 202 반환)
+          ≠ "실제 쿠폰 발급 처리 속도"
+
+실제 쿠폰 발급(issuance) 처리량:
+  Redis Queue 워커: ~100 req/s (10ms fixedRate, batchSize=10) — 설정값 기준
+  Kafka Consumer:  미측정 (파티션 수·Consumer 수에 따라 다름, 별도 측정 필요)
+
+기존 "10배 향상" 추정은 HTTP Accept TPS가 아닌
+Consumer 처리 처리량(파티션 병렬화)에 대한 이론적 추정치였음.
+```
+
+**처리량 향상**:
+- HTTP Accept TPS: Redis Queue ~7,580 → Kafka ~14,055 (**+1.9x 실측**)
+- 실제 발급 처리량: 미측정 — Kafka Consumer 병렬도에 따라 이론상 10배+ 가능 **(추정)**
+
+**응답 시간 개선**:
+- Redis Queue: 평균 ~26ms (c=200 기준, 실측)
+- Kafka: 평균 ~14ms (c=200 기준, 실측)
+- **약 46% 단축 (실측, H2 환경)**
+- ※ ~5ms 수준은 단일 요청(c=1) 기준이며 이번 측정 대상이 아님
+
+**장애 복구 시간**:
+- Redis Sentinel: 30초 ~ 2분 → Kafka: 5초 이내 **(추정 — 미측정)**
+- **인프라 특성에 따른 이론값; 실측 필요**
 
 **운영 복잡도**:
 - Redis: Sentinel 관리, 메모리 모니터링
