@@ -18,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * CouponController - Presentation 계층
@@ -243,5 +244,22 @@ public class CouponController {
                 .coupons(coupons)
                 .build();
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * [임시] Consumer TPS 측정용 발급 완료 건수 조회
+     * GET /api/coupons/test/issued-count?couponId={id}
+     *
+     * user_coupons 테이블에서 DB에 실제로 반영 완료된 쿠폰 발급 건수를 반환.
+     * Kafka/Redis Queue Consumer TPS 측정 시 1초 주기로 폴링하여 처리량 계산에 사용.
+     *
+     * @param couponId 측정 대상 쿠폰 ID
+     * @return {"couponId": N, "issuedCount": M}
+     */
+    @GetMapping("/test/issued-count")
+    public ResponseEntity<Map<String, Long>> getIssuedCount(
+            @RequestParam Long couponId) {
+        long count = couponService.getIssuedCountByCouponId(couponId);
+        return ResponseEntity.ok(Map.of("couponId", couponId, "issuedCount", count));
     }
 }

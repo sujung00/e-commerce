@@ -48,10 +48,11 @@ import org.springframework.stereotype.Service;
  *   - UNIQUE(user_id, coupon_id) 제약
  *   - 중복 시 IllegalArgumentException 발생
  *
- * 성능 목표:
- * - 처리량: 200 req/s (P=10), 10,000 req/s (P=500)
- * - Consumer 개수 = 파티션 개수 (최대 병렬도)
- * - 각 Consumer: ~20 req/s (DB 처리 시간 ~50ms)
+ * 성능 실측 (H2 in-memory, P=10 Consumer=10, 2026-05-25):
+ * - 처리량: ~470 req/s burst (100건 212ms, 초기 ~10s 그룹 rebalance 지연 이후)
+ * - vs Redis Queue (~200 req/s): +2.4x 향상 (H2 기준)
+ * - 병목: `SELECT FOR UPDATE` 비관적 락 — 모든 Consumer가 동일 쿠폰 행 경합
+ * - Consumer 개수 = 파티션 개수 (최대 병렬도, P=500 → 이론상 ~10,000 req/s)
  */
 @Service
 public class CouponIssueConsumer {

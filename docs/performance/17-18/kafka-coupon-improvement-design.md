@@ -526,7 +526,7 @@ Consumer 2: SELECT FOR UPDATE (Coupon 1) ─────────────
 | 항목 | Redis Queue | Kafka | 개선 효과 |
 |------|-------------|-------|----------|
 | **HTTP Accept TPS** | ~7,580 req/s (실측, H2) | ~14,055 req/s (실측, H2) | **+1.9x (실측)** |
-| **발급 처리 TPS** | ~100 req/s (10ms 워커, 설정값) | 미측정 (파티션 수에 따라 가변) | **이론상 10x+ (추정)** |
+| **발급 처리 TPS** | ~200 req/s (실측, H2) | ~470 req/s (실측, H2, burst) | **+2.4x (실측)** |
 | **확장성** | Vertical (인스턴스 스펙 증설) | Horizontal (Partition/Consumer 증설) | **선형 확장** |
 | **장애 복구** | Redis Sentinel (복잡) | Replica + Offset (단순) | **운영 단순화** |
 | **메시지 보관** | 휘발성 (메모리) | 영구 보관 (Disk, 7일) | **재처리 가능** |
@@ -556,10 +556,10 @@ Client (10K req/s) ──> Kafka Producer ──┬──> Partition 0 → Consu
                                         처리량: 500 × 20 = 10,000 req/s
 ```
 
-**결과 (추정 — 실제 파티션 수·Consumer 수·DB 처리 시간에 따라 달라짐)**:
-- Redis 워커 처리량: ~100 req/s (10ms fixedRate, batchSize=10, 설정값 기준)
-- Kafka Consumer 처리량: ~10,000 req/s (10 파티션 × 10 Consumer × DB ~50ms 가정, 추정)
-- **이론상 ~100배 처리량 향상 (추정 — Consumer 처리량 미측정)**
+**실측 결과 (H2 in-memory, 100건, 2026-05-25)**:
+- Redis 워커 처리량: **~200 req/s** (실측 — 100건 438ms, 단일 워커 순차 처리)
+- Kafka Consumer 처리량: **~470 req/s** (실측 — 100건 212ms burst, 10 Consumer 병렬, 초기 ~10s 시작 지연 이후)
+- **실측 +2.4배 향상 (H2 기준; 두 방식 모두 `SELECT FOR UPDATE` 비관적 락에 의해 제한됨)**
 - ※ HTTP Accept TPS(요청 수락 속도) 실측은 §7.2 참고: Redis ~7,580 / Kafka ~14,055 TPS (+1.9x)
 
 ---
@@ -763,22 +763,39 @@ Broker: 10대
 - Redis Queue: 요청 1건당 Redis 2회 호출 (LPUSH + SET) — 동기식 블로킹
 - Kafka: 요청 1건당 `kafkaTemplate.send()` 1회 — Producer 내부 배치 버퍼에 추가 후 즉시 반환
 
-**⚠️ 측정 범위 명확화**:
+#### Consumer 처리 TPS 실측 (DB에 발급이 실제로 반영되는 속도)
+
+> **측정 방법**: H2 in-memory DB, 100건 병렬 발송 (Python threading), DB count 폴링 (100ms 간격)  
+> **측정 쿠폰**: couponId=2 (total_qty=500, 기존 발급 없음)  
+> **비고**: 두 방식 모두 `issueCouponWithLock()` → `SELECT FOR UPDATE` 비관적 락 경유
+
+| 방식 | 처리 건수 | 활성 처리 구간 | Consumer TPS | 특이사항 |
+|------|----------|--------------|-------------|---------|
+| Redis Queue (`/issue/async`) | 100 / 100 | 438ms (T+314ms→T+752ms) | **~228 req/s** | 단일 워커, 10ms 주기, 순차 처리 |
+| Kafka (`/issue/kafka`) | 100 / 100 | 212ms burst (T+10.6s→T+10.8s) | **~472 req/s** | 10 Consumer 병렬; 초기 ~10s 그룹 rebalance 지연 포함 |
+
+**원인 분석**:
+- Redis Queue: 단일 워커 스레드 → 순차 처리 → lock contention 없음 → 안정적 ~200 req/s
+- Kafka: 10 Consumer 스레드가 10 파티션을 병렬 처리 → DB lock 경합은 있지만 burst 처리량 ~2.4x
+- **공통 병목**: 두 방식 모두 coupon 행 `SELECT FOR UPDATE` 락이 직렬화 지점 (MySQL 프로덕션에서는 더 느림)
+
+**⚠️ 측정 범위 명확화 및 발견된 버그**:
 ```
-이 TPS = "HTTP Accept 속도" (요청 수락 → 202 반환)
-          ≠ "실제 쿠폰 발급 처리 속도"
+이 TPS = "DB 발급 완료 속도" (Consumer → issueCouponWithLock → user_coupons INSERT)
+HTTP Accept TPS (§7.2 상단) ≠ Consumer 처리 TPS
 
-실제 쿠폰 발급(issuance) 처리량:
-  Redis Queue 워커: ~100 req/s (10ms fixedRate, batchSize=10) — 설정값 기준
-  Kafka Consumer:  미측정 (파티션 수·Consumer 수에 따라 다름, 별도 측정 필요)
+발견된 버그: @EnableScheduling 누락 (EcommerceApplication에서 수정 완료)
+  - 이 어노테이션이 없으면 Redis Queue 워커(@Scheduled)가 실행되지 않음
+  - 수정 전: Redis Queue 요청이 Redis에 쌓이기만 하고 처리 안 됨
+  - 수정 후: 워커 정상 동작 (10ms fixedRate, batchSize=10)
 
-기존 "10배 향상" 추정은 HTTP Accept TPS가 아닌
-Consumer 처리 처리량(파티션 병렬화)에 대한 이론적 추정치였음.
+기존 "10배 향상" 추정은 HTTP Accept TPS가 아닌 Consumer 처리량 기반 이론치였음.
+실측 결과: +1.9x (HTTP Accept TPS) / +2.4x (Consumer 처리 TPS, H2 기준)
 ```
 
 **처리량 향상**:
 - HTTP Accept TPS: Redis Queue ~7,580 → Kafka ~14,055 (**+1.9x 실측**)
-- 실제 발급 처리량: 미측정 — Kafka Consumer 병렬도에 따라 이론상 10배+ 가능 **(추정)**
+- Consumer 처리 TPS: Redis Queue ~200 → Kafka ~470 (**+2.4x 실측, H2 기준**)
 
 **응답 시간 개선**:
 - Redis Queue: 평균 ~26ms (c=200 기준, 실측)

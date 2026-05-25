@@ -51,4 +51,12 @@ public interface UserCouponJpaRepository extends JpaRepository<UserCoupon, Long>
      * @param couponId 쿠폰 ID
      */
     void deleteByUserIdAndCouponId(Long userId, Long couponId);
+
+    /**
+     * 특정 쿠폰의 발급 완료 건수 조회 (Consumer TPS 측정용 임시 메서드)
+     *
+     * @param couponId 쿠폰 ID
+     * @return 발급된 user_coupon 행 수
+     */
+    long countByCouponId(Long couponId);
 }

@@ -309,7 +309,9 @@ public class KafkaConfig {
         Map<String, String> configs = new HashMap<>();
         configs.put(TopicConfig.RETENTION_MS_CONFIG, "604800000");     // 7일 (7 * 24 * 60 * 60 * 1000)
         configs.put(TopicConfig.COMPRESSION_TYPE_CONFIG, "snappy");    // snappy 압축
-        configs.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, "2");     // 최소 ISR 2개 (데이터 안정성)
+        // 로컬 단일 브로커(RF=1)에서는 min.insync.replicas=1, 운영 다중 브로커(RF≥2)에서는 2
+        int minIsr = topicReplicationFactor > 1 ? 2 : 1;
+        configs.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, String.valueOf(minIsr));
         topic.configs(configs);
 
         return topic;

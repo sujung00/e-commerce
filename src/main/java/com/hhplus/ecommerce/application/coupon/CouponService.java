@@ -497,4 +497,14 @@ public class CouponService {
             throw e;
         }
     }
+
+    /**
+     * 특정 쿠폰의 발급 완료 건수 조회 (Consumer TPS 측정용 임시 메서드)
+     *
+     * @param couponId 쿠폰 ID
+     * @return user_coupons 테이블에서 해당 쿠폰의 행 수 (= 실제 DB 반영 완료 건수)
+     */
+    public long getIssuedCountByCouponId(Long couponId) {
+        return userCouponRepository.countByCouponId(couponId);
+    }
 }

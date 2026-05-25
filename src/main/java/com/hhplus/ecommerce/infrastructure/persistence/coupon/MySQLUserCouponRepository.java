@@ -81,4 +81,9 @@ public class MySQLUserCouponRepository implements UserCouponRepository {
     public void deleteByUserIdAndCouponId(Long userId, Long couponId) {
         userCouponJpaRepository.deleteByUserIdAndCouponId(userId, couponId);
     }
+
+    @Override
+    public long countByCouponId(Long couponId) {
+        return userCouponJpaRepository.countByCouponId(couponId);
+    }
 }
