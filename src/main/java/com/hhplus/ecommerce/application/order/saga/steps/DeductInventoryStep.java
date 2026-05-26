@@ -132,6 +132,9 @@ public class DeductInventoryStep implements SagaStep {
 
         log.info("[{}] 재고 차감 완료 - 총 {}개 옵션 처리",
                 getName(), context.getOrderItems().size());
+
+        context.addExecutedStepName(getName()); // 보상 플로우에서 hasExecutedStep() 확인용
+
         log.info("[{}] ========== 재고 차감 트랜잭션 종료 (커밋 예정) ==========", getName());
     }
 

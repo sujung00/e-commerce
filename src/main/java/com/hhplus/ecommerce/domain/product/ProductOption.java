@@ -57,7 +57,7 @@ public class ProductOption {
      * 비즈니스 규칙:
      * - 옵션명은 필수
      * - 초기 재고는 0 이상
-     * - 초기 version은 1
+     * - version은 JPA가 관리 (persist 시 0으로 초기화)
      */
     public static ProductOption createOption(Long productId, String name, Integer initialStock) {
         if (name == null || name.isBlank()) {
@@ -71,7 +71,9 @@ public class ProductOption {
                 .productId(productId)
                 .name(name)
                 .stock(initialStock)
-                .version(1L)
+                // version=0: 도메인 초기값. JPA persist 시 0으로 INSERT되며 TransientObjectException 발생 없음.
+                // (version=1L 이면 Hibernate가 isTransient 판단 시 기존 row로 오해할 수 있음)
+                .version(0L)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -100,7 +102,9 @@ public class ProductOption {
         }
 
         this.stock -= quantity;
-        this.version += 1;  // 낙관적 락: version 증가
+        // 낙관적 락: version 증가 (JPA도 @Version을 자동 관리하지만, 인메모리 일관성을 위해 수동 증가)
+        if (this.version == null) this.version = 0L;
+        this.version += 1;
         this.updatedAt = LocalDateTime.now();
     }
 
@@ -120,6 +124,7 @@ public class ProductOption {
         }
 
         this.stock += quantity;
+        if (this.version == null) this.version = 0L;
         this.version += 1;  // 낙관적 락: version 증가
         this.updatedAt = LocalDateTime.now();
     }

@@ -22,13 +22,8 @@ public class UserBalanceDomainService {
             throw new DomainException(ErrorCode.USER_NOT_FOUND, "User cannot be null");
         }
 
-        if (requiredAmount < 0) {
-            throw new DomainException(
-                ErrorCode.INVALID_BALANCE,
-                "Required amount must be non-negative"
-            );
-        }
-
+        // Amount validity (> 0) is the responsibility of the actual operation method.
+        // This method only validates that the user has sufficient balance.
         if (user.getBalance() < requiredAmount) {
             throw new InsufficientBalanceException(
                 user.getUserId(),
@@ -40,85 +35,61 @@ public class UserBalanceDomainService {
 
     /**
      * Deducts the specified amount from user's balance.
-     * Should be called after balance validation.
+     * Delegates to {@link User#deductBalance(Long)} which enforces:
+     * - amount must be > 0 (throws {@link IllegalArgumentException} for 0 or negative)
+     * - balance must be sufficient (throws {@link InsufficientBalanceException})
+     * - updatedAt is refreshed on success
      *
      * @param user the user to deduct from
-     * @param amount the amount to deduct in won
-     * @throws DomainException if amount is invalid
+     * @param amount the amount to deduct in won (must be > 0)
+     * @throws DomainException if user is null
+     * @throws IllegalArgumentException if amount <= 0
+     * @throws InsufficientBalanceException if balance is insufficient
      */
     public void deductBalance(User user, long amount) {
         if (user == null) {
             throw new DomainException(ErrorCode.USER_NOT_FOUND, "User cannot be null");
         }
-
-        if (amount < 0) {
-            throw new DomainException(
-                ErrorCode.INVALID_BALANCE,
-                "Deduction amount must be non-negative"
-            );
-        }
-
-        long currentBalance = user.getBalance();
-        long newBalance = currentBalance - amount;
-
-        if (newBalance < 0) {
-            throw new InsufficientBalanceException(
-                user.getUserId(),
-                currentBalance,
-                amount
-            );
-        }
-
-        user.setBalance(newBalance);
+        // User entity enforces amount > 0, sufficient balance, and updatedAt refresh
+        user.deductBalance(amount);
     }
 
     /**
      * Charges (adds) the specified amount to user's balance.
+     * Delegates to {@link User#chargeBalance(Long)} which enforces:
+     * - amount must be > 0 (throws {@link IllegalArgumentException} for 0 or negative)
+     * - updatedAt is refreshed on success
      *
      * @param user the user to charge
-     * @param amount the amount to add in won
-     * @throws DomainException if amount is invalid
+     * @param amount the amount to add in won (must be > 0)
+     * @throws DomainException if user is null
+     * @throws IllegalArgumentException if amount <= 0
      */
     public void chargeBalance(User user, long amount) {
         if (user == null) {
             throw new DomainException(ErrorCode.USER_NOT_FOUND, "User cannot be null");
         }
-
-        if (amount < 0) {
-            throw new DomainException(
-                ErrorCode.INVALID_BALANCE,
-                "Charge amount must be non-negative"
-            );
-        }
-
-        long currentBalance = user.getBalance();
-        long newBalance = currentBalance + amount;
-
-        user.setBalance(newBalance);
+        // User entity enforces amount > 0 and updatedAt refresh
+        user.chargeBalance(amount);
     }
 
     /**
      * Refunds the specified amount to user's balance.
-     * Semantically same as chargeBalance but with clear intent for refund operations.
+     * Delegates to {@link User#refundBalance(Long)} which enforces:
+     * - amount must be > 0 (throws {@link IllegalArgumentException} for 0 or negative)
+     * - updatedAt is refreshed on success
      *
      * @param user the user to refund
-     * @param amount the amount to refund in won
-     * @throws DomainException if amount is invalid
+     * @param amount the amount to refund in won (must be > 0)
+     * @throws DomainException if user is null
+     * @throws IllegalArgumentException if amount <= 0
      */
     public void refundBalance(User user, long amount) {
         if (user == null) {
             throw new DomainException(ErrorCode.USER_NOT_FOUND, "User cannot be null");
         }
-
-        if (amount < 0) {
-            throw new DomainException(
-                ErrorCode.INVALID_BALANCE,
-                "Refund amount must be non-negative"
-            );
-        }
-
-        // Delegate to chargeBalance for actual operation
-        chargeBalance(user, amount);
+        // User entity enforces amount > 0 and updatedAt refresh
+        user.refundBalance(amount);
     }
 
     /**

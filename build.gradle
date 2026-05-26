@@ -32,7 +32,6 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     runtimeOnly 'com.mysql:mysql-connector-j'
-    runtimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // P6Spy - SQL logging
@@ -136,6 +135,8 @@ jacoco {
 jacocoTestReport {
     // 모든 테스트가 완료된 후 커버리지 리포트 생성
     dependsOn test, testUnit, testIntegration, testApi
+    // 모든 exec 파일 수집 (testUnit, testIntegration, test 등)
+    executionData(fileTree(dir: layout.buildDirectory, includes: ["jacoco/*.exec"]))
     reports {
         xml.required = true
         html.required = true

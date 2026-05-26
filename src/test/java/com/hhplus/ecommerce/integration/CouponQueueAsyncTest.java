@@ -15,6 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -38,6 +40,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * 5. 재시도 처리
  */
 @DisplayName("쿠폰 발급 비동기 큐 시스템 통합 테스트")
+// ⚠️ NOT_SUPPORTED: BaseIntegrationTest의 @Transactional(REQUIRED)을 오버라이드한다.
+// CouponQueueService.processCouponQueue() → CouponService.issueCouponWithLock() (REQUIRES_NEW)
+// REQUIRES_NEW는 외부 테스트 트랜잭션 내에서 @BeforeEach가 저장한 데이터를 볼 수 없다.
+// (MySQL InnoDB는 커밋되지 않은 데이터를 다른 트랜잭션에서 읽지 못하므로)
+// NOT_SUPPORTED를 적용하면 @BeforeEach의 각 save()가 독립 트랜잭션으로 커밋되어
+// REQUIRES_NEW 내부 트랜잭션에서도 해당 데이터를 정상적으로 조회할 수 있다.
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
 class CouponQueueAsyncTest extends BaseIntegrationTest {
 
     @Autowired
@@ -63,10 +72,10 @@ class CouponQueueAsyncTest extends BaseIntegrationTest {
         // Redis 초기화
         redisTemplate.getConnectionFactory().getConnection().flushAll();
 
-        // 테스트용 사용자 생성
+        // 테스트용 사용자 생성 (data.sql email unique constraint 충돌 방지)
         testUser = User.builder()
                 .name("testUser")
-                .email("test@example.com")
+                .email("queue-test-" + System.nanoTime() + "@example.com")
                 .balance(1000000L)
                 .build();
         userRepository.save(testUser);
@@ -74,6 +83,7 @@ class CouponQueueAsyncTest extends BaseIntegrationTest {
         // 테스트용 쿠폰 생성 (100개, 발급 가능)
         testCoupon = Coupon.builder()
                 .couponName("테스트 쿠폰")
+                .discountType("FIXED_AMOUNT")
                 .discountAmount(1000L)
                 .totalQuantity(100)
                 .remainingQty(100)

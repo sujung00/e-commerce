@@ -199,6 +199,9 @@ class CartServiceTest {
                 .build();
 
         when(cartRepository.findOrCreateByUserId(TEST_USER_ID)).thenReturn(cart);
+        when(cartRepository.findByUserIdForUpdate(TEST_USER_ID)).thenReturn(Optional.of(cart));
+        when(cartRepository.findCartItemForUpdate(TEST_CART_ID, TEST_PRODUCT_ID, TEST_OPTION_ID))
+                .thenReturn(Optional.empty()); // 중복 없음 → 신규 추가 경로
 
         CartItem newItem = CartItem.builder()
                 .cartItemId(TEST_CART_ITEM_ID)

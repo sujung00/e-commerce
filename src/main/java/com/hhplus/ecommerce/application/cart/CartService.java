@@ -10,6 +10,7 @@ import com.hhplus.ecommerce.presentation.cart.response.CartResponseDto;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -86,15 +87,22 @@ public class CartService {
      * ✅ 캐시 무효화 (Message 5):
      * - @CacheEvict: 장바구니 수정 시 캐시 제거
      *
+     * ✅ 동시성 제어:
+     * - @Transactional: 트랜잭션 내에서 원자적 처리
+     * - findByUserIdForUpdate: Cart 행에 비관적 락(SELECT FOR UPDATE)으로
+     *   동시 항목 추가를 직렬화 → 수량 누적 정확성 보장
+     *
      * 로직:
      * 1. 사용자 존재 검증
      * 2. 수량 검증
-     * 3. 장바구니 조회 또는 생성
-     * 4. 중복 항목 확인
+     * 3. 장바구니 조회 또는 생성 (없으면 생성)
+     * 4. Cart 행에 비관적 락 획득
+     * 5. 중복 항목 확인 (락 내에서 일관성 있는 읽기)
      *    - 있으면: 수량 업데이트
      *    - 없으면: 새 항목 생성
-     * 5. 장바구니 총액 업데이트
+     * 6. 장바구니 총액 업데이트
      */
+    @Transactional
     @CacheEvict(value = "cartCache", key = "'cart:' + #userId")
     public CartItemResponse addItem(Long userId, AddCartItemRequest request) {
         // 사용자 존재 검증
@@ -105,11 +113,19 @@ public class CartService {
         // 수량 검증
         validateQuantity(request.getQuantity());
 
-        // 장바구니 조회 또는 생성
-        Cart cart = cartRepository.findOrCreateByUserId(userId);
+        // 장바구니 조회 또는 생성 (아직 없으면 생성)
+        cartRepository.findOrCreateByUserId(userId);
 
-        // 중복 항목 확인
-        var existingItem = cartRepository.findCartItem(
+        // Cart 행에 비관적 락 획득 - 동시 요청 직렬화
+        Cart cart = cartRepository.findByUserIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalStateException("Cart not found after creation for userId=" + userId));
+
+        // 중복 항목 확인 (SELECT FOR UPDATE - CURRENT READ)
+        // ⚠️ InnoDB REPEATABLE READ 스냅샷 격리 우회 필수:
+        // 일반 SELECT는 트랜잭션 시작 시점의 스냅샷을 읽으므로, 이미 다른 트랜잭션이
+        // 커밋한 cart_item을 보지 못해 중복 INSERT → UNIQUE 제약 위반이 발생한다.
+        // SELECT FOR UPDATE(CURRENT READ)는 항상 최신 커밋 데이터를 읽는다.
+        var existingItem = cartRepository.findCartItemForUpdate(
                 cart.getCartId(),
                 request.getProductId(),
                 request.getOptionId()

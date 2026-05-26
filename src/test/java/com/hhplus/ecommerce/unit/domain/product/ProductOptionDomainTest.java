@@ -51,7 +51,7 @@ public class ProductOptionDomainTest {
             assertEquals(TEST_PRODUCT_ID, option.getProductId());
             assertEquals(TEST_OPTION_NAME, option.getName());
             assertEquals(TEST_INITIAL_STOCK, option.getStock());
-            assertEquals(1L, option.getVersion()); // 초기 version은 1
+            assertEquals(0L, option.getVersion()); // 초기 version은 0 (JPA persist 전 도메인 초기값)
             assertNotNull(option.getCreatedAt());
             assertNotNull(option.getUpdatedAt());
         }
@@ -94,7 +94,7 @@ public class ProductOptionDomainTest {
             ProductOption option = ProductOption.createOption(TEST_PRODUCT_ID, TEST_OPTION_NAME, 0);
 
             assertEquals(0, option.getStock());
-            assertEquals(1L, option.getVersion());
+            assertEquals(0L, option.getVersion());
         }
 
         @DisplayName("생성 - 초기 재고 다양한 값")
@@ -104,7 +104,7 @@ public class ProductOptionDomainTest {
             ProductOption option = ProductOption.createOption(TEST_PRODUCT_ID, TEST_OPTION_NAME, stock);
 
             assertEquals(stock, option.getStock());
-            assertEquals(1L, option.getVersion());
+            assertEquals(0L, option.getVersion());
         }
     }
 
@@ -289,16 +289,16 @@ public class ProductOptionDomainTest {
         @DisplayName("버전 증가 - 차감 후")
         void testVersionIncrement_AfterDeduction() {
             ProductOption option = ProductOption.createOption(TEST_PRODUCT_ID, TEST_OPTION_NAME, 100);
-            assertEquals(1L, option.getVersion());
+            assertEquals(0L, option.getVersion());
 
             option.deductStock(10);
-            assertEquals(2L, option.getVersion());
+            assertEquals(1L, option.getVersion());
 
             option.deductStock(20);
-            assertEquals(3L, option.getVersion());
+            assertEquals(2L, option.getVersion());
 
             option.deductStock(5);
-            assertEquals(4L, option.getVersion());
+            assertEquals(3L, option.getVersion());
         }
 
         @Test
@@ -320,23 +320,23 @@ public class ProductOptionDomainTest {
         void testVersionChanged_Detection() {
             ProductOption option = ProductOption.createOption(TEST_PRODUCT_ID, TEST_OPTION_NAME, 100);
 
-            assertFalse(option.isVersionChanged(1L));
+            assertFalse(option.isVersionChanged(0L));
 
             option.deductStock(10);
-            assertTrue(option.isVersionChanged(1L));
-            assertFalse(option.isVersionChanged(2L));
+            assertTrue(option.isVersionChanged(0L));
+            assertFalse(option.isVersionChanged(1L));
 
             option.restoreStock(5);
-            assertTrue(option.isVersionChanged(2L));
-            assertFalse(option.isVersionChanged(3L));
+            assertTrue(option.isVersionChanged(1L));
+            assertFalse(option.isVersionChanged(2L));
         }
 
         @Test
         @DisplayName("동시성 시뮬레이션 - 두 트랜잭션의 버전 충돌")
         void testConcurrencySimulation_VersionConflict() {
-            // 초기 상태: 버전 1, 재고 100
+            // 초기 상태: 버전 0, 재고 100
             ProductOption original = ProductOption.createOption(TEST_PRODUCT_ID, TEST_OPTION_NAME, 100);
-            assertEquals(1L, original.getVersion());
+            assertEquals(0L, original.getVersion());
 
             // 트랜잭션 1: 20 차감 (로컬 복사본 - Builder로 버전 1 설정)
             ProductOption transaction1 = ProductOption.builder()
@@ -379,23 +379,23 @@ public class ProductOptionDomainTest {
         void testSequentialOperations_VersionChaining() {
             ProductOption option = ProductOption.createOption(TEST_PRODUCT_ID, TEST_OPTION_NAME, 100);
 
-            // 작업 1-5: 각각 재고 차감
+            // 작업 1-5: 각각 재고 차감 (초기 버전 0 → 작업마다 +1)
             for (long i = 1L; i <= 5; i++) {
                 option.deductStock(1);
-                assertEquals(i + 1, option.getVersion());
+                assertEquals(i, option.getVersion());
             }
 
             assertEquals(95, option.getStock());
-            assertEquals(6L, option.getVersion());
+            assertEquals(5L, option.getVersion());
 
             // 작업 6-8: 각각 재고 복구
             for (long i = 1L; i <= 3; i++) {
                 option.restoreStock(1);
-                assertEquals(6 + i, option.getVersion());
+                assertEquals(5 + i, option.getVersion());
             }
 
             assertEquals(98, option.getStock());
-            assertEquals(9L, option.getVersion());
+            assertEquals(8L, option.getVersion());
         }
     }
 
@@ -609,27 +609,27 @@ public class ProductOptionDomainTest {
         void scenario1_NormalInventoryFlow() {
             // 옵션 생성: 빨강색 100개
             ProductOption option = ProductOption.createOption(TEST_PRODUCT_ID, "빨강", 100);
-            assertEquals(1L, option.getVersion());
+            assertEquals(0L, option.getVersion());
 
             // 주문 1: 30개 차감
             option.deductStock(30);
             assertEquals(70, option.getStock());
-            assertEquals(2L, option.getVersion());
+            assertEquals(1L, option.getVersion());
 
             // 주문 2: 20개 차감
             option.deductStock(20);
             assertEquals(50, option.getStock());
-            assertEquals(3L, option.getVersion());
+            assertEquals(2L, option.getVersion());
 
             // 주문 취소: 15개 복구
             option.restoreStock(15);
             assertEquals(65, option.getStock());
-            assertEquals(4L, option.getVersion());
+            assertEquals(3L, option.getVersion());
 
             // 주문 3: 65개 차감 (전량)
             option.deductStock(65);
             assertEquals(0, option.getStock());
-            assertEquals(5L, option.getVersion());
+            assertEquals(4L, option.getVersion());
 
             // 최종 상태
             assertFalse(option.hasAnyStock());
@@ -680,17 +680,17 @@ public class ProductOptionDomainTest {
             // 주문 1: 100개 판매
             option.deductStock(100);
             assertEquals(100, option.getStock());
-            assertEquals(2L, option.getVersion());
+            assertEquals(1L, option.getVersion());
 
             // 부분 반품: 30개만 반품
             option.restoreStock(30);
             assertEquals(130, option.getStock());
-            assertEquals(3L, option.getVersion());
+            assertEquals(2L, option.getVersion());
 
             // 추가 주문: 90개 판매
             option.deductStock(90);
             assertEquals(40, option.getStock());
-            assertEquals(4L, option.getVersion());
+            assertEquals(3L, option.getVersion());
 
             assertTrue(option.hasStock(40));
             assertFalse(option.hasStock(41));
@@ -713,10 +713,10 @@ public class ProductOptionDomainTest {
             }
             long versionAfter3Restorations = option.getVersion();
 
-            // 버전 진행: 1 → 6 → 9
-            assertEquals(1L, versionAtCreation);
-            assertEquals(6L, versionAfter5Deductions);
-            assertEquals(9L, versionAfter3Restorations);
+            // 버전 진행: 0 → 5 → 8
+            assertEquals(0L, versionAtCreation);
+            assertEquals(5L, versionAfter5Deductions);
+            assertEquals(8L, versionAfter3Restorations);
 
             // 각 단계에서의 버전 변경 감지
             assertTrue(option.isVersionChanged(versionAtCreation));
@@ -738,12 +738,12 @@ public class ProductOptionDomainTest {
             }
 
             assertEquals(10000 - totalSold, option.getStock());
-            assertEquals(101L, option.getVersion()); // 초기(1) + 100번 = 101
+            assertEquals(100L, option.getVersion()); // 초기(0) + 100번 = 100
 
             // 부분 반품
             option.restoreStock(totalSold / 2);
             assertEquals(10000 - totalSold + (totalSold / 2), option.getStock());
-            assertEquals(102L, option.getVersion());
+            assertEquals(101L, option.getVersion());
         }
     }
 }

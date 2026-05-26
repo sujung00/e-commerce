@@ -76,7 +76,7 @@ class IntegrationDomainServiceTest extends BaseIntegrationTest {
     void setUp() {
         // 테스트 사용자 생성
         testUser = User.builder()
-                .email("test@example.com")
+                .email("domain-test-" + System.nanoTime() + "@example.com")
                 .name("Test User")
                 .phone("010-1234-5678")
                 .balance(100000L)

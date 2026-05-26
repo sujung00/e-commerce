@@ -140,6 +140,30 @@ services:
       - kafka-network
 
   # ================================
+  # MySQL 8.0 (메인 데이터베이스)
+  # ================================
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ecommerce
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - kafka-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ================================
   # Redis (캐시 + 쿠폰 비동기 큐)
   # ================================
   redis:
@@ -161,6 +185,8 @@ services:
 # ================================
 volumes:
   kafka-data:
+    driver: local
+  mysql-data:
     driver: local
 
 # ================================

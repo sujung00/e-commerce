@@ -10,6 +10,7 @@ import com.hhplus.ecommerce.domain.order.OrderStatus;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
+import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -61,10 +62,13 @@ public class CreateOrderStep implements SagaStep {
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
+    private final EntityManager entityManager;
 
-    public CreateOrderStep(OrderRepository orderRepository, ProductRepository productRepository) {
+    public CreateOrderStep(OrderRepository orderRepository, ProductRepository productRepository,
+                           EntityManager entityManager) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
+        this.entityManager = entityManager;
     }
 
     @Override
@@ -152,7 +156,10 @@ public class CreateOrderStep implements SagaStep {
         log.info("[{}] OrderItem 리스트 생성 완료 - orderItems={}개",
                 getName(), orderItems.size());
 
-        // ========== Step 2: Order 엔티티 생성 (Builder로 orderItems 설정) ==========
+        // ========== Step 2: Order 엔티티 생성 (items 없이 먼저 저장해서 orderId 확보) ==========
+        // 이유: Hibernate 6.x unidirectional @OneToMany @JoinColumn은 INSERT 후 UPDATE 방식.
+        // order_id NOT NULL + 기본값 없음 → OrderItem INSERT 시 DB 에러 발생.
+        // 해결: Order를 먼저 저장(→ orderId 생성), 각 OrderItem에 orderId 세팅 후 EntityManager.persist().
         Order order = Order.builder()
                 .userId(userId)
                 .couponId(couponId)
@@ -160,14 +167,25 @@ public class CreateOrderStep implements SagaStep {
                 .subtotal(context.getSubtotal())
                 .finalAmount(finalAmount)
                 .orderStatus(OrderStatus.PENDING) // 초기 상태: PENDING
-                .orderItems(orderItems)           // Builder로 orderItems 설정
+                // orderItems는 아직 추가하지 않음 (orderId를 먼저 확보해야 함)
                 .build();
 
-        log.info("[{}] Order 엔티티 생성 완료 - userId={}, orderStatus={}, orderItems={}개",
-                getName(), userId, order.getOrderStatus(), orderItems.size());
+        log.info("[{}] Order 엔티티 생성 완료 - userId={}, orderStatus={}",
+                getName(), userId, order.getOrderStatus());
 
-        // ========== Step 4: DB에 저장 ==========
+        // ========== Step 3: Order 먼저 DB에 저장 (IDENTITY → orderId 생성) ==========
         Order savedOrder = orderRepository.save(order);
+        Long orderId = savedOrder.getOrderId();
+
+        log.info("[{}] Order 저장 완료 - orderId={}", getName(), orderId);
+
+        // ========== Step 4: orderId 설정 후 OrderItem 개별 저장 ==========
+        for (OrderItem item : orderItems) {
+            item.setOrderId(orderId);
+            entityManager.persist(item);      // order_id 포함하여 INSERT
+            savedOrder.addOrderItem(item);     // 인메모리 일관성 유지
+        }
+        entityManager.flush(); // 현재 트랜잭션 내 반영 확인
 
         log.info("[{}] 주문 생성 완료 - orderId={}, userId={}, orderStatus={}, finalAmount={}",
                 getName(), savedOrder.getOrderId(), userId,
@@ -175,6 +193,7 @@ public class CreateOrderStep implements SagaStep {
 
         // ========== Step 5: SagaContext에 orderId만 저장 (Order 객체 아님) ==========
         context.setOrderId(savedOrder.getOrderId());
+        context.addExecutedStepName(getName()); // 보상 플로우에서 hasExecutedStep() 확인용
 
         log.info("[{}] 주문 생성 Step 완료 - orderId={}, orderItems={}개",
                 getName(), savedOrder.getOrderId(), orderItems.size());

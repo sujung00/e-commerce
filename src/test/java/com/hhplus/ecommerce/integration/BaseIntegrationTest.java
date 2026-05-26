@@ -7,8 +7,6 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 기본통합테스트 - TestContainers 기반 (MySQL + Redis)
@@ -126,21 +124,23 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional
-@Testcontainers
 @ContextConfiguration(initializers = BaseIntegrationTest.TestContainersInitializer.class)
 public abstract class BaseIntegrationTest {
 
     // ═══════════════════════════════════════════════════════════════════════
-    // TestContainers 컨테이너 정의
+    // TestContainers 컨테이너 정의 (Singleton Container Pattern)
     // ═══════════════════════════════════════════════════════════════════════
+    // ⚠️ @Testcontainers + @Container 를 사용하지 않는다.
+    //    이유: 추상 부모 클래스에 @Testcontainers가 붙으면 각 구체 서브클래스마다
+    //    컨테이너가 stop/start를 반복한다. 그러면 포트가 바뀌어도 Spring Test Context
+    //    캐시는 이전 포트로 연결하려 하므로 HikariPool total=0 → 전체 테스트 실패.
+    //
+    //    Singleton Container Pattern: static 초기화 블록에서 직접 start() 호출.
+    //    컨테이너는 JVM 종료 시까지 한 번만 실행되며, 모든 테스트 클래스가 공유한다.
 
     /**
-     * MySQL 8.0 TestContainer
-     * - 동적 포트 할당으로 포트 충돌 방지
-     * - 각 테스트마다 독립적인 DB 환경 제공
-     * - static 선언으로 모든 테스트에서 공유 (성능 최적화)
+     * MySQL 8.0 TestContainer (Singleton)
      */
-    @Container
     static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("ecommerce_test")
             .withUsername("testuser")
@@ -148,14 +148,16 @@ public abstract class BaseIntegrationTest {
             .withEnv("MYSQL_ROOT_PASSWORD", "testroot");
 
     /**
-     * Redis 7.0 TestContainer
-     * - 실제 Redis 캐싱 검증을 위한 컨테이너
-     * - RedisCacheManager가 이 Redis에 연결
-     * - 캐시 일관성 및 성능 검증 가능
+     * Redis 7.0 TestContainer (Singleton)
      */
-    @Container
     static GenericContainer<?> redis = new GenericContainer<>("redis:7.0")
             .withExposedPorts(6379);
+
+    // 컨테이너를 JVM 시작 시 한 번만 기동 (Singleton Container Pattern)
+    static {
+        mysql.start();
+        redis.start();
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // TestContainers Initializer

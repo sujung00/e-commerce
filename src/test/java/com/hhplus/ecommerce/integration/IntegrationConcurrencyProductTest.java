@@ -3,6 +3,7 @@ package com.hhplus.ecommerce.integration;
 import com.hhplus.ecommerce.domain.product.Product;
 import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,9 @@ class IntegrationConcurrencyProductTest extends BaseIntegrationTest {
     @Autowired
     private ProductRepository productRepository;
 
+    @Autowired
+    private EntityManager entityManager;
+
     private Product testProduct;
     private ProductOption testOption;
 
@@ -46,10 +50,27 @@ class IntegrationConcurrencyProductTest extends BaseIntegrationTest {
         productRepository.save(testProduct);
 
         // 테스트용 ProductOption 생성 (팩토리 메서드 사용)
+        // version=null → Spring Data JPA isNew()=true → em.persist() → testOption이 managed 상태로 ID 할당
         testOption = ProductOption.createOption(testProduct.getProductId(), "기본 옵션", 100);
         productRepository.saveOption(testOption);
-        testProduct.addOption(testOption);
-        productRepository.save(testProduct);
+
+        // ⚠️ 세션 초기화 필수: testProduct는 persist 직후 options=[] 빈 PersistentBag을 가진다.
+        //    flush/clear 없이 findByIdWithOptions를 호출하면 1차 캐시의 빈 options가 반환된다.
+        //    flush: pending INSERT/UPDATE를 DB에 반영
+        //    clear: 1차 캐시 초기화 → 이후 findById가 DB에서 option 포함하여 신선하게 로드
+        entityManager.flush();
+        entityManager.clear();
+
+        // DB에서 재로드: testOption이 product_id FK로 연결되어 EAGER join fetch로 함께 로드됨
+        testProduct = productRepository.findById(testProduct.getProductId()).orElseThrow();
+
+        // ⚠️ ProductOption.createOption()은 version=0L(non-null)으로 생성되므로
+        //    Spring Data JPA의 isNew()가 false를 반환 → merge() 호출 → 원래 testOption 참조에 ID 미설정.
+        //    따라서 DB에서 재로드된 testProduct의 options 리스트에서 testOption을 다시 할당한다.
+        testOption = testProduct.getOptions().stream()
+                .filter(o -> "기본 옵션".equals(o.getName()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("setUp에서 저장한 옵션을 찾을 수 없음"));
     }
 
     @Test

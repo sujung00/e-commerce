@@ -136,6 +136,8 @@ public class UseCouponStep implements SagaStep {
         log.info("[{}] 쿠폰 사용 처리 완료 - userId={}, couponId={}, status={}",
                 getName(), userId, couponId, userCoupon.getStatus());
 
+        context.addExecutedStepName(getName()); // 보상 플로우에서 hasExecutedStep() 확인용
+
         log.info("[{}] 쿠폰 사용 Step 완료 - userId={}, couponId={}",
                 getName(), userId, couponId);
     }

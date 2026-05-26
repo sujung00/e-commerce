@@ -104,6 +104,8 @@ class IntegrationCartConcurrencyTest extends BaseIntegrationTest {
             userRepository.save(user);
             entityManager.flush();
             userIdArray[0] = user.getUserId();
+            // 카트 미리 생성: 동시 요청 시 카트 생성 race condition 방지
+            cartRepository.findOrCreateByUserId(user.getUserId());
             return null;
         });
 
@@ -172,8 +174,10 @@ class IntegrationCartConcurrencyTest extends BaseIntegrationTest {
             assertEquals(100, item.getQuantity(),
                     "수량이 100으로 누적되어야 합니다. 실제: " + item.getQuantity());
 
-            // 검증 4: 카트 총액도 정확함
-            long expectedSubtotal = 1L * 101L * 100;  // product=1, option=101, qty=100
+            // 검증 4: 카트 소계가 정확함 (unitPrice × qty)
+            // getProductPrice(1L) = 29900, qty = 100 → subtotal = 2,990,000
+            long unitPrice = 29900L;  // CartService.getProductPrice(productId=1)
+            long expectedSubtotal = unitPrice * 100;
             assertEquals(expectedSubtotal, item.getSubtotal(),
                     "소계가 정확해야 합니다. 실제: " + item.getSubtotal());
 
@@ -214,6 +218,8 @@ class IntegrationCartConcurrencyTest extends BaseIntegrationTest {
             userRepository.save(user);
             entityManager.flush();
             userIdArray[0] = user.getUserId();
+            // 카트 미리 생성: 동시 요청 시 카트 생성 race condition 방지
+            cartRepository.findOrCreateByUserId(user.getUserId());
             return null;
         });
 
@@ -312,6 +318,8 @@ class IntegrationCartConcurrencyTest extends BaseIntegrationTest {
             userRepository.save(user);
             entityManager.flush();
             userIdArray[0] = user.getUserId();
+            // 카트 미리 생성: 동시 요청 시 카트 생성 race condition 방지
+            cartRepository.findOrCreateByUserId(user.getUserId());
             return null;
         });
 

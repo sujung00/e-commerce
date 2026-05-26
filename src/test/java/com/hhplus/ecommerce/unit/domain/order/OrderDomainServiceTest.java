@@ -188,10 +188,10 @@ class OrderDomainServiceTest {
     // ==================== validateOrderCancellation Tests ====================
 
     @Test
-    @DisplayName("주문 취소 검증 - 정상 케이스")
+    @DisplayName("주문 취소 검증 - 정상 케이스 (COMPLETED 상태)")
     void validateOrderCancellation_WithCancellableOrder_Success() {
-        // Given
-        Order order = createTestOrder(1L, "PENDING");
+        // Given: COMPLETED 상태 주문만 취소 가능 (Order.cancel() 동일 조건)
+        Order order = createTestOrder(1L, "COMPLETED");
 
         // When & Then
         assertDoesNotThrow(() -> orderDomainService.validateOrderCancellation(order));
@@ -207,10 +207,10 @@ class OrderDomainServiceTest {
     }
 
     @Test
-    @DisplayName("주문 취소 검증 - 취소 불가능한 상태")
+    @DisplayName("주문 취소 검증 - 취소 불가능한 상태 (CANCELLED)")
     void validateOrderCancellation_WithNonCancellableOrder_ThrowsException() {
-        // Given
-        Order order = createTestOrder(1L, "COMPLETED");
+        // Given: CANCELLED 상태는 재취소 불가 (isCancellable() = false)
+        Order order = createTestOrder(1L, "CANCELLED");
 
         // When & Then
         DomainException exception = assertThrows(DomainException.class,

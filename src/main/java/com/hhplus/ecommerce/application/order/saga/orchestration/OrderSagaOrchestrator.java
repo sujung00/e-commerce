@@ -179,11 +179,8 @@ public class OrderSagaOrchestrator {
                 log.info("[OrderSagaOrchestrator] Step 실행 시작: {} (order={})",
                         step.getName(), step.getOrder());
 
-                // Step 실행
+                // Step 실행 (각 Step의 execute()에서 context.addExecutedStepName() 호출)
                 step.execute(context);
-
-                // 실행 이력 추가 (LIFO 보상용) - Step 이름만 저장
-                context.addExecutedStepName(step.getName());
 
                 log.info("[OrderSagaOrchestrator] Step 실행 완료: {} (order={})",
                         step.getName(), step.getOrder());

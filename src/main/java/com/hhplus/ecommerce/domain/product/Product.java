@@ -84,6 +84,17 @@ public class Product {
     private List<ProductOption> options = new ArrayList<>();
 
     /**
+     * JPA 저장 전 자동 실행: 필수 타임스탬프 자동 설정
+     * Product.builder()를 직접 사용하면서 createdAt/updatedAt을 생략한 경우에도
+     * not-null 제약을 위반하지 않도록 보장한다.
+     */
+    @PrePersist
+    protected void onCreate() {
+        if (this.createdAt == null) this.createdAt = LocalDateTime.now();
+        if (this.updatedAt == null) this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
      * 상품 생성 팩토리 메서드
      *
      * 비즈니스 규칙:

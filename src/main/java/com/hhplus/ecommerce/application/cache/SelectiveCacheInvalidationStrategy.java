@@ -31,10 +31,11 @@ public class SelectiveCacheInvalidationStrategy implements CacheInvalidationStra
         String couponDetailKey = RedisKeyType.CACHE_COUPON_DETAIL
                 .buildKey(context.getCouponId());
 
-        // 2. 재고 소진 시만 활성 쿠폰 목록 캐시 무효화
+        // 2. 재고 소진 시 활성 쿠폰 목록 + 발급 가능 목록 캐시 무효화
         if (context.isStockExhausted()) {
             String activeCouponsKey = RedisKeyType.CACHE_ACTIVE_COUPONS.getKey();
-            return new String[]{couponDetailKey, activeCouponsKey};
+            String couponListKey = RedisKeyType.CACHE_COUPON_LIST.getKey();
+            return new String[]{couponDetailKey, activeCouponsKey, couponListKey};
         }
 
         // 3. 재고가 남아있으면 상세 캐시만 무효화

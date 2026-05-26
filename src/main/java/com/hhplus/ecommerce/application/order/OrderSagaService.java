@@ -14,6 +14,7 @@ import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
+import com.hhplus.ecommerce.common.exception.CompensationException;
 import com.hhplus.ecommerce.domain.user.InsufficientBalanceException;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.order.dto.OrderItemCommand;
@@ -256,6 +257,12 @@ public class OrderSagaService {
             // 포인트 부족 예외는 그대로 재발생
             log.warn("[OrderSagaService] 포인트 부족으로 주문 생성 실패 - userId={}, 필요포인트={}, error={}",
                     userId, finalAmount, e.getMessage());
+            throw e;
+
+        } catch (CompensationException e) {
+            // Critical 보상 실패 예외는 그대로 재발생 (RuntimeException에 묻히지 않도록)
+            log.error("[OrderSagaService] Critical 보상 실패로 주문 생성 중단 - userId={}, error={}",
+                    userId, e.getMessage());
             throw e;
 
         } catch (RuntimeException e) {

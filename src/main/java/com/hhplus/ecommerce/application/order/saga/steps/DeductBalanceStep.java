@@ -109,6 +109,8 @@ public class DeductBalanceStep implements SagaStep {
         log.info("[{}] 포인트 차감 완료 - userId={}, 차감금액={}, 남은잔액={}",
                 getName(), userId, finalAmount, user.getBalance());
 
+        context.addExecutedStepName(getName()); // 보상 플로우에서 hasExecutedStep() 확인용
+
         log.info("[{}] 포인트 차감 Step 완료 - userId={}, 차감금액={}",
                 getName(), userId, finalAmount);
     }

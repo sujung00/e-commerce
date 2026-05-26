@@ -6,9 +6,8 @@ import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderIte
 import com.hhplus.ecommerce.application.order.saga.compensation.CompensationDLQ;
 import com.hhplus.ecommerce.application.order.saga.compensation.FailedCompensation;
 import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
-import com.hhplus.ecommerce.application.order.saga.steps.CreateOrderStep;
 import com.hhplus.ecommerce.application.order.saga.steps.DeductBalanceStep;
-import com.hhplus.ecommerce.application.order.saga.steps.UseCouponStep;
+import com.hhplus.ecommerce.application.order.saga.steps.DeductInventoryStep;
 import com.hhplus.ecommerce.common.exception.CompensationException;
 import com.hhplus.ecommerce.common.exception.CriticalException;
 import com.hhplus.ecommerce.common.exception.ErrorCode;
@@ -33,12 +32,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -51,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.*;
 
 /**
@@ -61,17 +57,12 @@ import static org.mockito.Mockito.*;
  * - TEST-002: 캐스케이딩 보상 실패 - 다중 Step 실패
  *
  * 테스트 전략:
+ * - @MockitoSpyBean (Spring Boot 3.4+)으로 실제 빈을 Spy로 감싸서 주입
+ * - @SpyBean (deprecated) 및 @TestConfiguration/@Bean/@Primary 방식 불필요
  * - Spy를 사용하여 Step의 compensate() 메서드에서 예외 발생 시뮬레이션
  * - 실제 DB 트랜잭션 동작 검증
  * - Mock 최소화: AlertService, Step만 Spy 사용
- *
- * ⚠️ Spring Boot 3.4+ 호환:
- * - @SpyBean (deprecated) 대신 @TestConfiguration + Mockito.spy() 사용
- * - @Primary로 실제 빈을 spy 빈으로 교체
- * - 실제 빈의 모든 기능 유지하면서 부분 스터빙 + 검증 가능
  */
-@SpringBootTest
-@Import(CompensationFailureIntegrationTest.SpyConfiguration.class)
 @DisplayName("보상 트랜잭션 실패 시나리오 Integration 테스트")
 class CompensationFailureIntegrationTest extends BaseIntegrationTest {
 
@@ -100,19 +91,18 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
     private CompensationDLQ compensationDLQ;
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Spy 빈 주입 (SpyConfiguration에서 생성된 spy 객체)
+    // @MockitoSpyBean: Spring Boot 3.4+ 방식
+    // 실제 빈을 Mockito spy로 감싸서 주입하며, 각 테스트 후 자동 리셋됨.
+    // @SpyBean (deprecated) 대체 방식으로, AopTestUtils 없이 직접 사용 가능.
     // ═══════════════════════════════════════════════════════════════════════
-    @Autowired
-    private AlertService alertService; // spy 객체
+    @MockitoSpyBean
+    private AlertService alertService;
 
-    @Autowired
-    private DeductBalanceStep deductBalanceStep; // spy 객체
+    @MockitoSpyBean
+    private DeductBalanceStep deductBalanceStep;
 
-    @Autowired
-    private UseCouponStep useCouponStep; // spy 객체
-
-    @Autowired
-    private CreateOrderStep createOrderStep; // spy 객체
+    @MockitoSpyBean
+    private DeductInventoryStep deductInventoryStep;
 
     @Autowired
     private EntityManager entityManager;
@@ -122,64 +112,6 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
 
     private TransactionTemplate newTransactionTemplate;
 
-    /**
-     * Spring Boot 3.4+ 호환 Spy 빈 설정
-     *
-     * @SpyBean (deprecated) 대체 방식:
-     * - 실제 빈을 Mockito.spy()로 감싸서 새로운 빈 생성
-     * - @Primary로 실제 빈 대신 spy 빈이 주입되도록 설정
-     * - 부분 스터빙 (doThrow, doAnswer 등) + 호출 검증 (verify) 모두 가능
-     *
-     * 장점:
-     * 1. Spring 표준 빈 재정의 메커니즘 활용
-     * 2. 실제 빈의 모든 의존성 자동 주입
-     * 3. deprecated API 사용 안 함
-     * 4. 테스트 코드 나머지 부분은 변경 불필요
-     */
-    @TestConfiguration
-    static class SpyConfiguration {
-
-        /**
-         * AlertService spy 빈
-         * 목적: verify()를 통한 호출 횟수 검증
-         */
-        @Bean
-        @Primary
-        public AlertService alertServiceSpy(AlertService alertService) {
-            return Mockito.spy(alertService);
-        }
-
-        /**
-         * DeductBalanceStep spy 빈
-         * 목적: compensate() 메서드에 예외 주입 (doThrow)
-         */
-        @Bean
-        @Primary
-        public DeductBalanceStep deductBalanceStepSpy(DeductBalanceStep deductBalanceStep) {
-            return Mockito.spy(deductBalanceStep);
-        }
-
-        /**
-         * UseCouponStep spy 빈
-         * 목적: compensate() 메서드에 예외 주입 (doThrow)
-         */
-        @Bean
-        @Primary
-        public UseCouponStep useCouponStepSpy(UseCouponStep useCouponStep) {
-            return Mockito.spy(useCouponStep);
-        }
-
-        /**
-         * CreateOrderStep spy 빈
-         * 목적: execute() 메서드에 예외 주입 (doThrow)
-         */
-        @Bean
-        @Primary
-        public CreateOrderStep createOrderStepSpy(CreateOrderStep createOrderStep) {
-            return Mockito.spy(createOrderStep);
-        }
-    }
-
     @BeforeEach
     void setUp() {
         this.newTransactionTemplate = new TransactionTemplate(transactionManager);
@@ -188,7 +120,8 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         );
 
         // Spy 초기화: 각 테스트 전에 stubbing 및 호출 기록 초기화
-        Mockito.reset(alertService, deductBalanceStep, useCouponStep, createOrderStep);
+        // @MockitoSpyBean은 테스트 후 자동 리셋되지만 명시적으로도 초기화
+        Mockito.reset(alertService, deductBalanceStep, deductInventoryStep);
     }
 
     /**
@@ -215,8 +148,8 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         String testId = UUID.randomUUID().toString().substring(0, 8);
         long testTimestamp = System.currentTimeMillis();
 
-        // Step 1: 사용자, 상품, 재고 준비
-        long[] testData = new long[4]; // [userId, productId, optionId, initialStock]
+        // Step 1: 사용자, 상품, 재고, 쿠폰 준비
+        long[] testData = new long[5]; // [userId, productId, optionId, initialStock, couponId]
         newTransactionTemplate.execute(status -> {
             // 사용자 생성 (충분한 포인트)
             User user = User.builder()
@@ -257,11 +190,28 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
             testData[2] = savedOptions.get(0).getOptionId();
             testData[3] = savedOptions.get(0).getStock();
 
+            // 쿠폰 생성 (FIXED_AMOUNT, UserCoupon 없음 → UseCouponStep 자연 실패)
+            Coupon coupon = Coupon.builder()
+                    .couponName("보상테스트쿠폰_" + testId)
+                    .discountType("FIXED_AMOUNT")
+                    .discountAmount(1000L)
+                    .totalQuantity(100)
+                    .remainingQty(100)
+                    .validFrom(LocalDateTime.now().minusDays(1))
+                    .validUntil(LocalDateTime.now().plusDays(7))
+                    .isActive(true)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            couponRepository.save(coupon);
+            testData[4] = coupon.getCouponId();
+
             System.out.println("[TEST-001 Given] 테스트 데이터 준비 완료");
             System.out.println("  - userId: " + testData[0]);
             System.out.println("  - productId: " + testData[1]);
             System.out.println("  - optionId: " + testData[2]);
             System.out.println("  - initialStock: " + testData[3]);
+            System.out.println("  - couponId (no UserCoupon): " + testData[4]);
             return null;
         });
 
@@ -269,6 +219,7 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         long productId = testData[1];
         long optionId = testData[2];
         long initialStock = testData[3];
+        long couponId = testData[4]; // 쿠폰은 존재하나 UserCoupon 없음 → UseCouponStep 자연 실패
 
         // Step 2: DeductBalanceStep 보상 시 CriticalException 발생하도록 Stubbing
         doThrow(new CriticalException(
@@ -280,13 +231,12 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         List<OrderItemDto> orderItems = List.of(
                 new OrderItemDto(productId, optionId, 10)
         );
-        Long invalidCouponId = 99999L; // 존재하지 않는 쿠폰 ID → UseCouponStep 실패
-        Long finalAmount = 10000L; // 10개 * 10000원
+        Long finalAmount = 10000L; // 최종 결제액
 
         System.out.println("[TEST-001 When] 주문 생성 시도 (UseCouponStep 실패 예상)");
 
         CompensationException compensationException = assertThrows(CompensationException.class, () -> {
-            orderSagaService.createOrderWithPayment(userId, orderItems, invalidCouponId, finalAmount);
+            orderSagaService.createOrderWithPayment(userId, orderItems, couponId, finalAmount);
         });
 
         System.out.println("[TEST-001 When] CompensationException 발생 확인: " + compensationException.getMessage());
@@ -300,8 +250,9 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         System.out.println("[TEST-001 Then-1] ✅ CompensationException 발생 검증 완료");
 
         // 검증 2: AlertService.notifyCriticalCompensationFailure() 1회 호출
+        // orderId는 CreateOrderStep 미실행으로 null일 수 있으므로 nullable() 사용
         verify(alertService, times(1))
-                .notifyCriticalCompensationFailure(anyLong(), eq("DeductBalanceStep"));
+                .notifyCriticalCompensationFailure(nullable(Long.class), eq("DeductBalanceStep"));
         System.out.println("[TEST-001 Then-2] ✅ AlertService.notifyCriticalCompensationFailure() 호출 검증 완료");
 
         // 검증 3: CompensationDLQ에 1건 저장
@@ -385,7 +336,7 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         String testId = UUID.randomUUID().toString().substring(0, 8);
         long testTimestamp = System.currentTimeMillis();
 
-        long[] testData = new long[6]; // [userId, productId, optionId, couponId, userCouponId, initialStock]
+        long[] testData = new long[5]; // [userId, productId, optionId, couponId, initialStock]
         newTransactionTemplate.execute(status -> {
             // 사용자 생성
             User user = User.builder()
@@ -424,40 +375,32 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
 
             var savedOptions = productRepository.findOptionsByProductId(product.getProductId());
             testData[2] = savedOptions.get(0).getOptionId();
-            testData[5] = savedOptions.get(0).getStock();
+            testData[4] = savedOptions.get(0).getStock();
 
-            // 쿠폰 생성
+            // 쿠폰 생성 (FIXED_AMOUNT, UserCoupon 없음 → UseCouponStep 자연 실패)
             Coupon coupon = Coupon.builder()
-                    .couponName("테스트쿠폰_" + testId)
-                    .discountType("FIXED")
+                    .couponName("다중보상테스트쿠폰_" + testId)
+                    .discountType("FIXED_AMOUNT")
                     .discountAmount(1000L)
                     .totalQuantity(100)
                     .remainingQty(100)
                     .validFrom(LocalDateTime.now().minusDays(1))
                     .validUntil(LocalDateTime.now().plusDays(7))
+                    .isActive(true)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
             couponRepository.save(coupon);
             testData[3] = coupon.getCouponId();
 
-            // 사용자 쿠폰 발급
-            UserCoupon userCoupon = UserCoupon.builder()
-                    .userId(user.getUserId())
-                    .couponId(coupon.getCouponId())
-                    .status(UserCouponStatus.UNUSED)
-                    .issuedAt(LocalDateTime.now())
-                    .build();
-            userCouponRepository.save(userCoupon);
-            testData[4] = userCoupon.getUserCouponId();
+            // UserCoupon 미생성: UseCouponStep.execute()가 자연적으로 실패함
 
             System.out.println("[TEST-002 Given] 테스트 데이터 준비 완료");
             System.out.println("  - userId: " + testData[0]);
             System.out.println("  - productId: " + testData[1]);
             System.out.println("  - optionId: " + testData[2]);
-            System.out.println("  - couponId: " + testData[3]);
-            System.out.println("  - userCouponId: " + testData[4]);
-            System.out.println("  - initialStock: " + testData[5]);
+            System.out.println("  - couponId (no UserCoupon): " + testData[3]);
+            System.out.println("  - initialStock: " + testData[4]);
             return null;
         });
 
@@ -465,20 +408,17 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         long productId = testData[1];
         long optionId = testData[2];
         long couponId = testData[3];
-        long initialStock = testData[5];
+        long initialStock = testData[4];
 
-        // Step 2: CreateOrderStep execute() 실패 Stubbing
-        doThrow(new RuntimeException("TEST-002: CreateOrderStep 실행 중 오류 발생 (DB 저장 실패 시뮬레이션)"))
-                .when(createOrderStep).execute(any(SagaContext.class));
-
-        // Step 3: 보상 실패 Stubbing
-        // UseCouponStep 보상 실패 (일반 Exception - Best Effort)
-        doThrow(new RuntimeException("TEST-002: UseCouponStep 보상 중 일반 오류 발생"))
-                .when(useCouponStep).compensate(any(SagaContext.class));
-
+        // Step 2: 보상 실패 Stubbing
+        // UseCouponStep은 UserCoupon 없으므로 execute()에서 자연 실패 (stub 불필요)
         // DeductBalanceStep 보상 실패 (일반 Exception - Best Effort)
         doThrow(new RuntimeException("TEST-002: DeductBalanceStep 보상 중 일반 오류 발생"))
                 .when(deductBalanceStep).compensate(any(SagaContext.class));
+
+        // DeductInventoryStep 보상 실패 (일반 Exception - Best Effort)
+        doThrow(new RuntimeException("TEST-002: DeductInventoryStep 보상 중 일반 오류 발생"))
+                .when(deductInventoryStep).compensate(any(SagaContext.class));
 
         // ========== When: 주문 생성 (CreateOrderStep 실패 예상) ==========
         List<OrderItemDto> orderItems = List.of(
@@ -486,9 +426,9 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
         );
         Long finalAmount = 10000L * 10 - 1000L; // (가격 * 수량) - 쿠폰할인
 
-        System.out.println("[TEST-002 When] 주문 생성 시도 (CreateOrderStep 실패 예상)");
+        System.out.println("[TEST-002 When] 주문 생성 시도 (UseCouponStep 자연 실패 → 보상 실패 예상)");
 
-        // CreateOrderStep 실패로 인한 RuntimeException 발생 예상
+        // UseCouponStep 실패(UserCoupon 없음) → 보상 실행 → 보상 실패 → RuntimeException 발생 예상
         RuntimeException runtimeException = assertThrows(RuntimeException.class, () -> {
             orderSagaService.createOrderWithPayment(userId, orderItems, couponId, finalAmount);
         });
@@ -497,7 +437,7 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
 
         // ========== Then: 검증 ==========
 
-        // 검증 1: CompensationDLQ에 2건 저장 (UseCouponStep, DeductBalanceStep)
+        // 검증 1: CompensationDLQ에 2건 저장 (DeductBalanceStep, DeductInventoryStep 보상 실패)
         newTransactionTemplate.execute(status -> {
             List<FailedCompensation> failedCompensations = compensationDLQ.getAllFailed();
 
@@ -505,17 +445,17 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
             assertTrue(failedCompensations.size() >= 2,
                     "CompensationDLQ에 최소 2건 저장되어야 함 (실제: " + failedCompensations.size() + "건)");
 
-            // UseCouponStep 실패 기록 확인
-            boolean hasUseCouponFailure = failedCompensations.stream()
-                    .anyMatch(fc -> "UseCouponStep".equals(fc.getStepName()));
-            assertTrue(hasUseCouponFailure,
-                    "CompensationDLQ에 UseCouponStep 실패 기록이 있어야 함");
-
-            // DeductBalanceStep 실패 기록 확인
+            // DeductBalanceStep 보상 실패 기록 확인
             boolean hasDeductBalanceFailure = failedCompensations.stream()
                     .anyMatch(fc -> "DeductBalanceStep".equals(fc.getStepName()));
             assertTrue(hasDeductBalanceFailure,
                     "CompensationDLQ에 DeductBalanceStep 실패 기록이 있어야 함");
+
+            // DeductInventoryStep 보상 실패 기록 확인
+            boolean hasDeductInventoryFailure = failedCompensations.stream()
+                    .anyMatch(fc -> "DeductInventoryStep".equals(fc.getStepName()));
+            assertTrue(hasDeductInventoryFailure,
+                    "CompensationDLQ에 DeductInventoryStep 실패 기록이 있어야 함");
 
             System.out.println("[TEST-002 Then-1] ✅ CompensationDLQ 저장 검증 완료 (총 " + failedCompensations.size() + "건)");
             return null;
@@ -523,40 +463,35 @@ class CompensationFailureIntegrationTest extends BaseIntegrationTest {
 
         // 검증 2: DB 최종 상태 확인
         newTransactionTemplate.execute(status -> {
-            // 재고 확인: 복구되어야 함 (DeductInventoryStep 보상 성공)
+            // 재고 확인: 차감 유지 (DeductInventoryStep 보상 실패)
             ProductOption option = productRepository.findOptionById(optionId)
                     .orElseThrow(() -> new AssertionError("옵션을 찾을 수 없음"));
 
             long finalStock = option.getStock();
-            assertEquals(initialStock, finalStock,
-                    String.format("재고가 복구되어야 함 (초기: %d, 최종: %d)", initialStock, finalStock));
-            System.out.println("[TEST-002 Then-2a] ✅ 재고 복구 검증 완료: " + finalStock);
+            long expectedStock = initialStock - 10; // DeductInventoryStep 성공, 보상 실패 → 차감 유지
+            assertEquals(expectedStock, finalStock,
+                    String.format("재고가 차감 상태로 유지되어야 함 (초기: %d, 예상: %d, 실제: %d)",
+                            initialStock, expectedStock, finalStock));
+            System.out.println("[TEST-002 Then-2a] ✅ 재고 차감 유지 검증 완료: " + finalStock);
 
             // 포인트 확인: 차감 유지 (DeductBalanceStep 보상 실패)
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new AssertionError("사용자를 찾을 수 없음"));
 
             long finalBalance = user.getBalance();
-            long expectedBalance = 100000L - 10000L + 1000L; // 쿠폰 할인 적용 후 차감
+            // finalAmount = 10000L * 10 - 1000L = 99000L 차감됨, 보상 실패 → 유지
+            long expectedBalance = 100000L - (10000L * 10 - 1000L); // = 1000L
 
             assertEquals(expectedBalance, finalBalance,
                     String.format("포인트가 차감 상태로 유지되어야 함 (예상: %d, 실제: %d)",
                             expectedBalance, finalBalance));
             System.out.println("[TEST-002 Then-2b] ✅ 포인트 차감 유지 검증 완료: " + finalBalance);
 
-            // 쿠폰 확인: USED 상태 유지 (UseCouponStep 보상 실패)
-            UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
-                    .orElseThrow(() -> new AssertionError("사용자 쿠폰을 찾을 수 없음"));
-
-            assertEquals(UserCouponStatus.USED, userCoupon.getStatus(),
-                    "쿠폰 상태가 USED로 유지되어야 함 (보상 실패)");
-            System.out.println("[TEST-002 Then-2c] ✅ 쿠폰 USED 상태 유지 검증 완료");
-
-            // 주문 확인: 생성 안 됨 (CreateOrderStep 실패)
+            // 주문 확인: 생성 안 됨 (UseCouponStep 실패로 CreateOrderStep 미실행)
             List<Order> orders = orderRepository.findByUserId(userId, 0, 100);
             assertTrue(orders.isEmpty() || orders.stream().noneMatch(o -> o.getOrderStatus() == OrderStatus.PENDING),
                     "주문이 생성되지 않았거나 PENDING 상태가 아니어야 함");
-            System.out.println("[TEST-002 Then-2d] ✅ 주문 미생성 검증 완료");
+            System.out.println("[TEST-002 Then-2c] ✅ 주문 미생성 검증 완료");
 
             return null;
         });

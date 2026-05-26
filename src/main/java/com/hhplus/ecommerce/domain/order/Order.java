@@ -73,6 +73,17 @@ public class Order {
     private List<OrderItem> orderItems = new ArrayList<>();
 
     /**
+     * JPA 저장 전 자동 실행: 필수 타임스탬프 자동 설정
+     * Order.builder()를 직접 사용하면서 createdAt/updatedAt을 생략한 경우에도
+     * not-null 제약을 위반하지 않도록 보장한다.
+     */
+    @PrePersist
+    protected void onCreate() {
+        if (this.createdAt == null) this.createdAt = LocalDateTime.now();
+        if (this.updatedAt == null) this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
      * 주문 생성 팩토리 메서드 (정적 팩토리)
      *
      * 비즈니스 규칙:
@@ -183,10 +194,10 @@ public class Order {
 
     /**
      * 주문이 취소 가능한 상태인지 확인
-     * PENDING, PAID 상태에서만 취소 가능
+     * COMPLETED, FAILED 상태에서만 취소 가능 (cancel() 메서드와 동일한 조건)
      */
     public boolean isCancellable() {
-        return this.orderStatus == OrderStatus.PENDING || this.orderStatus == OrderStatus.PAID;
+        return this.orderStatus == OrderStatus.COMPLETED || this.orderStatus == OrderStatus.FAILED;
     }
 
     /**

@@ -70,6 +70,16 @@ public class Coupon {
     private LocalDateTime updatedAt;
 
     /**
+     * JPA 생명주기 콜백: 최초 저장 시 타임스탬프 자동 설정
+     * 테스트에서 builder로 엔티티를 직접 생성할 때도 타임스탬프가 누락되지 않도록 보장
+     */
+    @PrePersist
+    protected void onCreate() {
+        if (this.createdAt == null) this.createdAt = LocalDateTime.now();
+        if (this.updatedAt == null) this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
      * ✅ 추가: 쿠폰 할인액 검증
      * - FIXED_AMOUNT: discountAmount > 0
      * - PERCENTAGE: 0 <= discountRate <= 1.0

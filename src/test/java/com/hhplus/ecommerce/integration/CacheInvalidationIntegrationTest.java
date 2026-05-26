@@ -14,8 +14,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
 import org.springframework.data.redis.core.RedisTemplate;
 
+import org.springframework.transaction.annotation.Propagation;
+
 import java.time.LocalDateTime;
 
+import static org.awaitility.Awaitility.await;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -26,8 +30,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * 2. 쿠폰 상세 캐시만 무효화 (CACHE_COUPON_DETAIL)
  * 3. 재고 소진 시 활성 쿠폰 목록 캐시 무효화 (CACHE_ACTIVE_COUPONS)
  * 4. DB 쿼리 감소 효과 검증 (캐시 히트)
+ *
+ * ⚠️ @Transactional(NOT_SUPPORTED):
+ *   BaseIntegrationTest의 @Transactional(기본값 REQUIRED)을 오버라이드한다.
+ *   이유: @TransactionalEventListener(AFTER_COMMIT)는 이벤트를 발행한 트랜잭션이
+ *   커밋되어야 실행된다. 테스트 메서드에 외부 트랜잭션(@Transactional REQUIRED)이
+ *   있으면 CouponService의 REQUIRES_NEW 내부 트랜잭션은 커밋되더라도, 이벤트
+ *   리스너는 외부 테스트 트랜잭션이 커밋될 때까지 기다린다. 테스트 트랜잭션은
+ *   롤백으로 끝나므로 리스너가 절대 실행되지 않는다.
+ *   NOT_SUPPORTED: 테스트 메서드 동안 트랜잭션 없음 → issueCoupon()이 직접
+ *   새 트랜잭션을 시작하고 커밋 → AFTER_COMMIT 이벤트 리스너 정상 실행.
+ *   데이터 격리는 @BeforeEach의 고유 email(System.nanoTime())로 보장한다.
  */
 @DisplayName("캐시 무효화 로직 통합 테스트")
+@org.springframework.transaction.annotation.Transactional(
+        propagation = Propagation.NOT_SUPPORTED
+)
 class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
@@ -51,10 +69,10 @@ class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // 사용자 생성
+        // 사용자 생성 (data.sql의 email unique constraint 충돌 방지를 위해 고유 email 사용)
         User user = User.builder()
                 .name("테스트 사용자")
-                .email("test@example.com")
+                .email("cache-test-" + System.nanoTime() + "@example.com")
                 .balance(100000L)
                 .build();
         userRepository.save(user);
@@ -63,7 +81,9 @@ class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
         // 쿠폰 1 생성 (재고 5개)
         Coupon coupon1 = Coupon.builder()
                 .couponName("할인쿠폰 #1")
+                .discountType("FIXED_AMOUNT")
                 .discountAmount(1000L)
+                .totalQuantity(5)
                 .remainingQty(5)
                 .validFrom(LocalDateTime.now().minusHours(1))
                 .validUntil(LocalDateTime.now().plusDays(1))
@@ -75,7 +95,9 @@ class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
         // 쿠폰 2 생성 (재고 2개)
         Coupon coupon2 = Coupon.builder()
                 .couponName("할인쿠폰 #2")
+                .discountType("FIXED_AMOUNT")
                 .discountAmount(5000L)
+                .totalQuantity(2)
                 .remainingQty(2)
                 .validFrom(LocalDateTime.now().minusHours(1))
                 .validUntil(LocalDateTime.now().plusDays(1))
@@ -119,8 +141,9 @@ class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
         // Then
         assertNotNull(response, "쿠폰 발급 성공");
 
-        // 쿠폰 상세 캐시는 무효화됨
-        assertNull(cache.get(couponDetailKey), "쿠폰 상세 캐시가 무효화되어야 함");
+        // 쿠폰 상세 캐시는 무효화됨 (비동기 이벤트 리스너가 처리할 때까지 대기)
+        await().atMost(3, SECONDS).untilAsserted(() ->
+                assertNull(cache.get(couponDetailKey), "쿠폰 상세 캐시가 무효화되어야 함"));
 
         // 전체 쿠폰 목록 캐시는 유지됨 (allEntries=true 제거됨)
         assertNotNull(cache.get(couponListKey),
@@ -147,31 +170,39 @@ class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
         // When: 두 번째 발급 (재고 소진)
         couponService.issueCoupon(anotherUserId, couponId2);
 
-        // Then: 활성 쿠폰 목록 캐시 무효화 (재고 소진)
-        assertNull(cache.get(activeCouponsKey),
-                "재고 소진 시 활성 쿠폰 목록 캐시가 무효화되어야 함");
+        // Then: 활성 쿠폰 목록 캐시 무효화 (재고 소진, 비동기 이벤트 리스너 대기)
+        await().atMost(3, SECONDS).untilAsserted(() ->
+                assertNull(cache.get(activeCouponsKey),
+                        "재고 소진 시 활성 쿠폰 목록 캐시가 무효화되어야 함"));
     }
 
     @Test
     @DisplayName("캐시 무효화로 인한 DB 쿼리 감소 효과 검증")
     void testDBQueryReductionEffectByCache() {
-        // Given
+        // Given: 쿠폰 상세 캐시에 데이터 저장 (캐시 히트 시뮬레이션)
         clearAllCaches();
 
-        // When: 쿠폰 발급 가능 목록 조회 (캐시 미스)
-        couponService.getAvailableCoupons();
-
-        // 캐시 상태 확인
         org.springframework.cache.Cache cache = cacheManager.getCache("couponListCache");
-        String couponListKey = RedisKeyType.CACHE_COUPON_LIST.getKey();
-        assertNotNull(cache.get(couponListKey), "캐시가 저장되어야 함");
+        String couponDetailKey = RedisKeyType.CACHE_COUPON_DETAIL.buildKey(couponId1);
+        cache.put(couponDetailKey, "cached_coupon_detail");
+        assertNotNull(cache.get(couponDetailKey), "쿠폰 상세 캐시가 저장되어야 함");
 
-        // When: 쿠폰 발급
+        // 전체 목록 캐시도 워밍 (getAvailableCoupons 캐시 동작 검증)
+        couponService.getAvailableCoupons();
+        String couponListKey = RedisKeyType.CACHE_COUPON_LIST.getKey();
+        assertNotNull(cache.get(couponListKey), "발급 가능 목록 캐시가 저장되어야 함");
+
+        // When: 쿠폰 발급 (재고 소진 없음: 5 → 4)
         couponService.issueCoupon(userId, couponId1);
 
-        // Then: 캐시가 무효화되어야 함 (다음 조회 시 새 데이터)
-        assertNull(cache.get(couponListKey),
-                "쿠폰 발급 후 발급 가능 목록 캐시가 무효화되어야 함");
+        // Then: 쿠폰 상세 캐시가 무효화되어야 함 (비동기 이벤트 리스너 대기)
+        await().atMost(3, SECONDS).untilAsserted(() ->
+                assertNull(cache.get(couponDetailKey),
+                        "쿠폰 발급 후 쿠폰 상세 캐시가 무효화되어야 함"));
+
+        // 재고 소진 전이므로 전체 목록 캐시는 유지됨 (선택적 무효화)
+        assertNotNull(cache.get(couponListKey),
+                "재고가 남아있으면 발급 가능 목록 캐시는 유지되어야 함");
 
         // 새로 조회하면 캐시 미스로 인해 DB에서 다시 조회
         var availableCoupons = couponService.getAvailableCoupons();
@@ -196,9 +227,10 @@ class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
         // When: 쿠폰 1 발급
         couponService.issueCoupon(userId, couponId1);
 
-        // Then: 쿠폰 1의 캐시만 무효화, 쿠폰 2의 캐시는 유지
-        assertNull(cache.get(coupon1DetailKey),
-                "쿠폰 1의 캐시가 무효화되어야 함");
+        // Then: 쿠폰 1의 캐시만 무효화 (비동기 이벤트 리스너 대기), 쿠폰 2의 캐시는 유지
+        await().atMost(3, SECONDS).untilAsserted(() ->
+                assertNull(cache.get(coupon1DetailKey),
+                        "쿠폰 1의 캐시가 무효화되어야 함"));
         assertNotNull(cache.get(coupon2DetailKey),
                 "쿠폰 2의 캐시는 영향을 받지 않아야 함 (선택적 무효화)");
     }
@@ -227,9 +259,10 @@ class CacheInvalidationIntegrationTest extends BaseIntegrationTest {
 
         // 재고 완전 소진
         couponService.issueCoupon(user3, couponId2);
-        // 재고 소진 시 활성 쿠폰 목록 무효화됨
-        assertNull(cache.get(couponListKey),
-                "재고 소진 시 캐시 무효화");
+        // 재고 소진 시 활성 쿠폰 목록 무효화됨 (비동기 이벤트 리스너 대기)
+        await().atMost(3, SECONDS).untilAsserted(() ->
+                assertNull(cache.get(couponListKey),
+                        "재고 소진 시 캐시 무효화"));
     }
 
     private Long createAdditionalUser() {

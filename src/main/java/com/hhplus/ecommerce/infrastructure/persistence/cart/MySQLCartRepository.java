@@ -55,6 +55,11 @@ public class MySQLCartRepository implements CartRepository {
     }
 
     @Override
+    public Optional<Cart> findByUserIdForUpdate(Long userId) {
+        return cartJpaRepository.findByUserIdForUpdate(userId);
+    }
+
+    @Override
     public Optional<CartItem> findCartItemById(Long cartItemId) {
         return cartItemJpaRepository.findById(cartItemId);
     }
@@ -82,6 +87,11 @@ public class MySQLCartRepository implements CartRepository {
     @Override
     public Optional<CartItem> findCartItem(Long cartId, Long productId, Long optionId) {
         return cartItemJpaRepository.findByCartIdAndProductIdAndOptionId(cartId, productId, optionId);
+    }
+
+    @Override
+    public Optional<CartItem> findCartItemForUpdate(Long cartId, Long productId, Long optionId) {
+        return cartItemJpaRepository.findByCartIdAndProductIdAndOptionIdForUpdate(cartId, productId, optionId);
     }
 }
 

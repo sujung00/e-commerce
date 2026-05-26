@@ -159,13 +159,22 @@ class CouponIssueKafkaIntegrationTest {
 
     /**
      * Consumer 준비 대기
+     *
+     * ContainerTestUtils.waitForAssignment(container, 10)은 각 컨테이너가 10개의 파티션을
+     * 할당받을 때까지 대기한다. 단, 다른 토픽(예: order-events)의 컨테이너는 테스트 Kafka에
+     * 해당 토픽이 없을 수 있으므로 타임아웃이 발생할 수 있다. try-catch로 무시하고 계속 진행.
      */
     private void waitForConsumerAssignment() {
         if (kafkaListenerEndpointRegistry != null) {
             kafkaListenerEndpointRegistry.getListenerContainers().forEach(container -> {
-                ContainerTestUtils.waitForAssignment(container, 10);
+                try {
+                    ContainerTestUtils.waitForAssignment(container, 10);
+                    System.out.println("[Test] Consumer 파티션 할당 완료: " + container.getListenerId());
+                } catch (IllegalStateException e) {
+                    // 일부 컨테이너(다른 토픽 구독)는 파티션을 받지 못할 수 있음 - 무시하고 계속
+                    System.out.println("[Test] Consumer 파티션 할당 대기 종료 (무시): " + e.getMessage());
+                }
             });
-            System.out.println("[Test] Consumer 파티션 할당 완료");
         } else {
             System.out.println("[Test] KafkaListenerEndpointRegistry not available, skipping consumer wait");
         }
@@ -375,9 +384,10 @@ class CouponIssueKafkaIntegrationTest {
                 .couponName("Limited Coupon")
                 .discountType("FIXED_AMOUNT")
                 .discountAmount(10000L)
-                .totalQuantity(1)  // maxQty 대신 totalQuantity
+                .totalQuantity(1)
                 .remainingQty(1)  // 재고 1개
                 .isActive(true)
+                .version(0L)  // merge() 경로에서 @Version 필드 초기화
                 .validFrom(LocalDateTime.now().minusDays(1))
                 .validUntil(LocalDateTime.now().plusDays(30))
                 .createdAt(LocalDateTime.now())
@@ -423,8 +433,9 @@ class CouponIssueKafkaIntegrationTest {
                 User user = User.builder()
                         .userId(i)
                         .email("test" + i + "@test.com")
-                        .name("TestUser" + i)  // userName 대신 name
+                        .name("TestUser" + i)
                         .balance(1000000L)
+                        .version(0L)  // merge() 경로에서 @Version 필드 초기화
                         .createdAt(LocalDateTime.now())
                         .updatedAt(LocalDateTime.now())
                         .build();
@@ -442,9 +453,10 @@ class CouponIssueKafkaIntegrationTest {
                         .couponName("Test Coupon " + i)
                         .discountType("FIXED_AMOUNT")
                         .discountAmount(10000L * i)
-                        .totalQuantity(100)  // maxQty 대신 totalQuantity
+                        .totalQuantity(100)
                         .remainingQty(100)
                         .isActive(true)
+                        .version(0L)  // merge() 경로에서 @Version 필드 초기화
                         .validFrom(LocalDateTime.now().minusDays(1))
                         .validUntil(LocalDateTime.now().plusDays(30))
                         .createdAt(LocalDateTime.now())

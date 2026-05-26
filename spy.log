@@ -1,0 +1,192 @@
+2026-05-26 19:39:33|21|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 19:39:33|3|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 19:39:33|5|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 19:39:33|12|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 19:39:33|4|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 19:39:33|3|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 19:39:33|2|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 19:39:33|2|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 19:39:33|4|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 19:39:33|2|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 19:39:33|3|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 19:39:33|6|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 19:39:33|1|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 19:39:33|1|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 19:39:33|2|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 19:39:33|1|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 19:39:33|1|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 19:39:33|3|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 19:39:33|7|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 19:39:33|3|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 19:39:33|3|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 19:39:33|3|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 19:39:33|2|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 19:39:33|2|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 19:39:33|1|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 19:39:33|1|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 19:39:33|1|statement|connection 279|url jdbc:mysql://localhost:58191/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 19:39:33|9|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 19:39:33|2|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 19:39:33|2|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 19:39:33|1|statement|connection 278|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 19:39:34|20|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 19:39:34|1|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 19:39:34|3|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 19:39:34|3|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 19:39:34|3|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 19:39:34|2|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 19:39:34|3|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 19:39:34|3|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 19:39:34|1|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 19:39:34|2|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 19:39:34|2|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 19:39:34|3|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 19:39:34|1|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 19:39:34|1|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 19:39:34|1|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 19:39:34|1|statement|connection 279|url jdbc:mysql://localhost:51497/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 20:30:59|40|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 20:30:59|10|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 20:30:59|10|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 20:30:59|7|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 20:30:59|14|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 20:30:59|9|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 20:30:59|11|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 20:30:59|18|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 20:30:59|12|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 20:30:59|16|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 20:30:59|11|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 20:30:59|9|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 20:30:59|10|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 20:30:59|5|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 20:30:59|5|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 20:30:59|7|statement|connection 1291|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 20:30:59|3|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 20:30:59|3|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 20:30:59|3|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 20:30:59|3|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 20:30:59|1|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 20:30:59|1|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 20:30:59|1|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 20:30:59|2|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 20:30:59|1|statement|connection 1292|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 20:31:02|4|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 20:31:02|3|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 20:31:02|4|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 20:31:02|5|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 20:31:03|4|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 20:31:03|10|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 20:31:03|5|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 20:31:03|6|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 20:31:03|7|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 20:31:03|5|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 20:31:03|3|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 20:31:03|4|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 20:31:03|2|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 20:31:03|2|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 20:31:03|2|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 20:31:03|2|statement|connection 1293|url jdbc:mysql://localhost:56248/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 23:06:36|30|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 23:06:36|9|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 23:06:36|15|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 23:06:36|15|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 23:06:36|12|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 23:06:36|13|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 23:06:36|13|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 23:06:36|17|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 23:06:36|16|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 23:06:36|16|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 23:06:36|18|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 23:06:36|11|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 23:06:36|13|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 23:06:36|14|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 23:06:36|13|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 23:06:36|13|statement|connection 1291|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 23:06:36|5|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 23:06:36|2|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 23:06:36|5|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 23:06:36|3|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 23:06:36|3|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 23:06:36|4|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 23:06:36|4|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 23:06:36|3|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 23:06:36|3|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 23:06:36|5|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 23:06:36|5|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 23:06:37|2|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 23:06:37|3|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 23:06:37|2|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 23:06:37|2|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 23:06:37|2|statement|connection 1292|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 23:06:39|4|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 23:06:39|3|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 23:06:39|3|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 23:06:39|3|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 23:06:39|2|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 23:06:39|2|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 23:06:39|1|statement|connection 1293|url jdbc:mysql://localhost:60494/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 23:08:03|2|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 23:08:03|2|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 23:08:03|2|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 23:08:03|2|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 23:08:03|1|statement|connection 3262|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists users|drop table if exists users
+2026-05-26 23:08:03|2|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w|alter table order_items drop foreign key FKbioxgbv59vetrxe0ejfubep1w
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61|alter table product_options drop foreign key FK8vv4f8fru80wxocwgxwsrow61
+2026-05-26 23:08:03|2|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists cart_items|drop table if exists cart_items
+2026-05-26 23:08:03|2|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists carts|drop table if exists carts
+2026-05-26 23:08:03|2|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists child_transaction_events|drop table if exists child_transaction_events
+2026-05-26 23:08:03|2|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists coupons|drop table if exists coupons
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists data_platform_events|drop table if exists data_platform_events
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists executed_child_transactions|drop table if exists executed_child_transactions
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists failed_compensations|drop table if exists failed_compensations
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists order_items|drop table if exists order_items
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists orders|drop table if exists orders
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists outbox|drop table if exists outbox
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists product_options|drop table if exists product_options
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists products|drop table if exists products
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists user_coupons|drop table if exists user_coupons
+2026-05-26 23:08:03|1|statement|connection 3263|url jdbc:mysql://localhost:60421/ecommerce_test|drop table if exists users|drop table if exists users

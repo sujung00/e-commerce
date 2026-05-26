@@ -113,6 +113,14 @@ public class CouponService {
      * @throws CouponNotFoundException 쿠폰을 찾을 수 없음
      * @throws IllegalArgumentException 발급 불가 사유 (유효기간, 재고, 중복)
      */
+    /**
+     * ✅ @Transactional(REQUIRED):
+     *   - 외부 트랜잭션이 없으면 새 트랜잭션을 시작하고 커밋 → @TransactionalEventListener(AFTER_COMMIT) 정상 실행
+     *   - 외부 트랜잭션이 있으면 합류(REQUIRED) → @BeforeEach의 미커밋 데이터가 보임 (테스트 격리 유지)
+     *   - 이 @Transactional이 없으면: 테스트 @Transactional 안에서 self-invocation으로 호출된
+     *     issueCouponWithLock()도 @Transactional이 적용되지 않아 DB Lock이 원자적으로 동작하지 않음
+     */
+    @Transactional
     public IssueCouponResponse issueCoupon(Long userId, Long couponId) {
         // === 1단계: 검증 (읽기 전용) ===
 

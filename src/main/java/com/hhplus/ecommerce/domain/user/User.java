@@ -59,6 +59,16 @@ public class User {
     private LocalDateTime updatedAt;
 
     /**
+     * JPA 생명주기 콜백: 최초 저장 시 타임스탬프 자동 설정
+     * 테스트에서 builder로 엔티티를 직접 생성할 때도 타임스탬프가 누락되지 않도록 보장
+     */
+    @PrePersist
+    protected void onCreate() {
+        if (this.createdAt == null) this.createdAt = LocalDateTime.now();
+        if (this.updatedAt == null) this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
      * 사용자 생성 팩토리 메서드
      *
      * 비즈니스 규칙:

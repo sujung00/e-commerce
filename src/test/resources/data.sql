@@ -1,12 +1,29 @@
 -- ============================================
 -- E-Commerce Platform Test Data
 -- ============================================
--- 이 스크립트는 application-test.yml에서 자동으로 로드됩니다.
 -- 엔티티 간의 외래키 관계를 고려하여 INSERT 순서를 정렬했습니다.
 -- 도메인 흐름: 상품 등록 → 장바구니 → 주문 → 결제 → 쿠폰 사용
---
--- 주의: 트랜잭션 내에서 실행되므로 에러 발생 시 전체 롤백됩니다.
 -- ============================================
+
+-- ========================================
+-- 0. 기존 데이터 정리 (멱등성 보장)
+-- Spring이 여러 ApplicationContext(TestContainers 공유 DB)에 걸쳐
+-- data.sql을 여러 번 실행하더라도 중복 키 오류가 발생하지 않도록
+-- 각 테스트 실행 전에 모든 테이블을 TRUNCATE한다.
+-- ========================================
+
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE cart_items;
+TRUNCATE TABLE carts;
+TRUNCATE TABLE order_items;
+TRUNCATE TABLE orders;
+TRUNCATE TABLE outbox;
+TRUNCATE TABLE user_coupons;
+TRUNCATE TABLE coupons;
+TRUNCATE TABLE product_options;
+TRUNCATE TABLE products;
+TRUNCATE TABLE users;
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- ========================================
 -- 1. USERS 테이블 (기본 데이터)
@@ -14,44 +31,44 @@
 -- ========================================
 
 -- User 1: 관리자/테스트 사용자
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('admin@example.com', 'hashed_password_1', '관리자', '010-1111-1111', 1000000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('admin@example.com', 'hashed_password_1', '관리자', '010-1111-1111', 1000000, 0, NOW(), NOW());
 
 -- User 2: 구매 능력 있는 사용자 (충분한 잔액)
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('user2@example.com', 'hashed_password_2', '구매자1', '010-2222-2222', 500000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('user2@example.com', 'hashed_password_2', '구매자1', '010-2222-2222', 500000, 0, NOW(), NOW());
 
 -- User 3: 구매 능력 있는 사용자
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('user3@example.com', 'hashed_password_3', '구매자2', '010-3333-3333', 300000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('user3@example.com', 'hashed_password_3', '구매자2', '010-3333-3333', 300000, 0, NOW(), NOW());
 
 -- User 4: 중간 잔액 사용자
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('user4@example.com', 'hashed_password_4', '일반사용자1', '010-4444-4444', 150000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('user4@example.com', 'hashed_password_4', '일반사용자1', '010-4444-4444', 150000, 0, NOW(), NOW());
 
 -- User 5: 낮은 잔액 사용자
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('user5@example.com', 'hashed_password_5', '일반사용자2', '010-5555-5555', 50000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('user5@example.com', 'hashed_password_5', '일반사용자2', '010-5555-5555', 50000, 0, NOW(), NOW());
 
 -- User 6: 충분한 잔액 사용자
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('user6@example.com', 'hashed_password_6', '구매자3', '010-6666-6666', 250000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('user6@example.com', 'hashed_password_6', '구매자3', '010-6666-6666', 250000, 0, NOW(), NOW());
 
 -- User 7: VIP 사용자 (높은 잔액)
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('vip@example.com', 'hashed_password_7', 'VIP사용자', '010-7777-7777', 2000000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('vip@example.com', 'hashed_password_7', 'VIP사용자', '010-7777-7777', 2000000, 0, NOW(), NOW());
 
 -- User 8: 테스트 사용자
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('test@example.com', 'hashed_password_8', '테스트사용자', '010-8888-8888', 100000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('test@example.com', 'hashed_password_8', '테스트사용자', '010-8888-8888', 100000, 0, NOW(), NOW());
 
 -- User 9: 활발한 구매자
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('active@example.com', 'hashed_password_9', '활발한구매자', '010-9999-9999', 800000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('active@example.com', 'hashed_password_9', '활발한구매자', '010-9999-9999', 800000, 0, NOW(), NOW());
 
 -- User 10: 신규 사용자 (낮은 잔액)
-INSERT INTO users (email, password_hash, name, phone, balance, created_at, updated_at)
-VALUES ('newuser@example.com', 'hashed_password_10', '신규사용자', '010-0000-0000', 10000, NOW(), NOW());
+INSERT INTO users (email, password_hash, name, phone, balance, version, created_at, updated_at)
+VALUES ('newuser@example.com', 'hashed_password_10', '신규사용자', '010-0000-0000', 10000, 0, NOW(), NOW());
 
 -- ========================================
 -- 2. PRODUCTS 테이블 (상품 카탈로그)
@@ -59,52 +76,52 @@ VALUES ('newuser@example.com', 'hashed_password_10', '신규사용자', '010-000
 -- ========================================
 
 -- Product 1: 티셔츠 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('100% 면 티셔츠', '편안한 착용감의 기본 티셔츠', 29900, 50, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('100% 면 티셔츠', '편안한 착용감의 기본 티셔츠', 29900, 50, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 2: 청바지 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('고급 데님 청바지', '스트레치 원단으로 편안함', 79900, 40, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('고급 데님 청바지', '스트레치 원단으로 편안함', 79900, 40, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 3: 운동화 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('프리미엄 운동화', '최신 기술이 적용된 운동화', 149900, 30, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('프리미엄 운동화', '최신 기술이 적용된 운동화', 149900, 30, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 4: 후드티 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('따뜻한 후드티', '겨울 필수 아이템', 59900, 35, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('따뜻한 후드티', '겨울 필수 아이템', 59900, 35, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 5: 양말 세트 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('10족 양말 세트', '다양한 색상의 양말 세트', 19900, 100, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('10족 양말 세트', '다양한 색상의 양말 세트', 19900, 100, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 6: 모자 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('캐주얼 모자', '자외선 차단 기능', 24900, 60, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('캐주얼 모자', '자외선 차단 기능', 24900, 60, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 7: 선글라스 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('UV 차단 선글라스', '프리미엄 렌즈 적용', 89900, 25, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('UV 차단 선글라스', '프리미엄 렌즈 적용', 89900, 25, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 8: 가방 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('캐주얼 백팩', '대용량 수납 공간', 69900, 45, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('캐주얼 백팩', '대용량 수납 공간', 69900, 45, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 9: 시계 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('디지털 시계', '방수 기능 탑재', 49900, 20, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('디지털 시계', '방수 기능 탑재', 49900, 20, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 10: 벨트 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('가죽 벨트', '고급 가죽 소재', 39900, 50, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('가죽 벨트', '고급 가죽 소재', 39900, 50, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 11: 장갑 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('스마트폰 터치 글러브', '겨울 필수 아이템', 34900, 70, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('스마트폰 터치 글러브', '겨울 필수 아이템', 34900, 70, 'IN_STOCK', 0, NOW(), NOW());
 
 -- Product 12: 스카프 (IN_STOCK)
-INSERT INTO products (product_name, description, price, total_stock, status, created_at, updated_at)
-VALUES ('실크 스카프', '우아함과 편안함', 54900, 55, 'IN_STOCK', NOW(), NOW());
+INSERT INTO products (product_name, description, price, total_stock, status, version, created_at, updated_at)
+VALUES ('실크 스카프', '우아함과 편안함', 54900, 55, 'IN_STOCK', 0, NOW(), NOW());
 
 -- ========================================
 -- 3. PRODUCT_OPTIONS 테이블 (옵션별 재고)
@@ -326,44 +343,44 @@ VALUES ('플래시 세일 3,000원 할인', '한정 시간 플래시 세일', 'F
 -- ========================================
 
 -- User 2에게 쿠폰 1 발급 (신규 고객)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (2, 1, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (2, 1, 'UNUSED', 0, NOW(), NULL);
 
 -- User 2에게 쿠폰 3 발급 (회원 할인)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (2, 3, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (2, 3, 'UNUSED', 0, NOW(), NULL);
 
 -- User 3에게 쿠폰 2 발급 (봄 시즌)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (3, 2, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (3, 2, 'UNUSED', 0, NOW(), NULL);
 
 -- User 4에게 쿠폰 6 발급 (기본 할인)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (4, 6, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (4, 6, 'UNUSED', 0, NOW(), NULL);
 
 -- User 5에게 쿠폰 7 발급 (플래시 세일)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (5, 7, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (5, 7, 'UNUSED', 0, NOW(), NULL);
 
 -- User 6에게 쿠폰 3 발급 (회원 할인)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (6, 3, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (6, 3, 'UNUSED', 0, NOW(), NULL);
 
 -- User 7에게 쿠폰 4 발급 (VIP 할인)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (7, 4, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (7, 4, 'UNUSED', 0, NOW(), NULL);
 
 -- User 7에게 쿠폰 5 발급 (프리미엄 할인)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (7, 5, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (7, 5, 'UNUSED', 0, NOW(), NULL);
 
 -- User 9에게 쿠폰 2 발급 (봄 시즌)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (9, 2, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (9, 2, 'UNUSED', 0, NOW(), NULL);
 
 -- User 10에게 쿠폰 1 발급 (신규 고객)
-INSERT INTO user_coupons (user_id, coupon_id, status, issued_at, used_at, order_id)
-VALUES (10, 1, 'UNUSED', NOW(), NULL, NULL);
+INSERT INTO user_coupons (user_id, coupon_id, status, version, issued_at, used_at)
+VALUES (10, 1, 'UNUSED', 0, NOW(), NULL);
 
 -- ========================================
 -- 8. ORDERS 테이블 (주문 기록)
@@ -463,27 +480,27 @@ VALUES (10, 12, 23, '실크 스카프', 'Red', 1, 29900, 29900, NOW());
 -- ========================================
 
 -- Order 3에서 쿠폰 6 사용 (User 4)
-UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 3 DAY), order_id = 3
+UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 3 DAY)
 WHERE user_id = 4 AND coupon_id = 6;
 
 -- Order 4에서 쿠폰 1 사용 (User 2)
-UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 2 DAY), order_id = 4
+UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 2 DAY)
 WHERE user_id = 2 AND coupon_id = 1;
 
 -- Order 6에서 쿠폰 3 사용 (User 6)
-UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 1 DAY), order_id = 6
+UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 1 DAY)
 WHERE user_id = 6 AND coupon_id = 3;
 
 -- Order 7에서 쿠폰 4 사용 (User 7)
-UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 2 DAY), order_id = 7
+UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 2 DAY)
 WHERE user_id = 7 AND coupon_id = 4;
 
 -- Order 8에서 쿠폰 2 사용 (User 9)
-UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 1 DAY), order_id = 8
+UPDATE user_coupons SET status = 'USED', used_at = DATE_SUB(NOW(), INTERVAL 1 DAY)
 WHERE user_id = 9 AND coupon_id = 2;
 
 -- Order 10에서 쿠폰 1 사용 (User 10)
-UPDATE user_coupons SET status = 'USED', used_at = NOW(), order_id = 10
+UPDATE user_coupons SET status = 'USED', used_at = NOW()
 WHERE user_id = 10 AND coupon_id = 1;
 
 -- ========================================
