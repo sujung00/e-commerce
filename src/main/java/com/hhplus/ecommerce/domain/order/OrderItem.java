@@ -61,6 +61,16 @@ public class OrderItem {
     private LocalDateTime createdAt;
 
     /**
+     * JPA 저장 전 자동 실행: createdAt 자동 설정
+     * OrderItem.builder()를 직접 사용하여 createdAt을 생략한 경우에도
+     * not-null 제약을 위반하지 않도록 보장한다.
+     */
+    @PrePersist
+    protected void prePersist() {
+        if (this.createdAt == null) this.createdAt = LocalDateTime.now();
+    }
+
+    /**
      * OrderItem 생성 팩토리 메서드
      *
      * 비즈니스 규칙:
