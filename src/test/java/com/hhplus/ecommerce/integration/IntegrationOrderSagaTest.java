@@ -407,11 +407,8 @@ class IntegrationOrderSagaTest extends BaseIntegrationTest {
                             .build();
 
                     try {
-                        newTransactionTemplate.execute(status -> {
-                            orderService.createOrder(userId, request);
-                            orderSuccessCount.incrementAndGet();
-                            return null;
-                        });
+                        orderService.createOrder(userId, request);
+                        orderSuccessCount.incrementAndGet();
                     } catch (Exception e) {
                         // 쿠폰 중복 사용 또는 다른 오류
                     }
@@ -556,11 +553,8 @@ class IntegrationOrderSagaTest extends BaseIntegrationTest {
                             .build();
 
                     try {
-                        newTransactionTemplate.execute(status -> {
-                            orderService.createOrder(userId, request);
-                            successCount.incrementAndGet();
-                            return null;
-                        });
+                        orderService.createOrder(userId, request);
+                        successCount.incrementAndGet();
                     } catch (Exception e) {
                         failureCount.incrementAndGet();
                     }
@@ -696,11 +690,8 @@ class IntegrationOrderSagaTest extends BaseIntegrationTest {
                             .build();
 
                     try {
-                        newTransactionTemplate.execute(status -> {
-                            orderService.createOrder(userId, request);
-                            successCount.incrementAndGet();
-                            return null;
-                        });
+                        orderService.createOrder(userId, request);
+                        successCount.incrementAndGet();
                     } catch (Exception e) {
                         failureCount.incrementAndGet();
                     }
