@@ -154,6 +154,8 @@ class RedisCacheValidationTest extends BaseIntegrationTest {
                     .name("기본 옵션")
                     .stock(200)
                     .version(0L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
                     .build();
             productRepository.saveOption(option);
             productId = product.getProductId();

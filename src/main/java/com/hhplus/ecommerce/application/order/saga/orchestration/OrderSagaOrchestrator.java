@@ -179,8 +179,11 @@ public class OrderSagaOrchestrator {
                 log.info("[OrderSagaOrchestrator] Step 실행 시작: {} (order={})",
                         step.getName(), step.getOrder());
 
-                // Step 실행 (각 Step의 execute()에서 context.addExecutedStepName() 호출)
+                // Step 실행 (각 Step의 execute()에서도 addExecutedStepName 호출 - Set이므로 중복 무시)
                 step.execute(context);
+
+                // 실행 이력 추가 (LIFO 보상용) - Set이므로 이미 등록된 경우 중복 무시
+                context.addExecutedStepName(step.getName());
 
                 log.info("[OrderSagaOrchestrator] Step 실행 완료: {} (order={})",
                         step.getName(), step.getOrder());
@@ -208,7 +211,15 @@ public class OrderSagaOrchestrator {
                     e.getMessage(), e);
 
             // 보상 실행 (LIFO)
-            compensate(context);
+            // CompensationException은 명시적으로 재전파: Spring @Retryable 인터셉터가
+            // catch (Exception e) 블록 내부에서 던져진 CompensationException을 가로채기 전에
+            // 직접 전파하여 OrderSagaService.catch(CompensationException e)가 정상 처리할 수 있도록 한다.
+            try {
+                compensate(context);
+            } catch (com.hhplus.ecommerce.common.exception.CompensationException ce) {
+                log.error("[OrderSagaOrchestrator] Critical 보상 실패 - 직접 전파: {}", ce.getMessage());
+                throw ce;
+            }
 
             // 예외 재발생
             throw new RuntimeException("Saga 실행 실패: " + e.getMessage(), e);

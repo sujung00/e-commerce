@@ -181,9 +181,10 @@ public class RankingIntegrationTest extends BaseIntegrationTest {
         for (int i = 0; i < 3; i++) rankingService.incrementProductScore(300L); // 3점
 
         // When & Then
-        assertEquals(Optional.of(2L), rankingService.getProductRank(200L)); // 5점 (2등)
-        assertEquals(Optional.of(3L), rankingService.getProductRank(300L)); // 3점 (3등)
-        assertEquals(Optional.of(1L), rankingService.getProductRank(200L)); // 5점 (1등 재확인)
+        // 200L(5점) → 1등, 300L(3점) → 2등, 100L(1점) → 3등
+        assertEquals(Optional.of(1L), rankingService.getProductRank(200L)); // 5점 → 1등
+        assertEquals(Optional.of(2L), rankingService.getProductRank(300L)); // 3점 → 2등
+        assertEquals(Optional.of(3L), rankingService.getProductRank(100L)); // 1점 → 3등
         log.info("✅ 순위 조회 테스트 통과");
     }
 

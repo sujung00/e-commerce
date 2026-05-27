@@ -431,7 +431,10 @@ public class OrderSagaService {
                         orderId, eventError.getMessage());
             }
 
-            throw new CompensationException("Compensation failed for order: " + orderId, e);
+            throw new CompensationException(
+                    com.hhplus.ecommerce.common.exception.ErrorCode.COMPENSATION_FAILED,
+                    "Compensation failed for order: " + orderId,
+                    e);
         }
     }
 
@@ -465,25 +468,4 @@ public class OrderSagaService {
     }
 
 
-    /**
-     * PaymentException - 결제 실패 예외
-     */
-    public static class PaymentException extends RuntimeException {
-        public PaymentException(String message) {
-            super(message);
-        }
-
-        public PaymentException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
-
-    /**
-     * CompensationException - 보상 트랜잭션 실패 예외 (심각함)
-     */
-    public static class CompensationException extends RuntimeException {
-        public CompensationException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
 }

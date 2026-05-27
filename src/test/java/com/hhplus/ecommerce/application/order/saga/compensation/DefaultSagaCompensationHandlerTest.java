@@ -108,7 +108,8 @@ class DefaultSagaCompensationHandlerTest {
         assertThat(published.getUserId()).isEqualTo(1L);
         assertThat(published.getStepName()).isEqualTo("DeductInventoryStep");
         assertThat(published.getStepOrder()).isEqualTo(1);
-        assertThat(published.getErrorMessage()).isEqualTo("Critical compensation error");
+        // BizException(ErrorCode, String) → message = errorCode.getMessage() + " | " + detailMessage
+        assertThat(published.getErrorMessage()).contains("Critical compensation error");
     }
 
     @Test

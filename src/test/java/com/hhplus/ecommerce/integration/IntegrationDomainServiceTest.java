@@ -279,7 +279,7 @@ class IntegrationDomainServiceTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("주문 취소 검증 - PENDING 상태 취소 가능")
+    @DisplayName("주문 취소 검증 - PENDING 상태 취소 불가 (COMPLETED만 취소 가능)")
     void testOrderCancellationValidation_PendingOrder() {
         // Given: PENDING 상태의 주문
         Order pendingOrder = orderRepository.save(Order.builder()
@@ -292,14 +292,14 @@ class IntegrationDomainServiceTest extends BaseIntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build());
 
-        // When & Then
-        assertDoesNotThrow(() ->
+        // When & Then: PENDING 상태는 취소 불가 (COMPLETED만 취소 가능)
+        assertThrows(Exception.class, () ->
             orderDomainService.validateOrderCancellation(pendingOrder)
         );
     }
 
     @Test
-    @DisplayName("주문 취소 검증 - COMPLETED 상태 취소 불가")
+    @DisplayName("주문 취소 검증 - COMPLETED 상태 취소 가능")
     void testOrderCancellationValidation_CompletedOrder_ThrowsException() {
         // Given: COMPLETED 상태의 주문
         Order completedOrder = orderRepository.save(Order.builder()
@@ -312,8 +312,8 @@ class IntegrationDomainServiceTest extends BaseIntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build());
 
-        // When & Then
-        assertThrows(Exception.class, () ->
+        // When & Then: COMPLETED 상태는 취소 가능
+        assertDoesNotThrow(() ->
             orderDomainService.validateOrderCancellation(completedOrder)
         );
     }

@@ -182,24 +182,33 @@ public class DeductInventoryStep implements SagaStep {
             return;
         }
 
-        // ========== Step 2: DB에서 Order 조회 ==========
+        // ========== Step 2: 복구할 재고 정보 결정 ==========
+        // orderId가 있으면 DB Order에서 조회, 없으면 context.getOrderItems() 사용
         Long orderId = context.getOrderId();
-        if (orderId == null) {
-            log.warn("[{}] orderId가 null이므로 보상 skip (주문 생성 전 실패)", getName());
-            return;
+
+        // (optionId, quantity) 쌍 목록 구성
+        java.util.List<long[]> restoreItems = new java.util.ArrayList<>();
+        if (orderId != null) {
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "보상 중 Order를 찾을 수 없습니다: orderId=" + orderId));
+            log.warn("[{}] 재고 복구 시작 - orderId={}, 복구할 항목 {}개",
+                    getName(), orderId, order.getOrderItems().size());
+            for (OrderItem orderItem : order.getOrderItems()) {
+                restoreItems.add(new long[]{orderItem.getOptionId(), orderItem.getQuantity()});
+            }
+        } else {
+            // orderId 없음 → context.getOrderItems() 사용 (주문 생성 전 실패 or 직접 Step 호출 테스트)
+            log.warn("[{}] orderId 없음 → context.orderItems 기반으로 재고 복구 진행", getName());
+            for (OrderItemDto item : context.getOrderItems()) {
+                restoreItems.add(new long[]{item.getOptionId(), item.getQuantity()});
+            }
         }
 
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalStateException(
-                        "보상 중 Order를 찾을 수 없습니다: orderId=" + orderId));
-
-        log.warn("[{}] 재고 복구 시작 - orderId={}, 복구할 항목 {}개",
-                getName(), orderId, order.getOrderItems().size());
-
-        // ========== Step 3: 각 OrderItem별로 재고 복구 ==========
-        for (OrderItem orderItem : order.getOrderItems()) {
-            Long optionId = orderItem.getOptionId();
-            Integer quantity = orderItem.getQuantity();
+        // ========== Step 3: 각 항목별로 재고 복구 ==========
+        for (long[] entry : restoreItems) {
+            Long optionId = entry[0];
+            Integer quantity = (int) entry[1];
 
             try {
                 // ProductOption 조회
@@ -227,7 +236,7 @@ public class DeductInventoryStep implements SagaStep {
         }
 
         log.warn("[{}] 재고 복구 완료 - 총 {}개 옵션 복구 시도",
-                getName(), order.getOrderItems().size());
+                getName(), restoreItems.size());
         log.warn("[{}] ========== 재고 복구 트랜잭션 종료 (커밋 예정) ==========", getName());
     }
 }

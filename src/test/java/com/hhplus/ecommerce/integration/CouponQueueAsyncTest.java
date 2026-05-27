@@ -242,6 +242,7 @@ class CouponQueueAsyncTest extends BaseIntegrationTest {
         // Given: 재고 10개인 새로운 쿠폰 생성
         Coupon limitedCoupon = Coupon.builder()
                 .couponName("제한 쿠폰")
+                .discountType("FIXED_AMOUNT")
                 .discountAmount(500L)
                 .totalQuantity(10)
                 .remainingQty(10)  // 10개만 발급 가능

@@ -5,7 +5,9 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * SagaContext - Saga 오케스트레이터의 실행 컨텍스트 (경량화 버전)
@@ -80,9 +82,10 @@ public class SagaContext {
      * 실행된 Step 이름 목록
      * - Step 객체 전체를 저장하지 않고 이름만 저장
      * - LIFO 보상을 위한 실행 순서 추적
+     * - LinkedHashSet: 삽입 순서 유지 + 중복 방지 (Step과 Orchestrator 양쪽에서 등록해도 안전)
      * - 예: ["DeductInventoryStep", "DeductBalanceStep", ...]
      */
-    private List<String> executedStepNames = new ArrayList<>();
+    private Set<String> executedStepNames = new LinkedHashSet<>();
 
     // ========== 생성자 ==========
     /**

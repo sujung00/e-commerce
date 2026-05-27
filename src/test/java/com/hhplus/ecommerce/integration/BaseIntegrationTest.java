@@ -202,6 +202,19 @@ public abstract class BaseIntegrationTest {
             );
 
             // ═════════════════════════════════════════════════════════════
+            // 1.5️⃣ HikariCP 풀 크기 - 동시성 테스트를 위한 충분한 커넥션 확보
+            // 50 스레드 × REQUIRES_NEW 중첩 = 최대 100 커넥션 필요 → 120으로 설정
+            // ═════════════════════════════════════════════════════════════
+            applicationContext.getEnvironment().getSystemProperties().put(
+                    "spring.datasource.hikari.maximum-pool-size",
+                    "120"
+            );
+            applicationContext.getEnvironment().getSystemProperties().put(
+                    "spring.datasource.hikari.connection-timeout",
+                    "60000"
+            );
+
+            // ═════════════════════════════════════════════════════════════
             // 2️⃣ Redis 설정 - application-test.yml의 spring.redis 설정 덮어씌움
             // ═════════════════════════════════════════════════════════════
             // Redis 호스트와 포트를 동적으로 설정

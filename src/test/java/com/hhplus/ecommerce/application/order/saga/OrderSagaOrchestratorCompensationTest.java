@@ -107,6 +107,15 @@ class OrderSagaOrchestratorCompensationTest {
         doNothing().when(step2).compensate(any(SagaContext.class));
         doNothing().when(step1).compensate(any(SagaContext.class));
 
+        // step1.execute()가 orderId를 SagaContext에 설정 (CreateOrderStep 역할 시뮬레이션)
+        // executeSaga()는 내부적으로 새 SagaContext를 생성하므로,
+        // 보상 시 context.getOrderId()=100L이 되도록 step1에서 설정한다.
+        doAnswer(invocation -> {
+            SagaContext ctx = invocation.getArgument(0);
+            ctx.setOrderId(100L);
+            return null;
+        }).when(step1).execute(any(SagaContext.class));
+
         // When: executeSaga 실행 (실패 예상)
         try {
             orchestrator.executeSaga(

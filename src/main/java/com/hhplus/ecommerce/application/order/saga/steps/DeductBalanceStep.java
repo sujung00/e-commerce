@@ -145,20 +145,22 @@ public class DeductBalanceStep implements SagaStep {
             return;
         }
 
-        // ========== Step 2: DB에서 Order 조회 ==========
+        // ========== Step 2: 환불 금액 결정 ==========
+        // orderId가 있으면 DB Order에서 금액 조회, 없으면 context.getFinalAmount() 사용
         Long orderId = context.getOrderId();
-        if (orderId == null) {
-            log.warn("[{}] orderId가 null이므로 보상 skip (주문 생성 전 실패)", getName());
-            return;
-        }
-
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalStateException(
-                        "보상 중 Order를 찾을 수 없습니다: orderId=" + orderId));
-
-        // ========== Step 3: Order에서 환불 금액 획득 ==========
         Long userId = context.getUserId();
-        Long refundAmount = order.getFinalAmount();
+        Long refundAmount;
+
+        if (orderId != null) {
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "보상 중 Order를 찾을 수 없습니다: orderId=" + orderId));
+            refundAmount = order.getFinalAmount();
+        } else {
+            // orderId 없음 → context의 finalAmount 사용 (주문 생성 전 실패 or 직접 Step 호출 테스트)
+            refundAmount = context.getFinalAmount();
+            log.info("[{}] orderId 없음 → context.finalAmount={} 로 환불 진행", getName(), refundAmount);
+        }
 
         log.warn("[{}] 포인트 환불 시작 - userId={}, orderId={}, 환불금액={}",
                 getName(), userId, orderId, refundAmount);

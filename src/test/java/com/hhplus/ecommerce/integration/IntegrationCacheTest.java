@@ -87,6 +87,8 @@ class IntegrationCacheTest extends BaseIntegrationTest {
                     .name("기본 옵션")
                     .stock(100)
                     .version(0L)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
                     .build();
             상품저장소.saveOption(옵션);
         }

@@ -139,12 +139,13 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
     @Test
     @DisplayName("시나리오 2-1: TOP 5 조회 - 점수 내림차순 정렬 확인")
     void testScenario2_Top5SortedByScore() throws Exception {
-        // Given: 테스트 데이터 준비 (의도적으로 순서 섞음)
+        // Given: 테스트 데이터 준비 (의도적으로 순서 섞음) - 5개 상품
         rankingService.incrementProductScore(300L);  // 1점
         for (int i = 0; i < 5; i++) rankingService.incrementProductScore(200L);  // 5점
         for (int i = 0; i < 3; i++) rankingService.incrementProductScore(300L);  // 총 4점
         for (int i = 0; i < 10; i++) rankingService.incrementProductScore(50L);  // 10점 (최고)
         for (int i = 0; i < 7; i++) rankingService.incrementProductScore(150L);  // 7점
+        for (int i = 0; i < 2; i++) rankingService.incrementProductScore(400L);  // 2점 (5등)
 
         // When: TOP 5 조회
         List<RankingItem> topProducts = rankingService.getTopProducts(5);
@@ -172,7 +173,7 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
 
         // When: REST API 호출
         ResponseEntity<String> response = restTemplate.getForEntity(
-                "/ranking/top/3",
+                "/api/ranking/top/3",
                 String.class
         );
 
@@ -261,7 +262,7 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
 
         // When: 상품 100의 순위 조회 (1등)
         ResponseEntity<String> response = restTemplate.getForEntity(
-                "/ranking/100",
+                "/api/ranking/100",
                 String.class
         );
 
@@ -296,7 +297,7 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
 
         // REST API로도 확인
         ResponseEntity<String> response = restTemplate.getForEntity(
-                "/ranking/999",
+                "/api/ranking/999",
                 String.class
         );
 
@@ -359,7 +360,7 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
 
         // REST API로도 검증
         ResponseEntity<String> restResponse = restTemplate.getForEntity(
-                "/ranking/top/5",
+                "/api/ranking/top/5",
                 String.class
         );
         assertEquals(HttpStatus.OK, restResponse.getStatusCode());
@@ -380,7 +381,7 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
 
             // REST API로도 확인
             ResponseEntity<String> rankResponse = restTemplate.getForEntity(
-                    "/ranking/" + productId,
+                    "/api/ranking/" + productId,
                     String.class
             );
             JsonNode rankNode = objectMapper.readTree(rankResponse.getBody());

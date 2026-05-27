@@ -21,12 +21,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.EntityManager;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -47,7 +49,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * - ddl-auto: create-drop으로 스키마 자동 생성/제거
  */
 @DisplayName("MySQL 기반 통합 테스트")
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
 class IntegrationTest extends BaseIntegrationTest {
+
+    // JUnit 5는 테스트 메서드마다 새 인스턴스를 생성하므로 각 메서드마다 유니크한 ID가 생성됨
+    private final String testId = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 
     @Autowired
     private CouponService 쿠폰서비스;
@@ -79,9 +85,9 @@ class IntegrationTest extends BaseIntegrationTest {
     // ========== 테스트 데이터 설정 ==========
 
     private void 테스트데이터생성() {
-        // 사용자 생성 - ID는 자동 생성되도록 제거
+        // 사용자 생성 - 테스트 메서드별 유니크한 이메일 사용 (NOT_SUPPORTED로 커밋된 데이터 충돌 방지)
         테스트사용자 = User.builder()
-                .email("test@test.com")
+                .email("test_" + testId + "@test.com")
                 .name("테스트 사용자")
                 .balance(100000L)
                 .createdAt(LocalDateTime.now())
@@ -340,9 +346,9 @@ class IntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("주문 생성 - 실패한다 (잔액 부족)")
     void 주문생성_실패한다_잔액부족() {
-        // Given - 잔액 부족한 사용자
+        // Given - 잔액 부족한 사용자 (유니크 이메일 사용)
         User 빈곤사용자 = User.builder()
-                .email("poor@test.com")
+                .email("poor_" + testId + "@test.com")
                 .name("빈곤한 사용자")
                 .balance(1000L)  // 상품 가격은 30,000원
                 .createdAt(LocalDateTime.now())

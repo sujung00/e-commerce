@@ -44,3 +44,8 @@ application-*.properties
 
 /docs/troubleshooting
 CLAUDE.md
+
+# JVM heap dumps and profiling
+.hprof
+*.hprof
+spy.log
