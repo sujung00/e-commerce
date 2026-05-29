@@ -544,9 +544,9 @@ VALUES (8, 9, 'ORDER_COMPLETED', 'SENT', 0, DATE_SUB(NOW(), INTERVAL 1 DAY), DAT
 INSERT INTO outbox (order_id, user_id, message_type, status, retry_count, last_attempt, sent_at, created_at)
 VALUES (9, 3, 'ORDER_CANCELLED', 'SENT', 0, DATE_SUB(NOW(), INTERVAL 3 DAY), DATE_SUB(NOW(), INTERVAL 3 DAY), DATE_SUB(NOW(), INTERVAL 6 DAY));
 
--- Order 10의 메시지
+-- Order 10의 메시지 (SENT으로 변경 - OutboxPollingService가 재처리하지 않도록)
 INSERT INTO outbox (order_id, user_id, message_type, status, retry_count, last_attempt, sent_at, created_at)
-VALUES (10, 10, 'ORDER_COMPLETED', 'PENDING', 0, NULL, NULL, NOW());
+VALUES (10, 10, 'ORDER_COMPLETED', 'SENT', 0, NOW(), NOW(), NOW());
 
 -- ============================================
 -- 데이터 로드 완료

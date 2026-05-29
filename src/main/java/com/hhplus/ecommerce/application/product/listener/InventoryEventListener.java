@@ -36,7 +36,7 @@ public class InventoryEventListener {
 
     private final AlertService alertService;
 
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleLowInventory(LowInventoryEvent event) {
         log.info("[InventoryEventListener] 재고 부족 알림 - productId={}, optionId={}, stock={}, threshold={}",

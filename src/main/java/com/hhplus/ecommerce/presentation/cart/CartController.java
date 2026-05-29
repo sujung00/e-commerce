@@ -1,6 +1,7 @@
 package com.hhplus.ecommerce.presentation.cart;
 
 import com.hhplus.ecommerce.application.cart.CartService;
+import com.hhplus.ecommerce.presentation.cart.mapper.CartMapper;
 import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
 import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
 import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
@@ -18,9 +19,11 @@ import org.springframework.web.bind.annotation.*;
 public class CartController {
 
     private final CartService cartService;
+    private final CartMapper cartMapper;
 
-    public CartController(CartService cartService) {
+    public CartController(CartService cartService, CartMapper cartMapper) {
         this.cartService = cartService;
+        this.cartMapper = cartMapper;
     }
 
     /**
@@ -28,8 +31,7 @@ public class CartController {
      */
     @GetMapping
     public ResponseEntity<CartResponseDto> getCart(@RequestHeader("X-USER-ID") Long userId) {
-        CartResponseDto cart = cartService.getCartByUserId(userId);
-        return ResponseEntity.ok(cart);
+        return ResponseEntity.ok(cartMapper.toCartResponseDto(cartService.getCartByUserId(userId)));
     }
 
     /**
@@ -39,7 +41,8 @@ public class CartController {
     public ResponseEntity<CartItemResponse> addCartItem(
             @RequestHeader("X-USER-ID") Long userId,
             @RequestBody AddCartItemRequest request) {
-        CartItemResponse response = cartService.addItem(userId, request);
+        CartItemResponse response = cartMapper.toCartItemResponse(
+                cartService.addItem(userId, cartMapper.toAddCartItemCommand(request)));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -51,7 +54,8 @@ public class CartController {
             @RequestHeader("X-USER-ID") Long userId,
             @PathVariable("cart_item_id") Long cartItemId,
             @RequestBody UpdateQuantityRequest request) {
-        CartItemResponse response = cartService.updateItemQuantity(userId, cartItemId, request);
+        CartItemResponse response = cartMapper.toCartItemResponse(
+                cartService.updateItemQuantity(userId, cartItemId, cartMapper.toUpdateQuantityCommand(request)));
         return ResponseEntity.ok(response);
     }
 

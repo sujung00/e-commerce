@@ -57,6 +57,17 @@ public interface CartRepository {
     List<CartItem> getCartItems(Long cartId);
 
     /**
+     * 특정 장바구니의 모든 아이템 조회 (비관적 락 - SELECT ... FOR UPDATE)
+     *
+     * VULN-002 수정: InnoDB REPEATABLE READ 스냅샷을 우회해 최신 커밋 데이터를 읽는다.
+     * 반드시 carts 행에 대한 비관적 락을 보유한 상태에서 호출해야 한다.
+     *
+     * @param cartId 장바구니 ID
+     * @return 해당 장바구니의 모든 아이템 리스트 (CURRENT READ)
+     */
+    List<CartItem> getCartItemsWithLock(Long cartId);
+
+    /**
      * 장바구니에서 특정 상품+옵션 조합으로 아이템 조회
      * 중복 항목 확인 및 수량 누적 처리용
      *

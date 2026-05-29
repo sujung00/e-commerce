@@ -6,7 +6,7 @@ import com.hhplus.ecommerce.domain.cart.CartItem;
 import com.hhplus.ecommerce.domain.cart.CartRepository;
 import com.hhplus.ecommerce.domain.user.User;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
+import com.hhplus.ecommerce.application.cart.dto.AddCartItemCommand;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -124,7 +124,7 @@ class IntegrationCartConcurrencyTest extends BaseIntegrationTest {
                 try {
                     startLatch.await();
 
-                    AddCartItemRequest request = AddCartItemRequest.builder()
+                    AddCartItemCommand request = AddCartItemCommand.builder()
                             .productId(1L)
                             .optionId(101L)
                             .quantity(1)
@@ -241,7 +241,7 @@ class IntegrationCartConcurrencyTest extends BaseIntegrationTest {
                     long productId = index;
                     long optionId = 100L + index;
 
-                    AddCartItemRequest request = AddCartItemRequest.builder()
+                    AddCartItemCommand request = AddCartItemCommand.builder()
                             .productId(productId)
                             .optionId(optionId)
                             .quantity(1)
@@ -339,7 +339,7 @@ class IntegrationCartConcurrencyTest extends BaseIntegrationTest {
                         try {
                             startLatch.await();
 
-                            AddCartItemRequest request = AddCartItemRequest.builder()
+                            AddCartItemCommand request = AddCartItemCommand.builder()
                                     .productId(1L)
                                     .optionId(101L)
                                     .quantity(1)

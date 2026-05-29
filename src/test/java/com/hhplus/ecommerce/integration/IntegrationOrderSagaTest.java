@@ -36,6 +36,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.springframework.test.context.TestPropertySource;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -55,6 +57,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * - OptimisticLockException 발생 및 자동 재시도 검증
  */
 @SpringBootTest
+@TestPropertySource(properties = {
+    "retry.order.max-attempts=50",
+    "retry.order.initial-delay-ms=1",
+    "retry.order.backoff-multiplier=1",
+    "retry.order.max-delay-ms=10"
+})
 @DisplayName("주문 Saga 패턴 및 결제 흐름 동시성 테스트")
 class IntegrationOrderSagaTest extends BaseIntegrationTest {
 

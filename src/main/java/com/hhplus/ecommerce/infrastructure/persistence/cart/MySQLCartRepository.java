@@ -4,11 +4,7 @@ import com.hhplus.ecommerce.domain.cart.Cart;
 import com.hhplus.ecommerce.domain.cart.CartItem;
 import com.hhplus.ecommerce.domain.cart.CartRepository;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -82,6 +78,11 @@ public class MySQLCartRepository implements CartRepository {
     @Override
     public List<CartItem> getCartItems(Long cartId) {
         return cartItemJpaRepository.findByCartId(cartId);
+    }
+
+    @Override
+    public List<CartItem> getCartItemsWithLock(Long cartId) {
+        return cartItemJpaRepository.findByCartIdForUpdate(cartId);
     }
 
     @Override

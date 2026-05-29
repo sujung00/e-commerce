@@ -2,16 +2,14 @@ package com.hhplus.ecommerce.unit.application.cart;
 
 
 
-import com.hhplus.ecommerce.application.cart.CartService;import com.hhplus.ecommerce.domain.cart.Cart;
-import com.hhplus.ecommerce.domain.cart.CartItem;
-import com.hhplus.ecommerce.domain.cart.CartItemNotFoundException;
-import com.hhplus.ecommerce.domain.cart.InvalidQuantityException;import com.hhplus.ecommerce.domain.cart.*;
+import com.hhplus.ecommerce.application.cart.CartService;
+import com.hhplus.ecommerce.application.cart.dto.AddCartItemCommand;
+import com.hhplus.ecommerce.application.cart.dto.CartItemResponse;
+import com.hhplus.ecommerce.application.cart.dto.CartResponseDto;
+import com.hhplus.ecommerce.application.cart.dto.UpdateQuantityCommand;
+import com.hhplus.ecommerce.domain.cart.*;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
-import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
-import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
-import com.hhplus.ecommerce.presentation.cart.response.CartResponseDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -181,7 +179,7 @@ class CartServiceTest {
     @DisplayName("장바구니 아이템 추가 - 성공")
     void testAddItem_Success() {
         // Given
-        AddCartItemRequest request = AddCartItemRequest.builder()
+        AddCartItemCommand request = AddCartItemCommand.builder()
                 .productId(TEST_PRODUCT_ID)
                 .optionId(TEST_OPTION_ID)
                 .quantity(2)
@@ -216,7 +214,7 @@ class CartServiceTest {
                 .build();
 
         when(cartRepository.saveCartItem(any(CartItem.class))).thenReturn(newItem);
-        when(cartRepository.getCartItems(TEST_CART_ID)).thenReturn(List.of(newItem));
+        when(cartRepository.getCartItemsWithLock(TEST_CART_ID)).thenReturn(List.of(newItem));
         when(cartRepository.saveCart(any(Cart.class))).thenReturn(cart);
 
         // When
@@ -237,7 +235,7 @@ class CartServiceTest {
     @DisplayName("장바구니 아이템 추가 - 실패 (수량 0)")
     void testAddItem_Failed_ZeroQuantity() {
         // Given
-        AddCartItemRequest request = AddCartItemRequest.builder()
+        AddCartItemCommand request = AddCartItemCommand.builder()
                 .productId(TEST_PRODUCT_ID)
                 .optionId(TEST_OPTION_ID)
                 .quantity(0)
@@ -255,7 +253,7 @@ class CartServiceTest {
     @DisplayName("장바구니 아이템 추가 - 실패 (수량 초과)")
     void testAddItem_Failed_ExceededQuantity() {
         // Given
-        AddCartItemRequest request = AddCartItemRequest.builder()
+        AddCartItemCommand request = AddCartItemCommand.builder()
                 .productId(TEST_PRODUCT_ID)
                 .optionId(TEST_OPTION_ID)
                 .quantity(1001)
@@ -273,7 +271,7 @@ class CartServiceTest {
     @DisplayName("장바구니 아이템 추가 - 실패 (사용자 없음)")
     void testAddItem_Failed_UserNotFound() {
         // Given
-        AddCartItemRequest request = AddCartItemRequest.builder()
+        AddCartItemCommand request = AddCartItemCommand.builder()
                 .productId(TEST_PRODUCT_ID)
                 .optionId(TEST_OPTION_ID)
                 .quantity(1)
@@ -293,7 +291,7 @@ class CartServiceTest {
     @DisplayName("장바구니 수량 수정 - 성공")
     void testUpdateItemQuantity_Success() {
         // Given
-        UpdateQuantityRequest request = UpdateQuantityRequest.builder()
+        UpdateQuantityCommand request = UpdateQuantityCommand.builder()
                 .quantity(5)
                 .build();
 
@@ -326,7 +324,7 @@ class CartServiceTest {
                 .thenReturn(Optional.of(cart));
         when(cartRepository.saveCartItem(any(CartItem.class)))
                 .thenReturn(cartItem);
-        when(cartRepository.getCartItems(TEST_CART_ID))
+        when(cartRepository.getCartItemsWithLock(TEST_CART_ID))
                 .thenReturn(List.of(cartItem));
         when(cartRepository.saveCart(any(Cart.class)))
                 .thenReturn(cart);
@@ -348,7 +346,7 @@ class CartServiceTest {
     @DisplayName("장바구니 수량 수정 - 실패 (음수 수량)")
     void testUpdateItemQuantity_Failed_NegativeQuantity() {
         // Given
-        UpdateQuantityRequest request = UpdateQuantityRequest.builder()
+        UpdateQuantityCommand request = UpdateQuantityCommand.builder()
                 .quantity(-1)
                 .build();
 
@@ -364,7 +362,7 @@ class CartServiceTest {
     @DisplayName("장바구니 수량 수정 - 실패 (아이템 없음)")
     void testUpdateItemQuantity_Failed_ItemNotFound() {
         // Given
-        UpdateQuantityRequest request = UpdateQuantityRequest.builder()
+        UpdateQuantityCommand request = UpdateQuantityCommand.builder()
                 .quantity(5)
                 .build();
 
@@ -411,7 +409,7 @@ class CartServiceTest {
                 .thenReturn(Optional.of(cartItem));
         when(cartRepository.findByUserId(TEST_USER_ID))
                 .thenReturn(Optional.of(cart));
-        when(cartRepository.getCartItems(TEST_CART_ID))
+        when(cartRepository.getCartItemsWithLock(TEST_CART_ID))
                 .thenReturn(new ArrayList<>());
         when(cartRepository.saveCart(any(Cart.class)))
                 .thenReturn(cart);

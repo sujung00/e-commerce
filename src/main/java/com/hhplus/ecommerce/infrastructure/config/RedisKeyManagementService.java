@@ -79,10 +79,18 @@ public class RedisKeyManagementService {
     /**
      * 카테고리별 키 개수
      *
-     * @return 카테고리 → 키 개수 맵
+     * 모든 정의된 카테고리를 포함하여 반환 (키가 없는 카테고리는 0으로 포함).
+     * Redis가 비어 있어도 빈 맵이 아닌 카테고리별 0 카운트를 반환한다.
+     *
+     * @return 카테고리 → 키 개수 맵 (모든 카테고리 포함)
      */
     public Map<String, Integer> getKeyCountByCategory() {
         Map<String, Integer> result = new HashMap<>();
+
+        // 모든 카테고리를 0으로 초기화 (키가 없는 경우에도 카테고리가 포함되어야 함)
+        for (RedisKeyCategory category : RedisKeyCategory.values()) {
+            result.put(category.getDisplayName(), 0);
+        }
 
         for (RedisKeyType keyType : RedisKeyType.values()) {
             String pattern = keyType.getPattern();

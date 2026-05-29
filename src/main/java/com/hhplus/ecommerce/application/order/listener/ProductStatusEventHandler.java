@@ -67,7 +67,7 @@ public class ProductStatusEventHandler {
      *
      * @param event OrderCreatedEvent (orderId, userId, couponId, orderItems, productIds)
      */
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleOrderCreated(OrderCreatedEvent event) {
         log.info("[ProductStatusEventHandler] 상품 상태 업데이트 시작 (비동기): orderId={}, productIds={}",

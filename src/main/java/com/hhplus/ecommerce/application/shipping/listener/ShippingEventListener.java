@@ -22,7 +22,7 @@ public class ShippingEventListener {
     private final ShippingServiceClient shippingServiceClient;
     private final ApplicationEventPublisher eventPublisher;
 
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleOrderCompleted(OrderCompletedEvent event) {
         log.info("[ShippingEventListener] 배송 생성 시작 - orderId={}", event.getOrderId());

@@ -71,7 +71,7 @@ public class OrderAlertEventListener {
      *
      * @param event Order Saga 통합 이벤트
      */
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleOrderSagaEvent(OrderSagaEvent event) {
         log.info("[OrderAlertEventListener] OrderSagaEvent 수신 - type={}, orderId={}, userId={}",

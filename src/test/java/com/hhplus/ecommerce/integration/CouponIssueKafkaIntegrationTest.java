@@ -2,10 +2,7 @@ package com.hhplus.ecommerce.integration;
 
 import com.hhplus.ecommerce.domain.coupon.Coupon;
 import com.hhplus.ecommerce.domain.coupon.CouponRepository;
-import com.hhplus.ecommerce.domain.coupon.UserCoupon;
 import com.hhplus.ecommerce.domain.coupon.UserCouponRepository;
-import com.hhplus.ecommerce.domain.user.User;
-import com.hhplus.ecommerce.domain.user.UserRepository;
 import com.hhplus.ecommerce.infrastructure.kafka.CouponIssueProducer;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -15,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.test.utils.ContainerTestUtils;
@@ -29,8 +27,6 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
-import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -111,13 +107,13 @@ class CouponIssueKafkaIntegrationTest {
     private UserCouponRepository userCouponRepository;
 
     @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
     private KafkaAdmin kafkaAdmin;
 
     @Autowired(required = false)
     private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private static final String TOPIC_NAME = "coupon.issue.requests";
 
@@ -160,55 +156,74 @@ class CouponIssueKafkaIntegrationTest {
     /**
      * Consumer 준비 대기
      *
-     * ContainerTestUtils.waitForAssignment(container, 10)은 각 컨테이너가 10개의 파티션을
-     * 할당받을 때까지 대기한다. 단, 다른 토픽(예: order-events)의 컨테이너는 테스트 Kafka에
-     * 해당 토픽이 없을 수 있으므로 타임아웃이 발생할 수 있다. try-catch로 무시하고 계속 진행.
+     * ContainerTestUtils.waitForAssignment(container, N) 방식을 사용하지 않는다.
+     * 이유: Spring Kafka는 @KafkaListener 하나당 main/retry/DLT 3개의 컨테이너를 등록한다.
+     *       2개 @KafkaListener × 3 컨테이너 = 6 컨테이너 중 다수가 이 테스트의 Kafka에
+     *       존재하지 않는 토픽(예: order.events, retry 토픽)을 구독하여 각각 63초씩 블로킹한다.
+     *       결과: 3 컨테이너 × 63초 = 189초 / @BeforeEach → 5 테스트 × 189초 = 15분 소요.
+     *
+     * 대안: coupon.issue.requests 토픽의 파티션이 실제로 할당됐는지
+     *       topic 이름 기반으로 직접 폴링한다. 최대 10초 대기.
      */
     private void waitForConsumerAssignment() {
-        if (kafkaListenerEndpointRegistry != null) {
-            kafkaListenerEndpointRegistry.getListenerContainers().forEach(container -> {
-                try {
-                    ContainerTestUtils.waitForAssignment(container, 10);
-                    System.out.println("[Test] Consumer 파티션 할당 완료: " + container.getListenerId());
-                } catch (IllegalStateException e) {
-                    // 일부 컨테이너(다른 토픽 구독)는 파티션을 받지 못할 수 있음 - 무시하고 계속
-                    System.out.println("[Test] Consumer 파티션 할당 대기 종료 (무시): " + e.getMessage());
-                }
-            });
-        } else {
-            System.out.println("[Test] KafkaListenerEndpointRegistry not available, skipping consumer wait");
+        if (kafkaListenerEndpointRegistry == null) {
+            return;
         }
 
-        // Consumer가 완전히 준비될 때까지 추가 대기
-        try {
-            Thread.sleep(3000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        long deadline = System.currentTimeMillis() + 10_000;
+        boolean assigned = false;
+
+        while (System.currentTimeMillis() < deadline && !assigned) {
+            for (var container : kafkaListenerEndpointRegistry.getListenerContainers()) {
+                try {
+                    var partitions = container.getAssignedPartitions();
+                    if (partitions != null && !partitions.isEmpty()) {
+                        boolean hasCouponTopic = partitions.stream()
+                                .anyMatch(tp -> tp.topic().contains("coupon.issue"));
+                        if (hasCouponTopic) {
+                            assigned = true;
+                            System.out.println("[Test] Coupon consumer ready: " + partitions.size() + " partitions");
+                            break;
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            if (!assigned) {
+                try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
+        }
+
+        if (!assigned) {
+            System.out.println("[Test] Consumer not ready within 10s, continuing anyway");
         }
     }
 
     /**
-     * 테스트 데이터 정리 (수동 삭제)
+     * 테스트 데이터 정리 (JdbcTemplate 직접 SQL)
+     *
+     * JPA save()/delete()를 사용하지 않는 이유:
+     * - @Version 필드 + 명시적 ID 조합은 JPA merge() 경로를 타고
+     *   DB에 해당 row가 없을 때 StaleObjectStateException을 유발한다.
+     * - JdbcTemplate native SQL은 JPA의 isNew() / merge() 판단을 우회한다.
+     *
+     * 정리 범위:
+     * 1. user_coupons: 테스트 중 발급된 모든 쿠폰 기록
+     * 2. coupons (id > 10): testCouponExhaustion이 생성한 한정 쿠폰
+     * 3. coupons (id 1-10): remaining_qty/version 초기화 (createTestCoupons에서도 하지만 선제 정리)
      */
     private void cleanupTestData() {
-        // UserCoupon 전체 조회 후 삭제
-        List<UserCoupon> allUserCoupons = userCouponRepository.findByUserId(1L);
-        for (long userId = 1; userId <= 20; userId++) {
-            List<UserCoupon> userCoupons = userCouponRepository.findByUserId(userId);
-            for (UserCoupon uc : userCoupons) {
-                userCouponRepository.deleteByUserIdAndCouponId(uc.getUserId(), uc.getCouponId());
-            }
-        }
+        // 1. user_coupons 전체 삭제 (FK 제약으로 먼저 삭제)
+        jdbcTemplate.execute("DELETE FROM user_coupons");
 
-        // Coupon 개별 삭제 (deleteAll이 없으므로)
-        for (long couponId = 1; couponId <= 10; couponId++) {
-            couponRepository.findById(couponId).ifPresent(coupon -> {
-                // 커스텀 Repository에 delete 메서드가 있다고 가정
-                // 없다면 이 부분은 스킵
-            });
-        }
+        // 2. testCouponExhaustion이 만든 auto-generated 쿠폰 삭제
+        jdbcTemplate.execute("DELETE FROM coupons WHERE coupon_id > 10");
 
-        // User도 마찬가지
+        // 3. 고정 쿠폰(1-10) 재고·버전 초기화
+        jdbcTemplate.execute(
+            "UPDATE coupons SET remaining_qty=100, is_active=1, version=0, updated_at=NOW()" +
+            " WHERE coupon_id BETWEEN 1 AND 10"
+        );
     }
 
     /**
@@ -378,24 +393,21 @@ class CouponIssueKafkaIntegrationTest {
     @Test
     @DisplayName("쿠폰 소진 시 실패 처리 검증")
     void testCouponExhaustion() throws Exception {
-        // Given - remaining_qty = 1인 쿠폰 생성
+        // Given - remaining_qty = 1인 쿠폰 생성 (auto-generated couponId, no explicit version)
+        // version을 null로 두면 isNew()=true → persist() 호출 → DB auto-increment ID 사용
         Coupon limitedCoupon = Coupon.builder()
-                .couponId(999L)
                 .couponName("Limited Coupon")
                 .discountType("FIXED_AMOUNT")
                 .discountAmount(10000L)
                 .totalQuantity(1)
                 .remainingQty(1)  // 재고 1개
                 .isActive(true)
-                .version(0L)  // merge() 경로에서 @Version 필드 초기화
                 .validFrom(LocalDateTime.now().minusDays(1))
                 .validUntil(LocalDateTime.now().plusDays(30))
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
                 .build();
-        couponRepository.save(limitedCoupon);
+        limitedCoupon = couponRepository.save(limitedCoupon);
 
-        Long couponId = 999L;
+        Long couponId = limitedCoupon.getCouponId();
         Long userId1 = 10L;
         Long userId2 = 11L;
 
@@ -426,44 +438,47 @@ class CouponIssueKafkaIntegrationTest {
 
     // ===== 테스트 데이터 생성 =====
 
+    /**
+     * 테스트 사용자 생성 (native SQL upsert)
+     *
+     * 이유: JPA save()는 @GeneratedValue(IDENTITY) 엔티티에 명시적 userId를 설정하고
+     *       version=0L(non-null)로 빌드하면 isNew()=false → merge() 호출 →
+     *       DB에 해당 row가 없을 때 UPDATE 시도 → 0 rows updated →
+     *       StaleObjectStateException 발생.
+     *
+     * 해결: JdbcTemplate 네이티브 SQL로 명시적 userId INSERT.
+     *       ON DUPLICATE KEY UPDATE로 재실행 시 잔액 리셋.
+     */
     private void createTestUsers() {
         for (long i = 1; i <= 20; i++) {
-            // findById로 존재 확인 후 저장
-            if (userRepository.findById(i).isEmpty()) {
-                User user = User.builder()
-                        .userId(i)
-                        .email("test" + i + "@test.com")
-                        .name("TestUser" + i)
-                        .balance(1000000L)
-                        .version(0L)  // merge() 경로에서 @Version 필드 초기화
-                        .createdAt(LocalDateTime.now())
-                        .updatedAt(LocalDateTime.now())
-                        .build();
-                userRepository.save(user);
-            }
+            jdbcTemplate.update(
+                "INSERT INTO users (user_id, email, name, balance, version, created_at, updated_at) " +
+                "VALUES (?, ?, ?, 1000000, 0, NOW(), NOW()) " +
+                "ON DUPLICATE KEY UPDATE balance=1000000, updated_at=NOW()",
+                i, "test" + i + "@test.com", "TestUser" + i
+            );
         }
     }
 
+    /**
+     * 테스트 쿠폰 생성 (native SQL upsert)
+     *
+     * 이유: createTestUsers()와 동일. version(0L) + 명시적 couponId 조합이
+     *       JPA merge() 경로에서 StaleObjectStateException을 일으킨다.
+     *
+     * 추가: ON DUPLICATE KEY UPDATE로 테스트 간 remaining_qty를 100으로 리셋하여
+     *       각 테스트가 신선한 쿠폰 재고를 가지도록 보장.
+     */
     private void createTestCoupons() {
         for (long i = 1; i <= 10; i++) {
-            // findById로 존재 확인 후 저장
-            if (couponRepository.findById(i).isEmpty()) {
-                Coupon coupon = Coupon.builder()
-                        .couponId(i)
-                        .couponName("Test Coupon " + i)
-                        .discountType("FIXED_AMOUNT")
-                        .discountAmount(10000L * i)
-                        .totalQuantity(100)
-                        .remainingQty(100)
-                        .isActive(true)
-                        .version(0L)  // merge() 경로에서 @Version 필드 초기화
-                        .validFrom(LocalDateTime.now().minusDays(1))
-                        .validUntil(LocalDateTime.now().plusDays(30))
-                        .createdAt(LocalDateTime.now())
-                        .updatedAt(LocalDateTime.now())
-                        .build();
-                couponRepository.save(coupon);
-            }
+            jdbcTemplate.update(
+                "INSERT INTO coupons (coupon_id, coupon_name, discount_type, discount_amount, discount_rate, " +
+                "total_quantity, remaining_qty, valid_from, valid_until, is_active, version, created_at, updated_at) " +
+                "VALUES (?, ?, 'FIXED_AMOUNT', ?, 0.00, 100, 100, " +
+                "DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 0, NOW(), NOW()) " +
+                "ON DUPLICATE KEY UPDATE remaining_qty=100, is_active=1, version=0, updated_at=NOW()",
+                i, "Test Coupon " + i, 10000L * i
+            );
         }
     }
 }

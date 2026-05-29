@@ -51,7 +51,7 @@ public class CouponEventListener {
      *
      * @param event 쿠폰 발급 완료 이벤트
      */
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleCouponIssued(CouponIssuedEvent event) {
         log.info("[CouponEventListener] 쿠폰 발급 이벤트 수신 - couponId={}, userId={}, remainingQty={}",

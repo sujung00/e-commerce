@@ -1,12 +1,12 @@
 package com.hhplus.ecommerce.application.cart;
 
+import com.hhplus.ecommerce.application.cart.dto.AddCartItemCommand;
+import com.hhplus.ecommerce.application.cart.dto.CartItemResponse;
+import com.hhplus.ecommerce.application.cart.dto.CartResponseDto;
+import com.hhplus.ecommerce.application.cart.dto.UpdateQuantityCommand;
 import com.hhplus.ecommerce.domain.cart.*;
 import com.hhplus.ecommerce.domain.user.UserNotFoundException;
 import com.hhplus.ecommerce.domain.user.UserRepository;
-import com.hhplus.ecommerce.presentation.cart.request.AddCartItemRequest;
-import com.hhplus.ecommerce.presentation.cart.request.UpdateQuantityRequest;
-import com.hhplus.ecommerce.presentation.cart.response.CartItemResponse;
-import com.hhplus.ecommerce.presentation.cart.response.CartResponseDto;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
@@ -104,14 +104,14 @@ public class CartService {
      */
     @Transactional
     @CacheEvict(value = "cartCache", key = "'cart:' + #userId")
-    public CartItemResponse addItem(Long userId, AddCartItemRequest request) {
+    public CartItemResponse addItem(Long userId, AddCartItemCommand command) {
         // 사용자 존재 검증
         if (!userRepository.existsById(userId)) {
             throw new UserNotFoundException(userId);
         }
 
         // 수량 검증
-        validateQuantity(request.getQuantity());
+        validateQuantity(command.getQuantity());
 
         // 장바구니 조회 또는 생성 (아직 없으면 생성)
         cartRepository.findOrCreateByUserId(userId);
@@ -127,15 +127,15 @@ public class CartService {
         // SELECT FOR UPDATE(CURRENT READ)는 항상 최신 커밋 데이터를 읽는다.
         var existingItem = cartRepository.findCartItemForUpdate(
                 cart.getCartId(),
-                request.getProductId(),
-                request.getOptionId()
+                command.getProductId(),
+                command.getOptionId()
         );
 
         CartItem savedItem;
         if (existingItem.isPresent()) {
             // 이미 있으면 수량을 업데이트
             CartItem item = existingItem.get();
-            int newQuantity = item.getQuantity() + request.getQuantity();
+            int newQuantity = item.getQuantity() + command.getQuantity();
             validateQuantity(newQuantity);  // 업데이트 후 수량 검증
 
             item.setQuantity(newQuantity);
@@ -147,11 +147,11 @@ public class CartService {
             // 중복되지 않는 경우 새로 생성
             CartItem cartItem = CartItem.builder()
                     .cartId(cart.getCartId())
-                    .productId(request.getProductId())
-                    .optionId(request.getOptionId())
-                    .quantity(request.getQuantity())
-                    .unitPrice(getProductPrice(request.getProductId()))
-                    .subtotal((long) request.getQuantity() * getProductPrice(request.getProductId()))
+                    .productId(command.getProductId())
+                    .optionId(command.getOptionId())
+                    .quantity(command.getQuantity())
+                    .unitPrice(getProductPrice(command.getProductId()))
+                    .subtotal((long) command.getQuantity() * getProductPrice(command.getProductId()))
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
@@ -172,15 +172,16 @@ public class CartService {
      *
      * ✅ 캐시 무효화 (Message 5)
      */
+
     @CacheEvict(value = "cartCache", key = "'cart:' + #userId")
-    public CartItemResponse updateItemQuantity(Long userId, Long cartItemId, UpdateQuantityRequest request) {
+    public CartItemResponse updateItemQuantity(Long userId, Long cartItemId, UpdateQuantityCommand command) {
         // 사용자 존재 검증
         if (!userRepository.existsById(userId)) {
             throw new UserNotFoundException(userId);
         }
 
         // 수량 검증
-        validateQuantity(request.getQuantity());
+        validateQuantity(command.getQuantity());
 
         // CartItem 조회
         CartItem cartItem = cartRepository.findCartItemById(cartItemId)
@@ -195,8 +196,8 @@ public class CartService {
         }
 
         // 수량 및 소계 업데이트
-        cartItem.setQuantity(request.getQuantity());
-        cartItem.setSubtotal((long) request.getQuantity() * cartItem.getUnitPrice());
+        cartItem.setQuantity(command.getQuantity());
+        cartItem.setSubtotal((long) command.getQuantity() * cartItem.getUnitPrice());
         cartItem.setUpdatedAt(LocalDateTime.now());
 
         CartItem savedItem = cartRepository.saveCartItem(cartItem);
@@ -242,9 +243,17 @@ public class CartService {
 
     /**
      * 장바구니 총액 업데이트
+     *
+     * ✅ VULN-002 수정:
+     * - getCartItemsWithLock() (SELECT FOR UPDATE, CURRENT READ) 사용
+     * - InnoDB REPEATABLE READ에서 스냅샷 격리를 우회해 다른 스레드가 커밋한
+     *   cart_item들도 포함하여 정확한 합계를 계산
+     * - 전제: 호출자가 이미 carts 행 비관적 락을 보유 중 (findByUserIdForUpdate)
+     *   → 항상 carts 락 → cart_items 락 순서이므로 deadlock 없음
      */
     private void updateCartTotals(Cart cart) {
-        List<CartItem> items = cartRepository.getCartItems(cart.getCartId());
+        // CURRENT READ로 모든 커밋된 + 현재 트랜잭션의 cart_item을 읽음
+        List<CartItem> items = cartRepository.getCartItemsWithLock(cart.getCartId());
         int totalItems = items.size();
         long totalPrice = items.stream().mapToLong(CartItem::getSubtotal).sum();
 

@@ -41,4 +41,20 @@ public interface CartItemJpaRepository extends JpaRepository<CartItem, Long> {
             @Param("cartId") Long cartId,
             @Param("productId") Long productId,
             @Param("optionId") Long optionId);
+
+    /**
+     * 특정 장바구니의 모든 아이템 조회 (SELECT ... FOR UPDATE)
+     *
+     * VULN-002 수정용:
+     * InnoDB REPEATABLE READ 스냅샷은 트랜잭션 시작 시점(snapshot read)을 기준으로 하므로,
+     * 다른 스레드가 cart lock을 획득 후 커밋한 item들이 보이지 않는다.
+     * SELECT FOR UPDATE(CURRENT READ)를 사용하면 최신 커밋 데이터를 읽어
+     * 정확한 합계를 계산할 수 있다.
+     *
+     * 호출 전제: 호출자가 이미 carts 행에 비관적 락(SELECT FOR UPDATE)을 보유 중이어야 한다.
+     * (deadlock 방지: 항상 carts 락 → cart_items 락 순서 유지)
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT ci FROM CartItem ci WHERE ci.cartId = :cartId")
+    List<CartItem> findByCartIdForUpdate(@Param("cartId") Long cartId);
 }

@@ -212,6 +212,33 @@ public class UserBalanceService {
     }
 
     /**
+     * 사용자 잔액 차감 - 부모 트랜잭션 참여 (REQUIRED)
+     *
+     * 주문 트랜잭션과 동일한 TX 내에서 실행되어 재고 차감과 원자성 보장.
+     * - ProductOption 낙관적 락 실패 시 balance 차감도 함께 롤백됨 (no double-deduction)
+     * - SELECT FOR UPDATE로 동일 userId 직렬화 (VULN-001 방지)
+     *
+     * @param userId 사용자 ID
+     * @param amount 차감할 금액
+     * @return 차감 후 사용자 정보
+     * @throws UserNotFoundException 사용자를 찾을 수 없음
+     * @throws InsufficientBalanceException 잔액 부족
+     */
+    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
+    public User deductBalanceInTx(Long userId, Long amount) {
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        Long balanceBefore = user.getBalance();
+        user.deductBalance(amount);
+        userRepository.save(user);
+
+        log.info("[UserBalanceService] 잔액 차감(parent TX): userId={}, amount={}, before={}, after={}, version={}",
+                userId, amount, balanceBefore, user.getBalance(), user.getVersion());
+        return user;
+    }
+
+    /**
      * 사용자 잔액 충전
      *
      * 동시성 제어 전략:

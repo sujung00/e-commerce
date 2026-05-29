@@ -16,7 +16,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.MySQLContainer;
@@ -66,7 +66,6 @@ import static org.awaitility.Awaitility.await;
  * - @DirtiesContext로 각 테스트마다 Spring Context 재시작
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Transactional
 @Testcontainers
 @ContextConfiguration(initializers = OrderEventKafkaIntegrationTest.TestContainersInitializer.class)
 @DisplayName("Kafka 기반 주문 완료 이벤트 통합 테스트")
@@ -119,6 +118,9 @@ class OrderEventKafkaIntegrationTest {
 
     @Autowired
     private DataPlatformEventRepository dataPlatformEventRepository;
+
+    @Value("${kafka.topics.order-events}")
+    private String orderEventsTopic;
 
     // ═══════════════════════════════════════════════════════════════════════
     // 테스트 데이터 초기화
@@ -199,13 +201,16 @@ class OrderEventKafkaIntegrationTest {
         orderEventProducer.publishOrderCompletedEvent(event);
         System.out.println("\n[TEST] 첫 번째 메시지 발행 - orderId=" + orderId);
 
-        // 첫 번째 메시지 처리 대기
-        Thread.sleep(2000);
+        // 첫 번째 메시지 처리 대기 (Kafka consumer 그룹 합류 및 메시지 처리 시간 고려)
+        await()
+                .atMost(20, TimeUnit.SECONDS)
+                .pollInterval(500, TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> assertThat(dataPlatformEventRepository.findAll()).hasSize(1));
 
         orderEventProducer.publishOrderCompletedEvent(event);
         System.out.println("\n[TEST] 두 번째 메시지 발행 (중복) - orderId=" + orderId);
 
-        // 두 번째 메시지 처리 대기
+        // 두 번째 메시지 처리 대기 (중복 메시지 거부 확인)
         Thread.sleep(3000);
 
         // Then: DB에 단 1건만 저장되어야 함 (멱등성 보장)
@@ -287,7 +292,7 @@ class OrderEventKafkaIntegrationTest {
 
         // When: Key를 orderId로 설정하여 발행
         String key = String.valueOf(orderId);
-        kafkaTemplate.send("order.events", key, event1);
+        kafkaTemplate.send(orderEventsTopic, key, event1);
 
         System.out.println("\n[TEST] 메시지 발행 with Key - orderId=" + orderId + ", key=" + key);
 

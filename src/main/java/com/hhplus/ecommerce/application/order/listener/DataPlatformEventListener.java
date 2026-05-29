@@ -65,7 +65,7 @@ public class DataPlatformEventListener {
      *
      * @param event 주문 완료 이벤트
      */
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleOrderCompleted(OrderCompletedEvent event) {
         log.info("[DataPlatformEventListener] 주문 완료 이벤트 수신 (실시간 전송) - orderId={}, userId={}, amount={}",

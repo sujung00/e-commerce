@@ -12,7 +12,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class NotificationEventListener {
 
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleShipmentCreated(ShipmentCreatedEvent event) {
         log.info("[NotificationEventListener] 배송 시작 알림 - orderId={}, shipmentId={}, trackingNumber={}",
@@ -21,7 +21,7 @@ public class NotificationEventListener {
         log.info("[NotificationEventListener] 사용자에게 배송 시작 알림 전송 완료");
     }
 
-    @Async
+    @Async("asyncExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleShipmentCreationFailed(ShipmentCreationFailedEvent event) {
         log.error("[NotificationEventListener] 배송 실패 알림 - orderId={}, reason={}",
