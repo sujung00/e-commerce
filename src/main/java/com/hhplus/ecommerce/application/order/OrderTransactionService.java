@@ -25,16 +25,21 @@ import com.hhplus.ecommerce.domain.product.ProductConstants;
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.user.UserBalanceService;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.persistence.OptimisticLockException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -72,6 +77,7 @@ public class OrderTransactionService {
     private final CouponService couponService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final CacheManager cacheManager;
 
     public OrderTransactionService(OrderRepository orderRepository,
                                    ProductRepository productRepository,
@@ -81,7 +87,8 @@ public class OrderTransactionService {
                                    ExecutedChildTransactionRepository executedChildTransactionRepository,
                                    CouponService couponService,
                                    ObjectMapper objectMapper,
-                                   ApplicationEventPublisher eventPublisher) {
+                                   ApplicationEventPublisher eventPublisher,
+                                   CacheManager cacheManager) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
@@ -91,6 +98,7 @@ public class OrderTransactionService {
         this.couponService = couponService;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.cacheManager = cacheManager;
     }
 
     /**
@@ -174,7 +182,7 @@ public class OrderTransactionService {
         rollbackFor = Exception.class
     )
     @Retryable(
-        value = OptimisticLockException.class,
+        value = {OptimisticLockException.class, ObjectOptimisticLockingFailureException.class},
         maxAttemptsExpression    = "${retry.order.max-attempts:3}",
         backoff = @Backoff(
             delayExpression      = "${retry.order.initial-delay-ms:50}",
@@ -200,7 +208,7 @@ public class OrderTransactionService {
         rollbackFor = Exception.class  // ✅ 모든 예외를 롤백 (Checked Exception 포함)
     )
     @Retryable(
-        value = OptimisticLockException.class,
+        value = {OptimisticLockException.class, ObjectOptimisticLockingFailureException.class},
         maxAttemptsExpression    = "${retry.order.max-attempts:3}",
         backoff = @Backoff(
             delayExpression      = "${retry.order.initial-delay-ms:50}",
@@ -272,42 +280,32 @@ public class OrderTransactionService {
             }
         }
 
-        // ===== 2-1: 재고 차감 (낙관적 락, @Retryable 대상) =====
-        // OptimisticLockException 발생 시 최대 3회 재시도
-        deductInventory(orderItems);
-
-        // ===== 2-2: 사용자 잔액 차감 (자식 TX: REQUIRES_NEW) =====
-        // ⚠️ 중요: 자식 TX에서 발생하는 예외를 명시적으로 처리
-        // - 자식 TX는 이미 독립적으로 커밋/롤백됨
-        // - 예외가 부모로 전파되면 부모도 롤백됨
-        // - 예외를 catch하면 부모는 계속 진행 (하지만 자식은 이미 롤백됨)
-        //
-        // ✅ 개선사항:
-        // - orderId를 전달하여 ChildTransactionEvent 저장
-        // - Event는 child TX와 동일 트랜잭션에서 저장되므로 원자성 보장
-        // - Parent TX 실패 시에도 Event는 이미 커밋되어 보상 가능
-        Long orderId = null;  // 현재는 아직 order가 생성되지 않았으므로 null
+        // ===== 2-1: 사용자 잔액 차감 (parent TX, SELECT FOR UPDATE) =====
+        // ⚠️ 설계 변경: REQUIRES_NEW → REQUIRED (parent TX 참여)
+        // 이유: REQUIRES_NEW 사용 시 ProductOption 낙관적 락 실패(parent TX 롤백)에도
+        //       잔액 차감이 이미 커밋되는 double-deduction 버그 발생 (VULN-001)
+        // SELECT FOR UPDATE로 동일 userId 직렬화 → 재고+잔액 원자적 처리
+        // balance 차감을 먼저 수행하여 동일 userId의 ProductOption 충돌 없는 직렬화 보장
         try {
-            deductUserBalance(userId, finalAmount, orderId);
+            userBalanceService.deductBalanceInTx(userId, finalAmount);
         } catch (InsufficientBalanceException e) {
-            // ✅ 명시적 예외 처리 1: 잔액 부족
-            // 자식 TX에서 롤백됨, 부모로 예외 재전파하여 부모도 롤백 보장
-            log.error("[Order] 자식 TX 예외 - 잔액 부족: userId={}, required={}, exception={}",
+            log.error("[Order] 잔액 부족: userId={}, required={}, exception={}",
                     userId, finalAmount, e.getMessage());
-            throw e;  // 부모로 전파 → 부모 TX 롤백
+            throw e;
         } catch (UserNotFoundException e) {
-            // ✅ 명시적 예외 처리 2: 사용자 없음
-            // 이 상황은 실제로는 드물지만(주문 직전 사용자 생성) 처리
-            log.error("[Order] 자식 TX 예외 - 사용자 없음: userId={}, exception={}",
+            log.error("[Order] 사용자 없음: userId={}, exception={}",
                     userId, e.getMessage());
-            throw e;  // 부모로 전파 → 부모 TX 롤백
+            throw e;
         } catch (RuntimeException e) {
-            // ✅ 명시적 예외 처리 3: 분산락 실패 또는 기타 RuntimeException
-            // 분산락 타임아웃, 다른 런타임 예외 처리
-            log.error("[Order] 자식 TX 예외 - 런타임 예외: userId={}, message={}",
+            log.error("[Order] 런타임 예외 (잔액 차감): userId={}, message={}",
                     userId, e.getMessage());
-            throw e;  // 부모로 전파 → 부모 TX 롤백
+            throw e;
         }
+
+        // ===== 2-2: 재고 차감 (낙관적 락, @Retryable 대상) =====
+        // balance 차감 후 재고 차감: 동일 userId의 경우 user lock이 직렬화하므로
+        // ProductOption 충돌 없이 순차 처리됨. 다른 userId는 @Retryable로 재시도.
+        deductInventory(orderItems);
 
         // ===== 2-3: 주문 생성 및 저장 =====
         // 주의: order_items에 order_id를 설정하기 위해, 먼저 Order만 저장하고 OrderItem들을 나중에 연결
@@ -445,6 +443,29 @@ public class OrderTransactionService {
 
             // 저장소에 반영
             productRepository.save(product);
+
+            // ===== inventoryCache 무효화 (트랜잭션 커밋 후) =====
+            // 재고가 변경되었으므로 inventoryCache의 stale 항목을 제거한다.
+            // afterCommit()을 사용하여 DB 커밋 후 캐시를 무효화함으로써 일관성을 보장한다.
+            final Long productIdForEvict = product.getProductId();
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        Cache cache = cacheManager.getCache("inventoryCache");
+                        if (cache != null) {
+                            cache.evict("inventory:" + productIdForEvict);
+                            log.info("[OrderTransactionService] inventoryCache 무효화(afterCommit): productId={}", productIdForEvict);
+                        }
+                    }
+                });
+            } else {
+                Cache cache = cacheManager.getCache("inventoryCache");
+                if (cache != null) {
+                    cache.evict("inventory:" + productIdForEvict);
+                    log.info("[OrderTransactionService] inventoryCache 무효화(즉시): productId={}", productIdForEvict);
+                }
+            }
         }
     }
 
@@ -511,7 +532,7 @@ public class OrderTransactionService {
      */
     @Recover
     public Order handleOptimisticLockException(
-            OptimisticLockException exception,
+            RuntimeException exception,
             Long userId,
             List<OrderItemDto> orderItems,
             Long couponId,
@@ -519,12 +540,10 @@ public class OrderTransactionService {
             Long subtotal,
             Long finalAmount) {
 
-        log.error("[OrderTransactionService] 낙관적 락 재시도 초과 - userId={}, maxAttempts=3 모두 실패", userId);
+        log.error("[OrderTransactionService] 낙관적 락 재시도 초과 - userId={}, maxAttempts 모두 실패, exception={}",
+                userId, exception.getClass().getSimpleName());
 
-        throw new OptimisticLockException(
-                "상품 재고가 부족하거나 동시 주문으로 인한 충돌이 발생했습니다. " +
-                "잠시 후 다시 시도해주세요. (재시도 초과)",
-                exception
-        );
+        // OptimisticLockException 또는 ObjectOptimisticLockingFailureException 재전파
+        throw exception;
     }
 }

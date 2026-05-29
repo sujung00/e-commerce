@@ -35,10 +35,8 @@ class RedisStateTTLIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // Redis 상태 키 초기화
-        redisTemplate.delete(RedisKeyType.STATE_COUPON_REQUEST.buildKey("test-request-1"));
-        redisTemplate.delete(RedisKeyType.STATE_ORDER_PAYMENT.buildKey("test-order-1"));
-        redisTemplate.delete(RedisKeyType.STATE_ORDER_LOCK.buildKey("test-order-1"));
+        // Redis 전체 초기화 (테스트 간 상태 오염 방지)
+        redisTemplate.getConnectionFactory().getConnection().flushAll();
     }
 
     @Test
@@ -48,10 +46,10 @@ class RedisStateTTLIntegrationTest extends BaseIntegrationTest {
         String key = RedisKeyType.STATE_COUPON_REQUEST.buildKey("test-request-1");
         String value = "{\"status\": \"PENDING\", \"couponId\": 1}";
 
-        // When: 상태 키 저장
-        redisTemplate.opsForValue().set(key, value);
+        // When: 상태 키 저장 (실제 TTL과 동일하게 30분 설정)
+        Duration stateTTL = adaptiveTTLService.getTTL(RedisKeyType.STATE_COUPON_REQUEST);
+        redisTemplate.opsForValue().set(key, value, stateTTL);
 
-        // 선택적으로 TTL을 명시적으로 설정 (실제로는 RedisTemplate 설정에서 자동으로 설정됨)
         Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
 
         // Then

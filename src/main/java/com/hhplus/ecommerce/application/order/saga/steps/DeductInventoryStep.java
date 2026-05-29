@@ -1,5 +1,6 @@
 package com.hhplus.ecommerce.application.order.saga.steps;
 
+import com.hhplus.ecommerce.application.inventory.InventoryService;
 import com.hhplus.ecommerce.application.order.dto.CreateOrderRequestDto.OrderItemDto;
 import com.hhplus.ecommerce.application.order.saga.context.SagaContext;
 import com.hhplus.ecommerce.application.order.saga.orchestration.SagaStep;
@@ -10,9 +11,12 @@ import com.hhplus.ecommerce.domain.product.ProductOption;
 import com.hhplus.ecommerce.domain.product.ProductRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
@@ -53,11 +57,17 @@ public class DeductInventoryStep implements SagaStep {
 
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
+    private final InventoryService inventoryService;
+    private final CacheManager cacheManager;
 
     public DeductInventoryStep(ProductRepository productRepository,
-                               OrderRepository orderRepository) {
+                               OrderRepository orderRepository,
+                               InventoryService inventoryService,
+                               CacheManager cacheManager) {
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
+        this.inventoryService = inventoryService;
+        this.cacheManager = cacheManager;
     }
 
     @Override
@@ -125,6 +135,33 @@ public class DeductInventoryStep implements SagaStep {
 
             // ========== Step 3: DB 저장 ==========
             productRepository.saveOption(option);
+
+            // ========== Step 4: 재고 캐시 무효화 (트랜잭션 커밋 후 보장) ==========
+            // REQUIRES_NEW 트랜잭션이 커밋된 직후에 캐시를 무효화한다.
+            // TransactionSynchronizationManager.afterCommit()을 사용하면
+            // TransactionAwareCacheDecorator 유무와 관계없이 커밋 후 즉시 실행이 보장된다.
+            final Long productIdToEvict = option.getProductId();
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        Cache cache = cacheManager.getCache("inventoryCache");
+                        if (cache != null) {
+                            String cacheKey = "inventory:" + productIdToEvict;
+                            cache.evict(cacheKey);
+                            log.info("[{}] afterCommit 재고 캐시 무효화: key={}", getName(), cacheKey);
+                        }
+                    }
+                });
+            } else {
+                // 트랜잭션 동기화가 없으면 즉시 무효화
+                Cache cache = cacheManager.getCache("inventoryCache");
+                if (cache != null) {
+                    String cacheKey = "inventory:" + productIdToEvict;
+                    cache.evict(cacheKey);
+                    log.info("[{}] 즉시 재고 캐시 무효화: key={}", getName(), cacheKey);
+                }
+            }
 
             log.info("[{}] 재고 차감 완료 - optionId={}, 차감수량={}, 남은재고={}",
                     getName(), item.getOptionId(), item.getQuantity(), option.getStock());

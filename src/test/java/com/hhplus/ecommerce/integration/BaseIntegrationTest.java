@@ -3,6 +3,7 @@ package com.hhplus.ecommerce.integration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.GenericContainer;
@@ -123,6 +124,7 @@ import org.testcontainers.containers.MySQLContainer;
  *    - 약 5~10배 성능 향상 기대
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
 @Transactional
 @ContextConfiguration(initializers = BaseIntegrationTest.TestContainersInitializer.class)
 public abstract class BaseIntegrationTest {
@@ -145,7 +147,8 @@ public abstract class BaseIntegrationTest {
             .withDatabaseName("ecommerce_test")
             .withUsername("testuser")
             .withPassword("testpass")
-            .withEnv("MYSQL_ROOT_PASSWORD", "testroot");
+            .withEnv("MYSQL_ROOT_PASSWORD", "testroot")
+            .withCommand("--max-connections=500");
 
     /**
      * Redis 7.0 TestContainer (Singleton)

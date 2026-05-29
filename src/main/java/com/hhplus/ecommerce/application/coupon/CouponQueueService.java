@@ -46,8 +46,9 @@ import java.util.UUID;
  * - 처리: 배치로 초당 ~200개 (실측, H2 in-memory, 2026-05-25)
  * - 선착순: FIFO 보장, 공정성 보장
  *
- * ⚠️ 주의: @Scheduled 동작을 위해 EcommerceApplication에 @EnableScheduling 필수
+ * ⚠️ 주의: @Scheduled 동작을 위해 AsyncConfig에 @EnableScheduling 필수
  *   (@EnableScheduling 없으면 워커가 실행되지 않아 큐가 드레인되지 않음)
+ *   → AsyncConfig.java에 @EnableScheduling 추가됨 (2026-05-28)
  *
  * 실측 결과 (ab -n 5000 -c 200 또는 Python 병렬 100건, H2 in-memory, 2026-05-25):
  * ┌─────────────────────┬────────────────────────────────────────────────────┐
@@ -57,6 +58,15 @@ import java.util.UUID;
  * │ Consumer 처리 TPS   │ ~200 req/s (DB 반영 속도, 100건 438ms, 단일 워커) │
  * └─────────────────────┴────────────────────────────────────────────────────┘
  * ※ H2 환경 기준; MySQL 프로덕션 환경에서는 DB I/O 추가로 처리량 감소 예상
+ *
+ * MySQL 재측정 결과 (MySQL 8.0 docker-compose, Python 병렬 100건, 2026-05-28):
+ * ┌─────────────────────┬────────────────────────────────────────────────────┐
+ * │ 항목                │ 측정값                                             │
+ * ├─────────────────────┼────────────────────────────────────────────────────┤
+ * │ HTTP Accept TPS     │ ~5,050 TPS (ab -n 5000 -c 200, 워밍업 후 평균)    │
+ * │ Consumer 처리 TPS   │ ~133 req/s (DB 반영 속도, 100건 754ms)            │
+ * └─────────────────────┴────────────────────────────────────────────────────┘
+ * H2 대비 처리량 감소: MySQL InnoDB 디스크 I/O + SELECT FOR UPDATE 락 경합
  */
 @Service
 public class CouponQueueService {

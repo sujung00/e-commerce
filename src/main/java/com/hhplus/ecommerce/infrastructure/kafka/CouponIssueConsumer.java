@@ -53,6 +53,12 @@ import org.springframework.stereotype.Service;
  * - vs Redis Queue (~200 req/s): +2.4x 향상 (H2 기준)
  * - 병목: `SELECT FOR UPDATE` 비관적 락 — 모든 Consumer가 동일 쿠폰 행 경합
  * - Consumer 개수 = 파티션 개수 (최대 병렬도, P=500 → 이론상 ~10,000 req/s)
+ *
+ * MySQL 재측정 (MySQL 8.0 docker-compose, P=3 Consumer=10, Python 병렬 100건, 2026-05-28):
+ * - 처리량: ~191 req/s (100건 525ms, rebalance 안정화 후)
+ * - vs Redis Queue (~133 req/s): +1.44x 향상 (MySQL 기준)
+ * - HTTP Accept TPS: ~8,200 TPS (ab -n 5000 -c 200, 워밍업 후 평균)
+ * - H2 대비 감소 원인: MySQL InnoDB 락 경합 비용이 H2 in-memory보다 큼
  */
 @Service
 public class CouponIssueConsumer {

@@ -127,6 +127,22 @@ public class InventoryService {
      * @throws ProductNotFoundException 상품을 찾을 수 없는 경우
      * @throws IllegalArgumentException productId <= 0 또는 restoreQuantity <= 0인 경우
      */
+    /**
+     * 재고 차감 후 캐시 무효화
+     *
+     * DeductInventoryStep이 재고를 차감한 후 호출하여 stale 캐시를 제거한다.
+     * 다음 조회 요청 시 DB에서 최신 재고를 읽어 캐시를 재구성한다.
+     *
+     * @param productId 캐시를 무효화할 상품 ID
+     */
+    @CacheEvict(
+            value = "inventoryCache",
+            key = "'inventory:' + #productId"
+    )
+    public void evictInventoryCache(Long productId) {
+        log.debug("[InventoryService] 재고 캐시 무효화: productId={}", productId);
+    }
+
     @CacheEvict(
             value = "inventoryCache",
             key = "'inventory:' + #productId"

@@ -276,8 +276,8 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
         assertEquals(1, productNode.get("rank").asInt(), "순위는 1등");
         assertEquals(5, productNode.get("score").asInt(), "점수는 5");
 
-        // message 필드는 null (성공한 경우)
-        assertTrue(productNode.get("message").isNull(), "message는 null이어야 합니다");
+        // message 필드는 null (성공한 경우) → @JsonInclude(NON_NULL)로 필드 자체가 제거됨
+        assertNull(productNode.get("message"), "message 필드는 JSON에 없어야 합니다 (NON_NULL)");
 
         log.info("✅ 시나리오 3-2 통과: 상품 순위 REST API 응답");
         log.info("   응답 JSON:\n{}", objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(productNode));
@@ -304,7 +304,7 @@ public class RankingServiceControllerIntegrationTest extends BaseIntegrationTest
         assertEquals(HttpStatus.OK, response.getStatusCode());
         JsonNode productNode = objectMapper.readTree(response.getBody());
         assertEquals(999, productNode.get("product_id").asInt());
-        assertTrue(productNode.get("rank").isNull(), "rank는 null이어야 합니다");
+        assertNull(productNode.get("rank"), "rank 필드는 JSON에 없어야 합니다 (NON_NULL)");
         assertEquals(0, productNode.get("score").asInt(), "점수는 0");
         assertTrue(productNode.get("message").asText().contains("랭킹에 없습니다"));
 

@@ -30,6 +30,9 @@ import java.util.stream.Collectors;
  *   개선 방향: 캐시 ObjectMapper에서 NON_FINAL 타입 범위 축소 또는
  *             PopularProductListResponse를 final 클래스로 만들어 타입 정보 제거
  *   ※ MySQL 프로덕션 환경에서는 캐시가 여전히 유효 (DB 쿼리 비용이 Redis보다 큼)
+ * MySQL 재측정 (ab -n 2000 -c 100, MySQL 8.0, 2026-05-28):
+ *   캐시 OFF: ~1,900 TPS / 캐시 ON: ~15,000 TPS → +7.9x 향상
+ *   H2 역효과 해소됨 — MySQL에서는 3일 주문 집계 쿼리 비용 > Redis 역직렬화 오버헤드
  *
  * 캐시 무효화:
  * - @CacheEvict로 명시적 캐시 제거

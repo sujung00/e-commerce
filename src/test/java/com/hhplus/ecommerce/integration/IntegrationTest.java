@@ -94,7 +94,6 @@ class IntegrationTest extends BaseIntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
         사용자저장소.save(테스트사용자);
-        엔티티매니저.flush();
 
         // 상품 먼저 생성하여 ID 확보
         테스트상품 = Product.builder()
@@ -108,7 +107,6 @@ class IntegrationTest extends BaseIntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
         상품저장소.save(테스트상품);
-        엔티티매니저.flush();
 
         // 상품 ID를 사용하여 옵션 생성
         ProductOption 임시옵션1 = ProductOption.builder()
@@ -119,7 +117,6 @@ class IntegrationTest extends BaseIntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
         상품저장소.saveOption(임시옵션1);
-        엔티티매니저.flush();
 
         // Blue 옵션 추가 생성
         ProductOption 임시옵션2 = ProductOption.builder()
@@ -130,7 +127,6 @@ class IntegrationTest extends BaseIntegrationTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
         상품저장소.saveOption(임시옵션2);
-        엔티티매니저.flush();
 
         // 옵션 ID를 얻기 위해 DB에서 조회
         List<ProductOption> 옵션목록 = 상품저장소.findOptionsByProductId(테스트상품.getProductId());

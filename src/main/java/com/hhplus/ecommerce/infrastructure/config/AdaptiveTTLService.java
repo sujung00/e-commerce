@@ -87,7 +87,7 @@ public class AdaptiveTTLService {
         }
 
         return new StateKeyTTLInfo(
-            keyType.getName(),
+            keyType.name(),         // enum constant name (e.g., "STATE_COUPON_REQUEST")
             keyType.getDescription(),
             getTTL(keyType),
             getTTLSeconds(keyType)

@@ -39,6 +39,8 @@ public class ProductService {
      * 실측 (ab -n 2000 -c 100, H2 in-memory, 2026-05-24):
      *   캐시 OFF: ~6,500 TPS / 캐시 ON: ~10,400 TPS → 1.6x 향상
      *   ※ H2 환경 기준; MySQL 프로덕션 환경에서는 더 큰 향상 예상
+     * MySQL 재측정 (ab -n 2000 -c 100, MySQL 8.0, 2026-05-28):
+     *   캐시 OFF: ~2,100 TPS / 캐시 ON: ~7,000 TPS → 3.3x 향상
      *
      * ✅ 개선: 캐시 이름을 RedisKeyType enum으로 타입 안전하게 관리
      *
@@ -88,6 +90,7 @@ public class ProductService {
      * TTL: 2시간 (RedisKeyType에서 자동 관리)
      * 실측 미완료 (상품 상세는 이번 측정 범위 외):
      *   상품 목록 기준 참고값: 캐시 OFF ~6,500 → 캐시 ON ~10,400 TPS (1.6x, H2 기준)
+     * MySQL 재측정 참고값: 상품 목록 기준 캐시 OFF ~2,100 → 캐시 ON ~7,000 TPS (3.3x)
      *
      * ✅ 개선: 캐시 이름을 RedisKeyType enum으로 타입 안전하게 관리
      *

@@ -527,6 +527,8 @@ Consumer 2: SELECT FOR UPDATE (Coupon 1) ─────────────
 |------|-------------|-------|----------|
 | **HTTP Accept TPS** | ~7,580 req/s (실측, H2) | ~14,055 req/s (실측, H2) | **+1.9x (실측)** |
 | **발급 처리 TPS** | ~200 req/s (실측, H2) | ~470 req/s (실측, H2, burst) | **+2.4x (실측)** |
+| **HTTP Accept TPS** | ~5,050 req/s (실측, MySQL) | ~8,200 req/s (실측, MySQL) | **+1.63x (MySQL 실측)** |
+| **발급 처리 TPS** | ~133 req/s (실측, MySQL) | ~191 req/s (실측, MySQL) | **+1.44x (MySQL 실측)** |
 | **확장성** | Vertical (인스턴스 스펙 증설) | Horizontal (Partition/Consumer 증설) | **선형 확장** |
 | **장애 복구** | Redis Sentinel (복잡) | Replica + Offset (단순) | **운영 단순화** |
 | **메시지 보관** | 휘발성 (메모리) | 영구 보관 (Disk, 7일) | **재처리 가능** |
@@ -561,6 +563,14 @@ Client (10K req/s) ──> Kafka Producer ──┬──> Partition 0 → Consu
 - Kafka Consumer 처리량: **~470 req/s** (실측 — 100건 212ms burst, 10 Consumer 병렬, 초기 ~10s 시작 지연 이후)
 - **실측 +2.4배 향상 (H2 기준; 두 방식 모두 `SELECT FOR UPDATE` 비관적 락에 의해 제한됨)**
 - ※ HTTP Accept TPS(요청 수락 속도) 실측은 §7.2 참고: Redis ~7,580 / Kafka ~14,055 TPS (+1.9x)
+
+**MySQL 재측정 결과 (MySQL 8.0 docker-compose, 100건, 2026-05-28)**:
+- Redis Queue HTTP Accept TPS: **~5,050 req/s** (ab -n 5000 -c 200, 워밍업 후 2~3회차 평균)
+- Kafka HTTP Accept TPS: **~8,200 req/s** (ab -n 5000 -c 200, 워밍업 후 2~3회차 평균)
+- Redis Queue 처리 TPS: **~133 req/s** (100건 754ms, `@EnableScheduling` 추가 후 정상 동작)
+- Kafka 처리 TPS: **~191 req/s** (100건 525ms, P=3 파티션 / Consumer=10)
+- **MySQL 기준 +1.44x 향상** (H2 +2.4x에서 감소 — MySQL InnoDB 락 경합 비용이 H2보다 큼)
+- ※ `@EnableScheduling` 누락 버그 수정 포함 (AsyncConfig.java에 추가, 2026-05-28)
 
 ---
 
@@ -784,7 +794,7 @@ Broker: 10대
 이 TPS = "DB 발급 완료 속도" (Consumer → issueCouponWithLock → user_coupons INSERT)
 HTTP Accept TPS (§7.2 상단) ≠ Consumer 처리 TPS
 
-발견된 버그: @EnableScheduling 누락 (EcommerceApplication에서 수정 완료)
+발견된 버그: @EnableScheduling 누락 (AsyncConfig.java에서 수정 완료, 2026-05-28)
   - 이 어노테이션이 없으면 Redis Queue 워커(@Scheduled)가 실행되지 않음
   - 수정 전: Redis Queue 요청이 Redis에 쌓이기만 하고 처리 안 됨
   - 수정 후: 워커 정상 동작 (10ms fixedRate, batchSize=10)
@@ -794,7 +804,7 @@ HTTP Accept TPS (§7.2 상단) ≠ Consumer 처리 TPS
 ```
 
 **처리량 향상**:
-- HTTP Accept TPS: Redis Queue ~7,580 → Kafka ~14,055 (**+1.9x 실측**)
+- HTTP Accept TPS: Redis Queue ~7,580 → Kafka ~14,055 (**+1.9x 실측, H2**)
 - Consumer 처리 TPS: Redis Queue ~200 → Kafka ~470 (**+2.4x 실측, H2 기준**)
 
 **응답 시간 개선**:
@@ -802,6 +812,33 @@ HTTP Accept TPS (§7.2 상단) ≠ Consumer 처리 TPS
 - Kafka: 평균 ~14ms (c=200 기준, 실측)
 - **약 46% 단축 (실측, H2 환경)**
 - ※ ~5ms 수준은 단일 요청(c=1) 기준이며 이번 측정 대상이 아님
+
+---
+
+#### MySQL 재측정 (2026-05-28)
+
+> **실측 환경**: MySQL 8.0 (docker-compose), Redis 7.0 (local), Kafka KRaft (docker-compose)
+> `@EnableScheduling` 추가 후 Redis Queue 워커 정상 동작 확인
+
+**HTTP Accept TPS (ab -n 5000 -c 200, 워밍업 후 2~3회차 평균)**:
+
+| 방식 | Round 2 | Round 3 | 평균 (안정) | 실패율 |
+|------|---------|---------|------------|--------|
+| Redis Queue (`/issue/async`) | 5,274 | 4,821 | **~5,050 TPS** | 0% |
+| Kafka (`/issue/kafka`) | 7,622 | 8,814 | **~8,200 TPS** | 0% |
+
+**Consumer 처리 TPS (Python threading 100건, DB count 50ms 폴링)**:
+
+| 방식 | 처리 건수 | 처리 시간 | Consumer TPS | 특이사항 |
+|------|----------|----------|-------------|---------|
+| Redis Queue (`/issue/async`) | 100 / 100 | 754ms | **~133 req/s** | 단일 워커, MySQL InnoDB I/O |
+| Kafka (`/issue/kafka`) | 100 / 100 | 525ms | **~191 req/s** | P=3 / Consumer=10, rebalance 안정 후 |
+
+**H2 vs MySQL 비교 요약**:
+- HTTP Accept: Redis H2 ~7,580 → MySQL ~5,050 (−33%) / Kafka H2 ~14,055 → MySQL ~8,200 (−42%)
+- Consumer TPS: Redis H2 ~200 → MySQL ~133 (−34%) / Kafka H2 ~470 → MySQL ~191 (−59%)
+- 향상 배율 유지: Kafka가 Redis Queue 대비 MySQL에서도 +1.44x~ +1.63x 우위
+- 수치 감소 원인: MySQL InnoDB 디스크 I/O + `SELECT FOR UPDATE` 락 비용이 H2보다 큼
 
 **장애 복구 시간**:
 - Redis Sentinel: 30초 ~ 2분 → Kafka: 5초 이내 **(추정 — 미측정)**

@@ -62,12 +62,15 @@ public class Order {
 
     /**
      * 주문 항목 관계
-     * ✅ cascade = CascadeType.PERSIST만 설정:
-     * - 주문 생성 시 OrderItem도 함께 저장되어야 하므로 PERSIST 필요
-     * - 주문 삭제 시 OrderItem이 자동 삭제될 필요는 없음 (감사 추적용)
-     * - REMOVE 전파 제거: 주문 삭제와 항목 삭제는 독립적으로 관리
+     * ✅ cascade = {CascadeType.PERSIST, CascadeType.MERGE} 설정:
+     * - PERSIST: 주문 생성 시 OrderItem도 함께 저장
+     * - MERGE: orderRepository.save(savedOrder) 두 번째 호출 시 em.merge() 가 호출됨.
+     *   Hibernate 6에서 merge() 시 cascade=PERSIST만 있으면 새로운 transient OrderItem이
+     *   제대로 처리되지 않아 optionId 등 필드가 null이 됨. MERGE를 추가하면 merge 연산이
+     *   OrderItem으로 정상 전파되어 모든 필드가 보존된 채 삽입됨.
+     * - REMOVE 전파 제거: 주문 삭제와 항목 삭제는 독립적으로 관리 (감사 추적용)
      */
-    @OneToMany(cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)
+    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id")
     @Builder.Default
     private List<OrderItem> orderItems = new ArrayList<>();

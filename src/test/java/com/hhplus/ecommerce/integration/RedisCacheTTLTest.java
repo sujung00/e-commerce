@@ -132,6 +132,8 @@ class RedisCacheTTLTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        // Redis 전체 초기화 (테스트 간 상태 오염 방지)
+        redisTemplate.getConnectionFactory().getConnection().flushAll();
         // 캐시 초기화
         clearAllCaches();
 
@@ -182,7 +184,7 @@ class RedisCacheTTLTest extends BaseIntegrationTest {
         // Step 2: Redis 캐시 확인
         // ─────────────────────────────────────────────────────────────────
         // When: Redis에서 캐시 키를 확인
-        String cacheKey = "cache:productDetail::" + productId;
+        String cacheKey = "productDetail::" + productId;
         Object cachedValue = redisTemplate.opsForValue().get(cacheKey);
 
         assertThat(cachedValue)
@@ -246,7 +248,7 @@ class RedisCacheTTLTest extends BaseIntegrationTest {
         // Step 2: Redis 캐시 확인
         // ─────────────────────────────────────────────────────────────────
         // When: Redis에서 캐시 키를 확인
-        String cacheKey = "cache:productList::list_0_10_created_at,desc";
+        String cacheKey = "productList::list_0_10_created_at,desc";
         Object cachedValue = redisTemplate.opsForValue().get(cacheKey);
 
         assertThat(cachedValue)
@@ -304,7 +306,7 @@ class RedisCacheTTLTest extends BaseIntegrationTest {
         // ─────────────────────────────────────────────────────────────────
         // When & Then: TTL이 설정된 캐시 검증
         // ─────────────────────────────────────────────────────────────────
-        String cacheKey = "cache:productDetail::" + productId;
+        String cacheKey = "productDetail::" + productId;
         Long ttl = redisTemplate.getExpire(cacheKey);
 
         System.out.println("\n🔍 TTL 설정 상태 확인:");

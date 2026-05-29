@@ -404,6 +404,9 @@ public class CouponService {
      * 실측 (ab -n 2000 -c 100, H2 in-memory, 2026-05-24):
      *   캐시 OFF: ~12,900 TPS / 캐시 ON: ~18,400 TPS → 1.4x 향상
      *   ※ H2 환경 기준; MySQL 프로덕션 환경에서는 더 큰 향상 예상
+     * MySQL 재측정 (ab -n 2000 -c 100, MySQL 8.0, 2026-05-28):
+     *   캐시 OFF: ~10,500 TPS / 캐시 ON: ~13,000 TPS → 1.2x 향상
+     *   쿠폰 테이블이 소량(2건)이라 DB 쿼리가 빨라 향상폭 제한적
      *
      * 비즈니스 로직:
      * 1. 발급 가능한 쿠폰 조회 (is_active=true, 유효기간 내, remaining_qty > 0)
