@@ -141,15 +141,29 @@ class CouponIssueKafkaIntegrationTest {
 
     /**
      * Kafka Topic 명시적 생성
+     *
+     * ⚠️ 핵심 주의사항: AdminClient.close()의 기본 타임아웃은 Long.MAX_VALUE ms (사실상 무한대).
+     * createTopics()의 비동기 요청이 완료되기 전에 try-with-resources가 close()를 호출하면
+     * 브로커 응답을 무한 대기하며 테스트 전체가 수 시간 블로킹된다.
+     *
+     * 해결: createTopics().all().get(10, SECONDS)로 명시적 대기 후 close().
+     * close() 호출 시점에 미완료 요청이 없으므로 즉시 반환된다.
      */
     private void createKafkaTopic() {
-        try (AdminClient adminClient = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
+        // try-with-resources 대신 수동 close 사용:
+        // AdminClient.close() 기본값은 Long.MAX_VALUE ms 무한 대기.
+        // close(Duration)으로 명시 타임아웃을 줘야 브로커 무응답 시 블로킹을 막는다.
+        AdminClient adminClient = AdminClient.create(kafkaAdmin.getConfigurationProperties());
+        try {
             NewTopic newTopic = new NewTopic(TOPIC_NAME, 10, (short) 1);
-            adminClient.createTopics(Collections.singletonList(newTopic));
-            Thread.sleep(2000); // Topic 생성 대기
+            adminClient.createTopics(Collections.singletonList(newTopic))
+                    .all()
+                    .get(10, SECONDS);
         } catch (Exception e) {
-            // Topic이 이미 존재하면 무시
-            System.out.println("Topic already exists or creation failed: " + e.getMessage());
+            // TopicExistsException(2nd+ run) 또는 타임아웃은 무시하고 계속
+            System.out.println("[Test] Topic creation: " + e.getMessage());
+        } finally {
+            adminClient.close(java.time.Duration.ofSeconds(5));
         }
     }
 
@@ -213,17 +227,16 @@ class CouponIssueKafkaIntegrationTest {
      * 3. coupons (id 1-10): remaining_qty/version 초기화 (createTestCoupons에서도 하지만 선제 정리)
      */
     private void cleanupTestData() {
-        // 1. user_coupons 전체 삭제 (FK 제약으로 먼저 삭제)
+        // user_coupons 전체 삭제 (FK 제약 순서)
         jdbcTemplate.execute("DELETE FROM user_coupons");
 
-        // 2. testCouponExhaustion이 만든 auto-generated 쿠폰 삭제
+        // testCouponExhaustion이 생성한 auto-generated 쿠폰 삭제 (coupon_id > 10)
         jdbcTemplate.execute("DELETE FROM coupons WHERE coupon_id > 10");
 
-        // 3. 고정 쿠폰(1-10) 재고·버전 초기화
-        jdbcTemplate.execute(
-            "UPDATE coupons SET remaining_qty=100, is_active=1, version=0, updated_at=NOW()" +
-            " WHERE coupon_id BETWEEN 1 AND 10"
-        );
+        // 고정 쿠폰(1-10) 재고·버전 초기화는 @BeforeEach createTestCoupons()의
+        // ON DUPLICATE KEY UPDATE 에서 처리한다.
+        // 여기서 UPDATE coupons를 추가로 실행하면 Kafka consumer가 보유 중인
+        // SELECT FOR UPDATE 락과 충돌할 수 있다.
     }
 
     /**
