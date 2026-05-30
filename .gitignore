@@ -49,3 +49,6 @@ CLAUDE.md
 .hprof
 *.hprof
 spy.log
+
+# Claude Code internal files
+.claude/scheduled_tasks.lock
