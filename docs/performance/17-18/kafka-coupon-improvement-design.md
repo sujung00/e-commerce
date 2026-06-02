@@ -538,6 +538,31 @@ Consumer 2: SELECT FOR UPDATE (Coupon 1) ─────────────
 
 ---
 
+### 5.1.1 동기·비동기 세 방식 전체 비교 (실측)
+
+> 측정 환경: `ab -n 5000 -c 200`, MySQL 8.0 (docker-compose), JVM 완전 워밍업 후 2~3회차 평균
+
+| 항목 | 동기 (Pessimistic Lock) | Redis Queue (비동기) | Kafka (비동기) |
+|------|------------------------|---------------------|----------------|
+| **HTTP TPS** (MySQL 실측) | **~1,220 req/s** | ~5,050 req/s | ~8,200 req/s |
+| **처리 TPS** (MySQL 실측) | **~1,220 req/s (= HTTP TPS)** | ~133 req/s | ~191 req/s |
+| **HTTP TPS** (H2 실측) | 미측정 | ~7,580 req/s | ~14,055 req/s |
+| **처리 TPS** (H2 실측) | 미측정 | ~200 req/s | ~470 req/s |
+| **HTTP 응답** | 처리 완결 후 반환 (동기) | 202 즉시 반환 (비동기) | 202 즉시 반환 (비동기) |
+| **HTTP ↔ 처리 분리** | 없음 (동일) | 있음 (38x 차이) | 있음 (43x 차이) |
+| **병목** | DB 비관적 락 직렬화 | Worker 단일 순차 처리 | Consumer 수 = Partition 수 |
+| **확장 방식** | 수직 (DB 스펙 업) | 수직 (Redis 스펙 업) | 수평 (Partition/Consumer 증설) |
+
+**해석 포인트**:
+- HTTP TPS만 보면: **Kafka(8,200) > Redis Queue(5,050) > 동기(1,220)** — 비동기가 압도적
+- 처리 TPS만 보면: **동기(1,220) > Kafka(191) > Redis Queue(133)** — 동기가 실제 DB 처리량은 더 높음
+- 핵심 차이: 비동기는 "HTTP 수락"과 "DB 처리"를 분리해서 UX를 향상시키는 구조이고,
+  동기는 두 단계가 같은 스레드에서 블로킹으로 직결되는 구조
+- 동기 처리 TPS가 높은 이유: 실패(중복 거절) 경로가 빠른 ROLLBACK으로 처리되기 때문 —
+  성공(새 사용자) 경로만 측정 시 수치는 낮아짐
+
+---
+
 ### 5.2 처리량 개선
 
 **Redis Queue 구조** (기존):
@@ -820,17 +845,19 @@ HTTP Accept TPS (§7.2 상단) ≠ Consumer 처리 TPS
 > **실측 환경**: MySQL 8.0 (docker-compose), Redis 7.0 (local), Kafka KRaft (docker-compose)
 > `@EnableScheduling` 추가 후 Redis Queue 워커 정상 동작 확인
 
-**HTTP Accept TPS (ab -n 5000 -c 200, 워밍업 후 2~3회차 평균)**:
+**HTTP TPS (ab -n 5000 -c 200, 워밍업 후 2~3회차 평균)**:
 
-| 방식 | Round 2 | Round 3 | 평균 (안정) | 실패율 |
-|------|---------|---------|------------|--------|
-| Redis Queue (`/issue/async`) | 5,274 | 4,821 | **~5,050 TPS** | 0% |
-| Kafka (`/issue/kafka`) | 7,622 | 8,814 | **~8,200 TPS** | 0% |
+| 방식 | Round 1 | Round 2 | Round 3 | 평균 (안정) | 비고 |
+|------|---------|---------|---------|------------|------|
+| 동기 Pessimistic Lock (`/issue`) | 895 | 1,261 | 1,503 | **~1,220 TPS** | HTTP TPS = 처리 TPS (분리 없음) |
+| Redis Queue (`/issue/async`) | — | 5,274 | 4,821 | **~5,050 TPS** | 202 즉시 반환 |
+| Kafka (`/issue/kafka`) | — | 7,622 | 8,814 | **~8,200 TPS** | 202 즉시 반환 |
 
 **Consumer 처리 TPS (Python threading 100건, DB count 50ms 폴링)**:
 
 | 방식 | 처리 건수 | 처리 시간 | Consumer TPS | 특이사항 |
 |------|----------|----------|-------------|---------|
+| 동기 Pessimistic Lock (`/issue`) | — | — | **~1,220 req/s (= HTTP TPS)** | 처리 완결 후 응답, 별도 Consumer 없음 |
 | Redis Queue (`/issue/async`) | 100 / 100 | 754ms | **~133 req/s** | 단일 워커, MySQL InnoDB I/O |
 | Kafka (`/issue/kafka`) | 100 / 100 | 525ms | **~191 req/s** | P=3 / Consumer=10, rebalance 안정 후 |
 
