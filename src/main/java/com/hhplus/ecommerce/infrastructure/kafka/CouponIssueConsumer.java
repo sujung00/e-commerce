@@ -2,6 +2,7 @@ package com.hhplus.ecommerce.infrastructure.kafka;
 
 import com.hhplus.ecommerce.application.coupon.CouponService;
 import com.hhplus.ecommerce.domain.coupon.event.CouponIssueRequest;
+import com.hhplus.ecommerce.infrastructure.lock.DistributedLock;
 import com.hhplus.ecommerce.presentation.coupon.response.IssueCouponResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,6 +106,11 @@ public class CouponIssueConsumer {
      * @param offset Offset
      * @param acknowledgment 수동 커밋 객체
      */
+    @DistributedLock(
+        key = "'coupon:stock:' + #request.couponId",
+        waitTime = 5,
+        leaseTime = 2
+    )
     @KafkaListener(
         topics = "${kafka.topics.coupon-issue-requests}",
         groupId = "${kafka.consumer.coupon-group-id}",
